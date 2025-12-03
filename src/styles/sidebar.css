@@ -112,6 +112,41 @@
   background-color: #fff;
 }
 
+/* 测试按钮区域 */
+.ai-test-buttons {
+  padding: 12px 15px;
+  border-top: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e0e0e0;
+  background-color: #fafafa;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-test-btn {
+  padding: 6px 12px;
+  background-color: #fff;
+  color: #333;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+  flex: 1;
+  min-width: calc(50% - 4px);
+}
+
+.ai-test-btn:hover {
+  background-color: #f0f0f0;
+  border-color: #999;
+}
+
+.ai-test-btn:active {
+  background-color: #e5e5e5;
+  transform: translateY(1px);
+}
+
 /* 输入区域 */
 .ai-input-area {
   padding: 15px;
