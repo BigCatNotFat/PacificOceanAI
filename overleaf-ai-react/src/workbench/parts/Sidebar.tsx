@@ -48,6 +48,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const [currentConversation, setCurrentConversation] = useState('1');
   const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
+  const [isConversationMenuOpen, setIsConversationMenuOpen] = useState(false);
 
   useSidebarResize({ sidebarRef, handleRef, onWidthChange });
 
@@ -131,6 +132,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
     ? (currentModel?.name || '选择模型')
     : '暂无可用模型';
 
+  const currentConversationName =
+    conversations.find((c) => c.id === currentConversation)?.name || '新对话';
+
   return (
     <div
       id={ELEMENTS.SIDEBAR_ID}
@@ -164,16 +168,31 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
         {/* 现代化Header */}
         <div className="ai-header">
           <div className="ai-header-left">
-            <select 
-              className="ai-conversation-select"
-              value={currentConversation}
-              onChange={(e) => setCurrentConversation(e.target.value)}
+            <button
+              type="button"
+              className="ai-conversation-trigger"
+              onClick={() => setIsConversationMenuOpen(!isConversationMenuOpen)}
             >
-              {conversations.map(conv => (
-                <option key={conv.id} value={conv.id}>{conv.name}</option>
-              ))}
-            </select>
+              {currentConversationName}
+            </button>
             <span className="material-symbols ai-header-dropdown">expand_more</span>
+            {isConversationMenuOpen && (
+              <div className="ai-inline-dropdown ai-conversation-dropdown">
+                {conversations.map((conv) => (
+                  <button
+                    type="button"
+                    key={conv.id}
+                    className={`ai-inline-dropdown-item ${currentConversation === conv.id ? 'active' : ''}`}
+                    onClick={() => {
+                      setCurrentConversation(conv.id);
+                      setIsConversationMenuOpen(false);
+                    }}
+                  >
+                    {conv.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="ai-header-actions">
             <button className="ai-icon-btn" title="新对话">

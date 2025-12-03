@@ -129,6 +129,9 @@
   gap: 6px;
   color: var(--text-secondary);
   transition: color 0.2s;
+  flex: 1;
+  min-width: 0;
+  position: relative;
 }
 
 .ai-header-left:hover {
@@ -146,6 +149,22 @@
   font-family: inherit;
   padding: 4px 0;
   appearance: none;
+}
+
+.ai-conversation-trigger {
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+  padding: 4px 0;
+}
+
+.ai-conversation-trigger:hover {
+  color: var(--accent-primary);
 }
 
 .ai-conversation-select:hover {
@@ -172,6 +191,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .ai-icon-btn {
@@ -547,6 +567,13 @@
   padding: 4px 0;
   z-index: 10;
   min-width: 120px;
+}
+
+.ai-conversation-dropdown {
+  top: 100%;
+  bottom: auto;
+  margin-top: 4px;
+  margin-bottom: 0;
 }
 
 .ai-inline-dropdown-item {
