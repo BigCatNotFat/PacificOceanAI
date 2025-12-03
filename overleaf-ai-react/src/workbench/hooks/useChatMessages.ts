@@ -19,3 +19,4 @@ export function useChatMessages(initialMessages: ChatMessage[]) {
 
   return { messages, appendMessage };
 }
+

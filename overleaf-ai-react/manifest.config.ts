@@ -9,12 +9,12 @@ export default defineManifest({
   content_scripts: [
     {
       matches: ['https://www.overleaf.com/*'],
-      js: ['src/content/main.tsx']
+      js: ['src/extension/content/main.tsx']
     }
   ],
   web_accessible_resources: [
     {
-      resources: ['src/styles/sidebar.css'],
+      resources: ['src/workbench/styles/sidebar.css'],
       matches: ['https://www.overleaf.com/*']
     }
   ]

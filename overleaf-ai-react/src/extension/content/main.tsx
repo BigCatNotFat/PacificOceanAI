@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import App from './App';
-import '../styles/sidebar.css';
+import App from '../../workbench/parts/App';
+import '../../workbench/styles/sidebar.css';
 
 const CONTAINER_ID = 'overleaf-ai-react-root';
 
@@ -23,3 +23,4 @@ function mountApp(): void {
 
 mountApp();
 console.log('✅ Overleaf AI 助手已加载');
+

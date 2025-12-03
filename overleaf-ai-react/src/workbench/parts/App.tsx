@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { SIDEBAR_CONFIG } from '../config/constants';
-import { getMainContainer, setTransition, triggerResize } from '../utils/dom';
-import Sidebar from '../components/Sidebar';
-import ToolbarButtonPortal from '../components/ToolbarButtonPortal';
+import { SIDEBAR_CONFIG } from '../../base/common/constants';
+import { getMainContainer, setTransition, triggerResize } from '../../base/browser/dom';
+import Sidebar from './Sidebar';
+import ToolbarButtonPortal from './ToolbarButtonPortal';
 
 const App: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -44,3 +44,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+

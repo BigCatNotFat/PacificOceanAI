@@ -36,7 +36,7 @@ UI 层只引用 Interface，绝不引用 Service 具体类。
 
 必须实现 dispose() 方法以清理资源，防止内存泄漏。
 
-2. 目录结构规范 (Directory Structure)
+1. 目录结构规范 (Directory Structure)
 
 src/
 ├── base/                   # [L1] 基础库 (严禁包含业务逻辑)

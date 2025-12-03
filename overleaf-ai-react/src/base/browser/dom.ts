@@ -1,4 +1,4 @@
-import { SELECTORS } from '../config/constants';
+import { SELECTORS } from '../common/constants';
 
 export function getMainContainer(): HTMLElement {
   return (

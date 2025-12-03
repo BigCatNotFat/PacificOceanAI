@@ -24,3 +24,4 @@ export const CLASSES = {
   BTN_PRIMARY: 'd-inline-grid btn btn-primary btn-sm',
   TOOLBAR_CONTAINER: 'ide-redesign-toolbar-button-container'
 };
+

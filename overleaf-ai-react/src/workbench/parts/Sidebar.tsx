@@ -1,8 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { ELEMENTS } from '../config/constants';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { ELEMENTS } from '../../base/common/constants';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { useSidebarResize } from '../hooks/useSidebarResize';
-import { createTestActions } from '../features/testActions';
 import { ChatMessage } from '../types/chat';
 
 type SidebarProps = {
@@ -33,7 +32,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const { messages, appendMessage } = useChatMessages(initialMessages);
 
-  useSidebarResize({ sidebarRef, handleRef, width, onWidthChange });
+  useSidebarResize({ sidebarRef, handleRef, onWidthChange });
 
   useEffect(() => {
     const chat = chatHistoryRef.current;
@@ -41,18 +40,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
       chat.scrollTop = chat.scrollHeight;
     }
   }, [messages]);
-
-  const testActions = useMemo(() => createTestActions(appendMessage), [appendMessage]);
-
-  const handleTestClick = useCallback(
-    (action: keyof typeof testActions) => {
-      const handler = testActions[action];
-      if (handler) {
-        handler();
-      }
-    },
-    [testActions]
-  );
 
   const sendMessage = useCallback(() => {
     const value = inputRef.current?.value?.trim() ?? '';
@@ -87,16 +74,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
         display: isOpen ? 'flex' : 'none'
       }}
     >
-      <div className={ELEMENTS.RESIZE_HANDLE_CLASS} ref={handleRef} title="拖动调整大小">
+      <div
+        className={`horizontal-resize-handle horizontal-resize-handle-enabled ${ELEMENTS.RESIZE_HANDLE_CLASS}`}
+        ref={handleRef}
+        title="Resize"
+      >
         <button
-          className={ELEMENTS.TOGGLER_BTN_CLASS}
+          className={`custom-toggler custom-toggler-east custom-toggler-open ${ELEMENTS.TOGGLER_BTN_CLASS}`}
+          aria-label="Click to hide the AI panel"
           title="点击收起"
           onClick={(e) => {
             e.stopPropagation();
             onToggle();
           }}
         >
-          <span className="ai-toggler-icon material-symbols">chevron_right</span>
+          <span className="material-symbols ai-toggler-icon" aria-hidden="true" translate="no">
+            chevron_right
+          </span>
         </button>
       </div>
 
@@ -126,33 +120,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
               </div>
             );
           })}
-        </div>
-
-        <div className="ai-test-buttons">
-          <button className="ai-test-btn" onClick={() => handleTestClick('read')} data-action="read">
-            读取文字
-          </button>
-          <button className="ai-test-btn" onClick={() => handleTestClick('insert')} data-action="insert">
-            插入文字
-          </button>
-          <button className="ai-test-btn" onClick={() => handleTestClick('replace')} data-action="replace">
-            替换文字
-          </button>
-          <button className="ai-test-btn" onClick={() => handleTestClick('delete')} data-action="delete">
-            删除文字
-          </button>
-          <button className="ai-test-btn" onClick={() => handleTestClick('readOutline')} data-action="readOutline">
-            读取 Outline
-          </button>
-          <button className="ai-test-btn" onClick={() => handleTestClick('readFileTree')} data-action="readFileTree">
-            读取 File Tree
-          </button>
-          <button className="ai-test-btn" onClick={() => handleTestClick('readFig4Image')} data-action="readFig4Image">
-            读取 fig4.png 图片
-          </button>
-          <button className="ai-test-btn" onClick={() => handleTestClick('readBibFile')} data-action="readBibFile">
-            读取 Mybib.bib
-          </button>
         </div>
 
         <div className="ai-input-area">

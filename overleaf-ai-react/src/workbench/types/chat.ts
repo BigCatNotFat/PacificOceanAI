@@ -4,3 +4,4 @@ export type ChatMessage = {
   content: string;
   isHtml?: boolean;
 };
+

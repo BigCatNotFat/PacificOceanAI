@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CLASSES, ELEMENTS, SELECTORS } from '../config/constants';
+import { CLASSES, ELEMENTS, SELECTORS } from '../../base/common/constants';
 
 type ToolbarButtonPortalProps = {
   onClick: () => void;
@@ -67,3 +67,4 @@ const ToolbarButtonPortal: React.FC<ToolbarButtonPortalProps> = ({ onClick }) =>
 };
 
 export default ToolbarButtonPortal;
+

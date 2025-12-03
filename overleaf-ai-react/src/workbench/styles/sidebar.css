@@ -6,7 +6,6 @@
   bottom: 0;
   width: 360px;
   min-width: 260px;
-  max-width: 800px;
   background-color: #f9f9f9;
   display: flex;
   flex-direction: row;
@@ -16,11 +15,11 @@
 
 /* 原生风格拖拽条 */
 .ai-resize-handle {
-  width: 12px;
+  width: 18px;
   background-color: #f1f3f4;
   border-left: 1px solid #dcdcdc;
   border-right: 1px solid #dcdcdc;
-  cursor: col-resize;
+  cursor: ew-resize;
   display: flex;
   flex-direction: column;
   align-items: center;

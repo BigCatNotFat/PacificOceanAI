@@ -1,22 +1,21 @@
 import { RefObject, useEffect } from 'react';
-import { CLASSES, ELEMENTS, SIDEBAR_CONFIG } from '../config/constants';
-import { disableIframes, getMainContainer, triggerResize } from '../utils/dom';
+import { CLASSES, ELEMENTS, SIDEBAR_CONFIG } from '../../base/common/constants';
+import { disableIframes, getMainContainer, triggerResize } from '../../base/browser/dom';
 
 type Params = {
   sidebarRef: RefObject<HTMLDivElement>;
   handleRef: RefObject<HTMLDivElement>;
-  width: number;
   onWidthChange: (width: number) => void;
 };
 
-export function useSidebarResize({ sidebarRef, handleRef, width, onWidthChange }: Params) {
+export function useSidebarResize({ sidebarRef, handleRef, onWidthChange }: Params) {
   useEffect(() => {
     const handle = handleRef.current;
     const sidebar = sidebarRef.current;
     if (!handle || !sidebar) return;
 
     let startX = 0;
-    let startWidth = width;
+    let startWidth = 0;
     let dragging = false;
 
     const onMouseDown = (e: MouseEvent) => {
@@ -27,8 +26,8 @@ export function useSidebarResize({ sidebarRef, handleRef, width, onWidthChange }
       startX = e.clientX;
       startWidth = parseInt(window.getComputedStyle(sidebar).width, 10);
 
-      document.documentElement.style.cursor = 'col-resize';
       handle.classList.add(CLASSES.RESIZING);
+      document.body.style.cursor = 'ew-resize';
       disableIframes(true);
 
       document.addEventListener('mousemove', onMouseMove);
@@ -38,14 +37,18 @@ export function useSidebarResize({ sidebarRef, handleRef, width, onWidthChange }
     const onMouseMove = (e: MouseEvent) => {
       if (!dragging) return;
 
+      const mainContainer = getMainContainer();
+      const parent =
+        (mainContainer.parentElement as HTMLElement | null) ?? (document.body as HTMLElement);
+      const parentWidth = parent.clientWidth || window.innerWidth;
+      const maxWidth = Math.max(SIDEBAR_CONFIG.MIN_WIDTH, parentWidth);
+
       let newWidth = startWidth + (startX - e.clientX);
       if (newWidth < SIDEBAR_CONFIG.MIN_WIDTH) newWidth = SIDEBAR_CONFIG.MIN_WIDTH;
-      if (newWidth > SIDEBAR_CONFIG.MAX_WIDTH) newWidth = SIDEBAR_CONFIG.MAX_WIDTH;
+      if (newWidth > maxWidth) newWidth = maxWidth;
 
       onWidthChange(newWidth);
       sidebar.style.width = `${newWidth}px`;
-
-      const mainContainer = getMainContainer();
       mainContainer.style.width = `calc(100% - ${newWidth}px)`;
     };
 
@@ -53,8 +56,8 @@ export function useSidebarResize({ sidebarRef, handleRef, width, onWidthChange }
       if (!dragging) return;
 
       dragging = false;
-      document.documentElement.style.cursor = 'default';
       handle.classList.remove(CLASSES.RESIZING);
+      document.body.style.cursor = 'default';
       disableIframes(false);
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
@@ -68,5 +71,5 @@ export function useSidebarResize({ sidebarRef, handleRef, width, onWidthChange }
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
-  }, [handleRef, onWidthChange, sidebarRef, width]);
+  }, [handleRef, onWidthChange, sidebarRef]);
 }
