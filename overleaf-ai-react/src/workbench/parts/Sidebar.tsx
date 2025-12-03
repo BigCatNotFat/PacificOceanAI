@@ -39,7 +39,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const [availableModels, setAvailableModels] = useState<AIModelConfig[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [thinkingStates, setThinkingStates] = useState<Record<string, boolean>>({});
-  const [chatMode, setChatMode] = useState<'agent' | 'chat'>('chat');
+  const [chatMode, setChatMode] = useState<'agent' | 'chat' | 'normal'>('chat');
   const [conversations] = useState([
     { id: '1', name: '新对话' },
     { id: '2', name: 'React组件优化' },
@@ -319,7 +319,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                   className="ai-mode-select-inline"
                   onClick={() => setIsModeMenuOpen(!isModeMenuOpen)}
                 >
-                  {chatMode === 'agent' ? 'Agent' : 'Chat'}
+                  {chatMode === 'agent' ? 'Agent' : chatMode === 'chat' ? 'Chat' : 'Normal'}
                 </button>
                 {isModeMenuOpen && (
                   <div className="ai-inline-dropdown">
@@ -342,6 +342,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                       }}
                     >
                       Chat
+                    </button>
+                    <button
+                      type="button"
+                      className={`ai-inline-dropdown-item ${chatMode === 'normal' ? 'active' : ''}`}
+                      onClick={() => {
+                        setChatMode('normal');
+                        setIsModeMenuOpen(false);
+                      }}
+                    >
+                      Normal
                     </button>
                   </div>
                 )}
