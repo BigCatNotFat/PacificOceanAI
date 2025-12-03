@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "My Overleaf AI",
+  "version": "1.0",
+  "description": "测试 Overleaf 插件开发",
+  "permissions": [
+    "activeTab"
+  ],
+  "content_scripts": [
+    {
+      "js": [
+        "assets/main.tsx-DIOEpWwG.js"
+      ],
+      "matches": [
+        "https://www.overleaf.com/*"
+      ],
+      "css": [
+        "assets/main-Bimd61jf.css"
+      ]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "matches": [
+        "https://www.overleaf.com/*"
+      ],
+      "resources": [
+        "src/styles/sidebar.css",
+        "assets/main.tsx-DIOEpWwG.js"
+      ],
+      "use_dynamic_url": false
+    }
+  ]
+}
