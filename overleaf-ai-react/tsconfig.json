@@ -12,7 +12,9 @@
     "esModuleInterop": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "types": ["chrome"]
+    "types": ["chrome"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
   },
   "include": ["src"],
   "references": [
