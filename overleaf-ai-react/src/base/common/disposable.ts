@@ -3,8 +3,14 @@ export interface IDisposable {
 }
 
 export class Disposable implements IDisposable {
+  private readonly _store = new DisposableStore();
+
+  protected _register<T extends IDisposable>(disposable: T): T {
+    return this._store.add(disposable);
+  }
+
   dispose(): void {
-    // Default no-op
+    this._store.dispose();
   }
 }
 
