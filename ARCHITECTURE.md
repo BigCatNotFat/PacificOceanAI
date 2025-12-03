@@ -211,9 +211,24 @@ UI 层 (Sidepanel)：运行 Service 的代理 (Proxy) 或 客户端 (Client)。
 
 桥接 (Bridge)：
 
-当 Agent 需要“读取文件”时，Sidepanel 发送消息 -> Background 转发 -> Content Script 执行 DOM 操作 -> 返回结果。
+当 Agent 需要"读取文件"时，Sidepanel 发送消息 -> Background 转发 -> Content Script 执行 DOM 操作 -> 返回结果。
 
 建议在 services/editor/ 中封装这层 RPC 逻辑，对上层 Agent 透明。
+
+RPC 系统架构：
+  - IRPCChannel：消息通道抽象（ChromeRuntimeChannel / ChromeTabChannel / WindowMessageChannel）
+  - RPCServer：服务端，注册并处理方法调用（Content Script 中使用）
+  - RPCClient：客户端，发送请求并等待响应（Sidepanel 中使用）
+  - EditorServiceProxy：EditorService 的 RPC 代理实现
+
+RPC 通信流程：
+  1. Content Script 创建 RPCServer 并注册 OverleafEditorService
+  2. Sidepanel 创建 RPCClient 和 EditorServiceProxy
+  3. Sidepanel 调用 editorService.getCurrentFileName()
+  4. EditorServiceProxy 通过 RPCClient 发送 RPC 请求
+  5. Content Script 的 RPCServer 接收请求并调用真实的 OverleafEditorService
+  6. 结果通过 RPC 响应返回给 Sidepanel
+  7. EditorServiceProxy 返回 Promise resolve 结果
 
 6. 检查清单 (Pre-commit Checklist)
 在提交代码前，请自问：

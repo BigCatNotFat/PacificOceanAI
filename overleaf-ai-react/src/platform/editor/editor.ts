@@ -6,12 +6,12 @@ export type FileTreeItem = { name: string; type: string; level: number; fileType
 export interface IEditorService {
   readonly onDidChangeActiveFile: Event<string | null>;
 
-  getCurrentFileName(): string | null;
-  readLine(lineNumber: number): string | null;
-  readAllLines(): string[];
-  getEditorFullText(targetFileName?: string): string;
-  readFileOutline(): OutlineItem[];
-  readFileTree(): FileTreeItem[];
+  getCurrentFileName(): string | null | Promise<string | null>;
+  readLine(lineNumber: number): string | null | Promise<string | null>;
+  readAllLines(): string[] | Promise<string[]>;
+  getEditorFullText(targetFileName?: string): string | Promise<string>;
+  readFileOutline(): OutlineItem[] | Promise<OutlineItem[]>;
+  readFileTree(): FileTreeItem[] | Promise<FileTreeItem[]>;
   readImagePreviewUrl(fileName: string): Promise<string | null>;
 }
 
