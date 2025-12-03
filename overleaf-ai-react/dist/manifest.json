@@ -4,12 +4,19 @@
   "version": "1.0",
   "description": "测试 Overleaf 插件开发",
   "permissions": [
-    "activeTab"
+    "activeTab",
+    "tabs",
+    "storage"
   ],
+  "options_page": "src/extension/options/index.html",
+  "action": {
+    "default_popup": "src/extension/popup/index.html",
+    "default_title": "Overleaf AI Assistant"
+  },
   "content_scripts": [
     {
       "js": [
-        "assets/main.tsx-BkFKGLU8.js"
+        "assets/main.tsx-loader-CDJ9ZTaV.js"
       ],
       "matches": [
         "https://www.overleaf.com/*"
@@ -26,7 +33,8 @@
       ],
       "resources": [
         "src/workbench/styles/sidebar.css",
-        "assets/main.tsx-BkFKGLU8.js"
+        "assets/client-BaofO1uk.js",
+        "assets/main.tsx-D9GTjceR.js"
       ],
       "use_dynamic_url": false
     }

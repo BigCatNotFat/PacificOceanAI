@@ -5,7 +5,24 @@ export default defineManifest({
   name: 'My Overleaf AI',
   version: '1.0',
   description: '测试 Overleaf 插件开发',
-  permissions: ['activeTab'],
+  permissions: ['activeTab', 'tabs', 'storage'],
+  options_page: 'src/extension/options/index.html',
+  action: {
+    default_popup: 'src/extension/popup/index.html',
+    default_title: 'Overleaf AI Assistant'
+    // 图标配置（可选）：将图标文件放在 public/icons/ 目录下后取消注释
+    // default_icon: {
+    //   '16': 'icons/icon16.png',
+    //   '48': 'icons/icon48.png',
+    //   '128': 'icons/icon128.png'
+    // }
+  },
+  // 图标配置（可选）：将图标文件放在 public/icons/ 目录下后取消注释
+  // icons: {
+  //   '16': 'icons/icon16.png',
+  //   '48': 'icons/icon48.png',
+  //   '128': 'icons/icon128.png'
+  // },
   content_scripts: [
     {
       matches: ['https://www.overleaf.com/*'],

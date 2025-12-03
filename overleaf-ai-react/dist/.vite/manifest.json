@@ -1,17 +1,55 @@
 {
   "../../../../../../../../../@crx/manifest": {
-    "file": "assets/crx-manifest.js-DrC8V9nK.js",
+    "file": "assets/crx-manifest.js-xG2QIqay.js",
     "name": "crx-manifest.js",
     "src": "../../../../../../../../../@crx/manifest",
     "isEntry": true
   },
+  "_client-BaofO1uk.js": {
+    "file": "assets/client-BaofO1uk.js",
+    "name": "client"
+  },
+  "_modulepreload-polyfill-B5Qt9EMX.js": {
+    "file": "assets/modulepreload-polyfill-B5Qt9EMX.js",
+    "name": "modulepreload-polyfill"
+  },
+  "main.tsx-loader.js": {
+    "file": "assets/main.tsx-loader-CDJ9ZTaV.js",
+    "src": "main.tsx-loader.js"
+  },
   "src/extension/content/main.tsx": {
-    "file": "assets/main.tsx-BkFKGLU8.js",
+    "file": "assets/main.tsx-D9GTjceR.js",
     "name": "main.tsx",
     "src": "src/extension/content/main.tsx",
     "isEntry": true,
+    "imports": [
+      "_client-BaofO1uk.js"
+    ],
     "css": [
       "assets/main-CG2LvAlY.css"
+    ]
+  },
+  "src/extension/options/index.html": {
+    "file": "assets/index.html-sA8MXStZ.js",
+    "name": "index.html",
+    "src": "src/extension/options/index.html",
+    "isEntry": true,
+    "imports": [
+      "_modulepreload-polyfill-B5Qt9EMX.js",
+      "_client-BaofO1uk.js"
+    ]
+  },
+  "src/extension/popup/index.html": {
+    "file": "assets/index.html-DCxppSY0.js",
+    "name": "index.html",
+    "src": "src/extension/popup/index.html",
+    "isEntry": true,
+    "imports": [
+      "_modulepreload-polyfill-B5Qt9EMX.js",
+      "_client-BaofO1uk.js"
+    ],
+    "css": [
+      "assets/index-8cEiGnCv.css"
     ]
   }
 }
