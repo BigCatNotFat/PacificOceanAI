@@ -5,7 +5,8 @@ export default defineManifest({
   name: 'My Overleaf AI',
   version: '1.0',
   description: '测试 Overleaf 插件开发',
-  permissions: ['activeTab', 'tabs', 'storage'],
+  permissions: ['storage'],
+  host_permissions: ['https://www.overleaf.com/*'],
   options_page: 'src/extension/options/index.html',
   action: {
     default_popup: 'src/extension/popup/index.html',
@@ -26,7 +27,8 @@ export default defineManifest({
   content_scripts: [
     {
       matches: ['https://www.overleaf.com/*'],
-      js: ['src/extension/content/main.tsx']
+      js: ['src/extension/content/main.tsx'],
+      run_at: 'document_idle'
     }
   ],
   web_accessible_resources: [

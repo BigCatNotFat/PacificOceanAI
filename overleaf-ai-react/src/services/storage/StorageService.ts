@@ -39,31 +39,41 @@ export class StorageService extends Disposable implements IStorageService {
    * 设置存储变化监听器
    */
   private setupStorageListener(): void {
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
-      const listener = (
-        changes: { [key: string]: chrome.storage.StorageChange },
-        areaName: string
-      ) => {
-        for (const key in changes) {
-          const change = changes[key];
-          this._onDidChangeStorage.fire({
-            key,
-            oldValue: change.oldValue,
-            newValue: change.newValue
-          });
-        }
-      };
-
-      chrome.storage.onChanged.addListener(listener);
-
-      // 注册清理函数
-      this._register({
-        dispose: () => {
-          if (chrome?.storage?.onChanged) {
-            chrome.storage.onChanged.removeListener(listener);
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+        const listener = (
+          changes: { [key: string]: chrome.storage.StorageChange },
+          areaName: string
+        ) => {
+          for (const key in changes) {
+            const change = changes[key];
+            this._onDidChangeStorage.fire({
+              key,
+              oldValue: change.oldValue,
+              newValue: change.newValue
+            });
           }
-        }
-      });
+        };
+
+        chrome.storage.onChanged.addListener(listener);
+
+        // 注册清理函数
+        this._register({
+          dispose: () => {
+            try {
+              if (chrome?.storage?.onChanged) {
+                chrome.storage.onChanged.removeListener(listener);
+              }
+            } catch (error) {
+              console.warn('[StorageService] Failed to remove storage listener:', error);
+            }
+          }
+        });
+      } else {
+        console.warn('[StorageService] Chrome storage change listener not available');
+      }
+    } catch (error) {
+      console.warn('[StorageService] Failed to setup storage listener:', error);
     }
   }
 
