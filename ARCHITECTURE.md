@@ -123,6 +123,34 @@ Level 4: Workbench (皮肤)
 
 状态同步：不要手动轮询，应通过 service.onDidXxx 事件来更新 React State。
 
+React Hooks 系统：
+  - DIProvider：在应用根部提供 DI 容器
+  - useService(serviceId)：获取服务实例
+  - useServiceEvent(event, initialValue)：自动订阅服务事件并更新 State
+  - useServiceEventWithCallback(event, callback)：订阅事件并执行回调
+  - useServiceEventArray(event, maxLength)：累积事件值到数组
+
+React 组件使用服务的标准模式：
+```typescript
+function MyComponent() {
+  // 1. 获取服务实例
+  const editorService = useService<IEditorService>(IEditorServiceId);
+  
+  // 2. 自动订阅事件（组件卸载时自动取消订阅）
+  const currentFile = useServiceEvent(
+    editorService.onDidChangeActiveFile,
+    null
+  );
+  
+  // 3. 调用服务方法
+  const loadContent = async () => {
+    const text = await editorService.getEditorFullText();
+  };
+  
+  return <div>{currentFile}</div>;
+}
+```
+
 4. 标准开发流程 (Standard Workflows)
 场景 A：添加一个新的 AI 工具 (如“网络搜索”)
 定义参数：在 services/agent/tools/ 下新建 WebSearchTool.ts。
