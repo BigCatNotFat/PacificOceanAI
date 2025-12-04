@@ -8,28 +8,30 @@
  * - Tool 描述拼接
  */
 
-import {
+import { injectable } from '../../platform/instantiation/descriptors';
+import type {
   IPromptService,
-  IPromptServiceId,
   LLMMessage,
   ToolDefinition,
   PromptBuildOptions
 } from '../../platform/agent/IPromptService';
-import { ChatMessage, ChatMode, ContextItem } from '../../platform/agent/IChatService';
-import { ModelId } from '../../platform/llm/IModelRegistryService';
-import { IToolService } from '../../platform/agent/IToolService';
+import { IPromptServiceId } from '../../platform/agent/IPromptService';
+import type { ChatMessage, ChatMode, ContextItem } from '../../platform/agent/IChatService';
+import type { ModelId } from '../../platform/llm/IModelRegistryService';
+import type { IToolService } from '../../platform/agent/IToolService';
+import { IToolServiceId } from '../../platform/agent/IToolService';
 
 /**
  * PromptService 实现
  */
+@injectable(IToolServiceId)
 export class PromptService implements IPromptService {
-  // ==================== 依赖服务（暂时未注入） ====================
-  // private editorService?: IEditorService;
-  // private modelRegistry?: IModelRegistryService;
-  private toolService?: IToolService;
-
-  constructor() {
-    // 临时空构造函数
+  constructor(
+    private readonly toolService: IToolService
+  ) {
+    console.log('[PromptService] 依赖注入成功', {
+      hasToolService: !!toolService
+    });
   }
 
   // ==================== 工具管理 ====================
@@ -38,11 +40,6 @@ export class PromptService implements IPromptService {
    * 根据模式获取可用工具列表
    */
   private getToolsForMode(mode: ChatMode): ToolDefinition[] {
-    if (!this.toolService) {
-      console.error('[PromptService] toolService 未初始化，无法获取工具列表');
-      return [];
-    }
-
     switch (mode) {
       case 'agent':
         // Agent 模式：所有工具可用

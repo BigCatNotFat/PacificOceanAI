@@ -52,8 +52,8 @@ export interface LLMConfig {
   stream?: boolean;
   /** 自定义 API 端点（可选，用于兼容 OpenAI SDK 的自建服务） */
   apiEndpoint?: string;
-  /** API 格式类型（默认根据 modelId 自动识别） */
-  apiFormat?: 'openai' | 'anthropic' | 'google' | 'deepseek' | 'custom';
+  /** API 格式类型 */
+  apiFormat?: 'openai' | 'openai-compatible' | 'anthropic' | 'custom';
   /** 其他厂商特定参数 */
   [key: string]: any;
 }
@@ -167,4 +167,4 @@ export interface ILLMService {
 /**
  * ILLMService 的服务标识符
  */
-export const ILLMServiceId = 'ILLMService';
+export const ILLMServiceId: symbol = Symbol('ILLMService');

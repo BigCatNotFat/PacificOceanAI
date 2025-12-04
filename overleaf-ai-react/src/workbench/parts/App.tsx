@@ -10,6 +10,11 @@ import { ConfigurationService } from '../../services/configuration/Configuration
 import { IStorageServiceId } from '../../platform/storage/storage';
 import { StorageService } from '../../services/storage/StorageService';
 import { StorageScope } from '../../base/browser/storage';
+import { ChatService, IChatServiceId } from '../../services/agent/ChatService';
+import { LLMService, ILLMServiceId } from '../../services/llm/LLMService';
+import { PromptService, IPromptServiceId } from '../../services/agent/PromptService';
+import { ToolService, IToolServiceId } from '../../services/agent/ToolService';
+import { ModelRegistryService, IModelRegistryServiceId } from '../../services/llm/ModelRegistryService';
 
 const App: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -31,7 +36,46 @@ const App: React.FC = () => {
         getServiceDependencies(ConfigurationService)
       )
     );
-    
+    di.registerDescriptor(
+      new ServiceDescriptor(
+        IModelRegistryServiceId,
+        ModelRegistryService,
+        getServiceDependencies(ModelRegistryService)
+      )
+    );
+
+    di.registerDescriptor(
+      new ServiceDescriptor(
+        IToolServiceId,
+        ToolService,
+        getServiceDependencies(ToolService)
+      )
+    );
+
+    di.registerDescriptor(
+      new ServiceDescriptor(
+        IPromptServiceId,
+        PromptService,
+        getServiceDependencies(PromptService)
+      )
+    );
+
+    di.registerDescriptor(
+      new ServiceDescriptor(
+        ILLMServiceId,
+        LLMService,
+        getServiceDependencies(LLMService)
+      )
+    );
+
+    di.registerDescriptor(
+      new ServiceDescriptor(
+        IChatServiceId,
+        ChatService,
+        getServiceDependencies(ChatService)
+      )
+    );
+
     return di;
   });
 

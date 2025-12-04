@@ -5,8 +5,8 @@
     "src": "../../../../../../../../../@crx/manifest",
     "isEntry": true
   },
-  "_StorageService-ByfOPK-1.js": {
-    "file": "assets/StorageService-ByfOPK-1.js",
+  "_StorageService-CiLsaoTq.js": {
+    "file": "assets/StorageService-CiLsaoTq.js",
     "name": "StorageService",
     "imports": [
       "_client-BaofO1uk.js"
@@ -21,31 +21,31 @@
     "name": "modulepreload-polyfill"
   },
   "main.tsx-loader.js": {
-    "file": "assets/main.tsx-loader-BP-_gwta.js",
+    "file": "assets/main.tsx-loader-DVCIhkyy.js",
     "src": "main.tsx-loader.js"
   },
   "src/extension/content/main.tsx": {
-    "file": "assets/main.tsx-C9qT42x0.js",
+    "file": "assets/main.tsx-BEuLFA5Q.js",
     "name": "main.tsx",
     "src": "src/extension/content/main.tsx",
     "isEntry": true,
     "imports": [
       "_client-BaofO1uk.js",
-      "_StorageService-ByfOPK-1.js"
+      "_StorageService-CiLsaoTq.js"
     ],
     "css": [
       "assets/main-BbDROD55.css"
     ]
   },
   "src/extension/options/index.html": {
-    "file": "assets/index.html--O1PCq_J.js",
+    "file": "assets/index.html-tLLxvwZo.js",
     "name": "index.html",
     "src": "src/extension/options/index.html",
     "isEntry": true,
     "imports": [
       "_modulepreload-polyfill-B5Qt9EMX.js",
       "_client-BaofO1uk.js",
-      "_StorageService-ByfOPK-1.js"
+      "_StorageService-CiLsaoTq.js"
     ]
   },
   "src/extension/popup/index.html": {

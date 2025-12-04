@@ -9,30 +9,42 @@
  * - 错误处理和重试
  */
 
+import { injectable } from '../../platform/instantiation/descriptors';
 import { Emitter } from '../../base/common/event';
-import {
+import type {
   ILLMService,
-  ILLMServiceId,
   LLMMessage,
   LLMConfig,
   StreamResponse,
   LLMDeltaChunk,
   LLMFinalMessage
 } from '../../platform/llm/ILLMService';
-import { IModelRegistryService } from '../../platform/llm/IModelRegistryService';
+import { ILLMServiceId } from '../../platform/llm/ILLMService';
+import type { 
+  IModelRegistryService
+} from '../../platform/llm/IModelRegistryService';
+import { IModelRegistryServiceId } from '../../platform/llm/IModelRegistryService';
+import type { 
+  IConfigurationService
+} from '../../platform/configuration/configuration';
+import { IConfigurationServiceId } from '../../platform/configuration/configuration';
 
 /**
  * LLMService 实现
  */
+@injectable(IConfigurationServiceId, IModelRegistryServiceId)
 export class LLMService implements ILLMService {
-  // ==================== 依赖服务（暂时未注入） ====================
-  private modelRegistry?: IModelRegistryService;
-
   /** 当前活跃的请求 */
   private activeRequests: Set<AbortController> = new Set();
 
-  constructor() {
-    // 临时空构造函数
+  constructor(
+    private readonly configService: IConfigurationService,
+    private readonly modelRegistry: IModelRegistryService
+  ) {
+    console.log('[LLMService] 依赖注入成功', {
+      hasConfigService: !!configService,
+      hasModelRegistry: !!modelRegistry
+    });
   }
 
   // ==================== 公共方法 ====================
@@ -130,6 +142,47 @@ export class LLMService implements ILLMService {
   // ==================== 私有方法 ====================
 
   /**
+   * 解析并归一化 API 协议格式
+   * 优先顺序：
+   * 1. 调用时显式传入的 config.apiFormat
+   * 2. ModelRegistry 中该模型的 provider
+   * 3. 根据 modelId 前缀进行推断
+   */
+  private resolveApiFormat(config: LLMConfig): LLMConfig['apiFormat'] {
+    let apiFormat = config.apiFormat as LLMConfig['apiFormat'] | 'google' | 'deepseek' | undefined;
+
+    // 1. 兼容旧值：'google' / 'deepseek' 统一归为 openai 兼容协议
+    if (apiFormat === 'google' || apiFormat === 'deepseek') {
+      apiFormat = 'openai-compatible';
+    }
+
+    // 2. 从模型注册表中读取 provider（只关心协议层，不关心真实底层厂商）
+    if (!apiFormat && this.modelRegistry) {
+      const modelInfo = this.modelRegistry.getModelInfo(config.modelId);
+      if (modelInfo) {
+        switch (modelInfo.provider) {
+          case 'openai':
+          case 'openai-compatible':
+          case 'anthropic':
+            apiFormat = modelInfo.provider;
+            break;
+          default:
+            apiFormat = 'custom';
+            break;
+        }
+      }
+    }
+
+    // 3. 最后兜底：根据 modelId 前缀简单推断
+    if (!apiFormat) {
+      apiFormat = this.getProvider(config.modelId) as LLMConfig['apiFormat'];
+    }
+
+    // 如果还没有，默认按 OpenAI 兼容处理
+    return apiFormat || 'openai-compatible';
+  }
+
+  /**
    * 执行流式请求
    */
   private async executeStreamRequest(
@@ -141,40 +194,30 @@ export class LLMService implements ILLMService {
     onDoneEmitter: Emitter<LLMFinalMessage>
   ): Promise<void> {
     try {
-      // 1. 优先使用用户指定的 API 格式
-      let apiFormat = config.apiFormat;
-      
-      // 2. 如果未指定，根据 modelId 自动识别
-      if (!apiFormat) {
-        apiFormat = this.getProvider(config.modelId) as any;
-      }
-      
-      // 3. 如果用户提供了自定义端点，使用 OpenAI 兼容格式
+      // 1. 统一解析 API 协议格式
+      let apiFormat = this.resolveApiFormat(config);
+
+      // 2. 如果用户提供了自定义端点，且不是 Claude，则统一按 OpenAI 兼容处理
       if (config.apiEndpoint) {
         console.log(`[LLMService] 使用自定义端点: ${config.apiEndpoint}`);
-        apiFormat = apiFormat || 'openai'; // 默认使用 OpenAI 格式
+        if (apiFormat !== 'anthropic') {
+          apiFormat = 'openai-compatible';
+        }
       }
-      
-      // 4. 根据格式调用对应的 API
+
+      // 3. 根据协议格式调用对应的 API
       switch (apiFormat) {
-        case 'openai':
-          await this.callOpenAI(messages, config, abortController, onTokenEmitter, onDoneEmitter);
-          break;
         case 'anthropic':
+          // 只有 Claude / Anthropic 走自己的实现（当前为模拟）
           await this.callAnthropic(messages, config, abortController, onTokenEmitter, onDoneEmitter);
           break;
-        case 'google':
-          await this.callGoogle(messages, config, abortController, onTokenEmitter, onDoneEmitter);
-          break;
-        case 'deepseek':
-          await this.callDeepSeek(messages, config, abortController, onTokenEmitter, onDoneEmitter);
-          break;
+        case 'openai':
+        case 'openai-compatible':
         case 'custom':
-          // 自定义格式，使用 OpenAI 兼容格式作为备用
-          await this.callOpenAI(messages, config, abortController, onTokenEmitter, onDoneEmitter);
-          break;
         default:
-          throw new Error(`不支持的 API 格式: ${apiFormat}`);
+          // ChatGPT / Gemini / DeepSeek / 以及大部分自建网关都统一走 OpenAI 兼容流式接口
+          await this.callOpenAIStreaming(messages, config, abortController, onTokenEmitter, onDoneEmitter);
+          break;
       }
 
       // 请求完成，移除记录
@@ -204,14 +247,51 @@ export class LLMService implements ILLMService {
       return 'anthropic';
     }
     if (modelId.startsWith('gemini-')) {
-      return 'google';
+      return 'openai-compatible';
     }
     if (modelId.startsWith('deepseek-')) {
-      return 'deepseek';
+      return 'openai-compatible';
     }
-    return 'unknown';
+    return 'openai-compatible';
   }
 
+  /**
+   * 统一构建 OpenAI 兼容接口的配置（包括 DeepSeek 等 OpenAI 兼容服务）
+   */
+  private async getOpenAIRequestConfig(config: LLMConfig): Promise<{ apiKey: string; endpoint: string }> {
+    let apiKey = '';
+    let baseUrl = 'https://api.openai.com/v1';
+    
+    if (this.configService) {
+      const apiConfig = await this.configService.getAPIConfig();
+      if (apiConfig) {
+        apiKey = apiConfig.apiKey;
+        baseUrl = apiConfig.baseUrl;
+        console.log('[LLMService] 使用用户配置:', {
+          baseUrl,
+          hasApiKey: !!apiKey
+        });
+      }
+    }
+    
+    // 优先级：config.apiEndpoint > 用户配置的 baseUrl > 默认值
+    const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    const endpoint = config.apiEndpoint || `${normalizedBaseUrl}/chat/completions`;
+    
+    console.log('[LLMService] 调用 OpenAI 兼容 API', {
+      endpoint,
+      modelId: config.modelId,
+      isCustomEndpoint: !!config.apiEndpoint,
+      isUserConfigured: !!this.configService
+    });
+    
+    if (!apiKey) {
+      throw new Error('API Key 未配置，请在设置中配置 API Key');
+    }
+
+    return { apiKey, endpoint };
+  }
+  
   /**
    * 调用 OpenAI API（或兼容的自定义端点）
    */
@@ -219,20 +299,43 @@ export class LLMService implements ILLMService {
     messages: LLMMessage[],
     config: LLMConfig,
     abortController: AbortController,
-    onTokenEmitter: Emitter<LLMDeltaChunk>,
-    onDoneEmitter: Emitter<LLMFinalMessage>
-  ): Promise<void> {
-    // 确定 API 端点
-    const endpoint = config.apiEndpoint || 'https://api.openai.com/v1/chat/completions';
+      onTokenEmitter: Emitter<LLMDeltaChunk>,
+      onDoneEmitter: Emitter<LLMFinalMessage>
+    ): Promise<void> {
+      // 1. 获取用户配置
+    let apiKey = '';
+    let baseUrl = 'https://api.openai.com/v1';
+    
+    if (this.configService) {
+      const apiConfig = await this.configService.getAPIConfig();
+      if (apiConfig) {
+        apiKey = apiConfig.apiKey;
+        baseUrl = apiConfig.baseUrl;
+        console.log('[LLMService] 使用用户配置:', {
+          baseUrl,
+          hasApiKey: !!apiKey
+        });
+      }
+    }
+    
+    // 2. 确定 API 端点
+    // 优先级：config.apiEndpoint > 用户配置的 baseUrl > 默认值
+    const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    const endpoint = config.apiEndpoint || `${normalizedBaseUrl}/chat/completions`;
     
     console.log('[LLMService] 调用 OpenAI 兼容 API', {
       endpoint,
       modelId: config.modelId,
-      isCustomEndpoint: !!config.apiEndpoint
+      isCustomEndpoint: !!config.apiEndpoint,
+      isUserConfigured: !!this.configService
     });
     
+    // 3. 检查 API Key
+    if (!apiKey) {
+      throw new Error('API Key 未配置，请在设置中配置 API Key');
+    }
+    
     // TODO: 实现真实的 API 调用
-    // const apiKey = await this.configService.getApiKey();
     // const response = await fetch(endpoint, {
     //   method: 'POST',
     //   headers: {
@@ -261,16 +364,162 @@ export class LLMService implements ILLMService {
     // }
 
     // 临时：模拟流式响应
-    const simulateText = config.apiEndpoint 
-      ? `使用自定义端点 (${endpoint}) 的模拟响应。\n\n这是一个兼容 OpenAI SDK 的自建服务。`
-      : 'OpenAI 模拟响应：这是一个模拟的 GPT 回复。\n\n你可以在这里看到流式输出的效果。';
+    const simulateText = `使用配置的端点: ${endpoint}\n\nAPI Key: ${apiKey.substring(0, 10)}...\n\n这是模拟响应，真实 API 调用已准备好，取消注释即可使用。`;
     
-    await this.simulateStreamingResponse(
-      simulateText,
-      onTokenEmitter,
-      onDoneEmitter,
-      abortController
-    );
+      await this.simulateStreamingResponse(
+        simulateText,
+        onTokenEmitter,
+        onDoneEmitter,
+        abortController
+      );
+    }
+
+  /**
+   * 调用 OpenAI 兼容 API 的真实流式接口（包括 DeepSeek 等）
+   */
+  private async callOpenAIStreaming(
+    messages: LLMMessage[],
+    config: LLMConfig,
+    abortController: AbortController,
+    onTokenEmitter: Emitter<LLMDeltaChunk>,
+    onDoneEmitter: Emitter<LLMFinalMessage>
+  ): Promise<void> {
+    const { apiKey, endpoint } = await this.getOpenAIRequestConfig(config);
+
+    const payload: any = {
+      model: config.modelId,
+      messages,
+      stream: true
+    };
+
+    if (typeof config.temperature === 'number') {
+      payload.temperature = config.temperature;
+    }
+    if (typeof config.topP === 'number') {
+      payload.top_p = config.topP;
+    }
+    if (typeof config.maxTokens === 'number') {
+      // 优先从调用配置或模型注册表中读取底层字段名，默认使用 max_tokens
+      const modelInfo = this.modelRegistry?.getModelInfo(config.modelId);
+      const maxTokensParamName =
+        (config as any).maxTokensParamName ||
+        (modelInfo?.defaultConfig as any)?.maxTokensParamName ||
+        'max_tokens';
+
+      payload[maxTokensParamName] = config.maxTokens;
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(payload),
+      signal: abortController.signal
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`LLM 请求失败 (${response.status}): ${errorText || response.statusText}`);
+    }
+
+    if (!response.body) {
+      throw new Error('响应 body 为空，当前环境可能不支持流式读取');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    let accumulatedContent = '';
+    let finishReason: LLMFinalMessage['finishReason'] | undefined;
+    let usage: LLMFinalMessage['usage'] | undefined;
+    let buffer = '';
+
+    while (true) {
+      if (abortController.signal.aborted) {
+        try {
+          await reader.cancel();
+        } catch {
+          // ignore
+        }
+        console.log('[LLMService] 请求已通过 AbortController 取消');
+        return;
+      }
+
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (!value) {
+        continue;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+
+      let separatorIndex: number;
+      while ((separatorIndex = buffer.indexOf('\n\n')) !== -1) {
+        const rawEvent = buffer.slice(0, separatorIndex);
+        buffer = buffer.slice(separatorIndex + 2);
+
+        const lines = rawEvent.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith(':')) {
+            continue;
+          }
+          if (!trimmed.startsWith('data:')) {
+            continue;
+          }
+
+          const dataStr = trimmed.slice('data:'.length).trim();
+          if (!dataStr || dataStr === '[DONE]') {
+            finishReason = finishReason || 'stop';
+            break;
+          }
+
+          let parsed: any;
+          try {
+            parsed = JSON.parse(dataStr);
+          } catch (err) {
+            console.warn('[LLMService] 解析 SSE 数据失败:', err, dataStr);
+            continue;
+          }
+
+          const choice = parsed.choices?.[0];
+          const delta = choice?.delta;
+
+          if (delta?.content) {
+            const text = String(delta.content);
+            accumulatedContent += text;
+            onTokenEmitter.fire({
+              delta: text,
+              type: 'content'
+            });
+          }
+
+          if (choice?.finish_reason) {
+            finishReason = choice.finish_reason as LLMFinalMessage['finishReason'];
+          }
+
+          if (parsed.usage) {
+            usage = {
+              promptTokens: parsed.usage.prompt_tokens ?? 0,
+              completionTokens: parsed.usage.completion_tokens ?? 0,
+              totalTokens: parsed.usage.total_tokens ?? 0
+            };
+          }
+        }
+      }
+    }
+
+    if (!abortController.signal.aborted) {
+      onDoneEmitter.fire({
+        content: accumulatedContent,
+        finishReason: finishReason || 'stop',
+        usage
+      });
+    }
   }
 
   /**
@@ -323,13 +572,15 @@ export class LLMService implements ILLMService {
     onTokenEmitter: Emitter<LLMDeltaChunk>,
     onDoneEmitter: Emitter<LLMFinalMessage>
   ): Promise<void> {
-    console.log('[LLMService] 调用 DeepSeek API (模拟)');
-    
-    await this.simulateStreamingResponse(
-      'DeepSeek 模拟响应：这是一个模拟的 DeepSeek 回复。',
+    console.log('[LLMService] 调用 DeepSeek API (OpenAI 兼容模式)');
+
+    // DeepSeek 提供 OpenAI 兼容接口，这里复用 OpenAI 的真实流式实现
+    await this.callOpenAIStreaming(
+      messages,
+      config,
+      abortController,
       onTokenEmitter,
-      onDoneEmitter,
-      abortController
+      onDoneEmitter
     );
   }
 

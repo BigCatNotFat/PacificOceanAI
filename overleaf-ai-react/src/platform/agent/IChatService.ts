@@ -147,4 +147,4 @@ export interface IChatService {
 /**
  * IChatService 的服务标识符
  */
-export const IChatServiceId = 'IChatService';
+export const IChatServiceId: symbol = Symbol('IChatService');

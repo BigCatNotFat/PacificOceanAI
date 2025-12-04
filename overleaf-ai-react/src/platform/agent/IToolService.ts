@@ -104,4 +104,4 @@ export interface IToolService {
 /**
  * IToolService 的服务标识符
  */
-export const IToolServiceId = 'IToolService';
+export const IToolServiceId: symbol = Symbol('IToolService');

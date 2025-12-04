@@ -46,6 +46,12 @@ export interface ModelConfig {
   topP?: number;
   /** 最大生成 tokens */
   maxTokens?: number;
+  /**
+   * 在底层 HTTP 请求中对应的字段名
+   * 例如：OpenAI 官方新模型使用 max_completion_tokens，
+   * 兼容服务通常使用 max_tokens
+   */
+  maxTokensParamName?: 'max_tokens' | 'max_completion_tokens';
   /** 推理强度（针对支持推理的模型） */
   reasoningEffort?: 'low' | 'medium' | 'high';
   /** 其他厂商特定参数 */
@@ -60,8 +66,8 @@ export interface ModelInfo {
   id: ModelId;
   /** 显示名称 */
   name: string;
-  /** 提供商 */
-  provider: 'openai' | 'anthropic' | 'google' | 'deepseek' | 'other';
+  /** 提供商（以及使用的协议类型） */
+  provider: 'openai' | 'openai-compatible' | 'anthropic' | 'other';
   /** 模型能力 */
   capabilities: ModelCapabilities;
   /** 默认配置 */
@@ -120,4 +126,4 @@ export interface IModelRegistryService {
 /**
  * IModelRegistryService 的服务标识符
  */
-export const IModelRegistryServiceId = 'IModelRegistryService';
+export const IModelRegistryServiceId: symbol = Symbol('IModelRegistryService');

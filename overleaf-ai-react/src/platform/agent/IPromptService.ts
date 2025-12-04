@@ -111,4 +111,4 @@ export interface IPromptService {
 /**
  * IPromptService 的服务标识符
  */
-export const IPromptServiceId = 'IPromptService';
+export const IPromptServiceId: symbol = Symbol('IPromptService');

@@ -5,6 +5,7 @@
  * 包括 GPT、Claude、Gemini、DeepSeek 等主流模型。
  */
 
+import { injectable } from '../../platform/instantiation/descriptors';
 import {
   IModelRegistryService,
   IModelRegistryServiceId,
@@ -33,7 +34,8 @@ const DEFAULT_CAPABILITIES: ModelCapabilities = {
 const DEFAULT_MODEL_CONFIG: Omit<ModelConfig, 'modelId'> = {
   temperature: 1.0,
   topP: 1.0,
-  maxTokens: 4096
+  maxTokens: 4096,
+  maxTokensParamName: 'max_tokens'
 };
 
 /**
@@ -42,7 +44,7 @@ const DEFAULT_MODEL_CONFIG: Omit<ModelConfig, 'modelId'> = {
 type PartialModelInfo = {
   id: ModelId;
   name: string;
-  provider: 'openai' | 'anthropic' | 'google' | 'deepseek' | 'other';
+  provider: 'openai' | 'openai-compatible' | 'anthropic' | 'other';
   description?: string;
   capabilities?: Partial<ModelCapabilities>;
   defaultConfig?: Partial<Omit<ModelConfig, 'modelId'>>;
@@ -51,6 +53,7 @@ type PartialModelInfo = {
 /**
  * ModelRegistryService 实现
  */
+@injectable()
 export class ModelRegistryService implements IModelRegistryService {
   /** 模型注册表 */
   private readonly _registry: Map<ModelId, ModelInfo> = new Map();
@@ -123,6 +126,9 @@ export class ModelRegistryService implements IModelRegistryService {
       capabilities: {
         maxOutputTokens: 16384,
         supportsVision: true
+      },
+      defaultConfig: {
+        maxTokensParamName: 'max_completion_tokens'
       }
       // 其他字段使用默认值：supportsTools: true, maxContextTokens: 128000 等
     });
@@ -135,10 +141,40 @@ export class ModelRegistryService implements IModelRegistryService {
       capabilities: {
         maxOutputTokens: 16384,
         supportsVision: true
+      },
+      defaultConfig: {
+        maxTokensParamName: 'max_completion_tokens'
       }
       // 默认配置完全使用默认值
     });
-
+    this.registerModel({
+      id: 'gpt-5.1',
+      name: 'gpt-5.1',
+      provider: 'openai',
+      description: 'gpt-5.1',
+      capabilities: {
+        maxOutputTokens: 16384,
+        supportsVision: true
+      },
+      defaultConfig: {
+        maxTokensParamName: 'max_completion_tokens'
+      }
+      // 默认配置完全使用默认值
+    });
+    this.registerModel({
+      id: 'gpt-5',
+      name: 'gpt-5',
+      provider: 'openai',
+      description: 'gpt-5',
+      capabilities: {
+        maxOutputTokens: 16384,
+        supportsVision: true
+      },
+      defaultConfig: {
+        maxTokensParamName: 'max_completion_tokens'
+      }
+      // 默认配置完全使用默认值
+    });
     this.registerModel({
       id: 'o1',
       name: 'o1',
@@ -152,7 +188,8 @@ export class ModelRegistryService implements IModelRegistryService {
         supportsSystemPrompt: false // 不支持 system prompt
       },
       defaultConfig: {
-        maxTokens: 8192
+        maxTokens: 8192,
+        maxTokensParamName: 'max_completion_tokens'
       }
     });
 
@@ -173,7 +210,8 @@ export class ModelRegistryService implements IModelRegistryService {
       defaultConfig: {
         modelId: 'o1-mini',
         temperature: 1.0,
-        maxTokens: 8192
+        maxTokens: 8192,
+        maxTokensParamName: 'max_completion_tokens'
       }
     });
 
@@ -226,7 +264,7 @@ export class ModelRegistryService implements IModelRegistryService {
     this.registerModel({
       id: 'gemini-2.0-flash-exp',
       name: 'Gemini 2.0 Flash',
-      provider: 'google',
+      provider: 'openai-compatible',
       description: 'Google 最新实验性快速模型',
       capabilities: {
         supportsTools: true,
@@ -248,7 +286,7 @@ export class ModelRegistryService implements IModelRegistryService {
     this.registerModel({
       id: 'gemini-1.5-pro',
       name: 'Gemini 1.5 Pro',
-      provider: 'google',
+      provider: 'openai-compatible',
       description: 'Google 高性能模型，超大上下文窗口',
       capabilities: {
         supportsTools: true,
@@ -271,7 +309,7 @@ export class ModelRegistryService implements IModelRegistryService {
     this.registerModel({
       id: 'deepseek-chat',
       name: 'DeepSeek Chat',
-      provider: 'deepseek',
+      provider: 'openai-compatible',
       description: 'DeepSeek 对话模型，性价比高',
       capabilities: {
         maxContextTokens: 64000
@@ -282,7 +320,7 @@ export class ModelRegistryService implements IModelRegistryService {
     this.registerModel({
       id: 'deepseek-reasoner',
       name: 'DeepSeek Reasoner',
-      provider: 'deepseek',
+      provider: 'openai-compatible',
       description: 'DeepSeek 推理模型，具有强大的思考能力',
       capabilities: {
         supportsTools: false,

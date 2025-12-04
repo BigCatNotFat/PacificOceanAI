@@ -1,22 +1,36 @@
-import { useCallback, useState } from 'react';
+import { useMemo } from 'react';
 import { ChatMessage } from '../types/chat';
+import { useService } from './useService';
+import { useServiceEvent } from './useServiceEvent';
+import type { IChatService, ChatMessage as ServiceChatMessage } from '../../platform/agent/IChatService';
+import { IChatServiceId } from '../../platform/agent/IChatService';
 
-const generateId = () => {
-  return typeof crypto !== 'undefined' && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-};
+/**
+ * 将 Service 层的 ChatMessage 映射为 UI 层的 ChatMessage
+ */
+function mapServiceMessageToUI(message: ServiceChatMessage): ChatMessage {
+  const role: ChatMessage['role'] = message.role === 'user' ? 'user' : 'bot';
 
-export function useChatMessages(initialMessages: ChatMessage[]) {
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  return {
+    id: message.id,
+    role,
+    content: message.content,
+    isHtml: false
+  };
+}
 
-  const appendMessage = useCallback(
-    (role: ChatMessage['role'], content: string, isHtml = false) => {
-      setMessages((prev) => [...prev, { id: generateId(), role, content, isHtml }]);
-    },
-    []
-  );
+/**
+ * 订阅 ChatService 的消息事件，并转换为 UI 可用的消息列表
+ */
+export function useChatMessages(initialMessages: ChatMessage[] = []) {
+  const chatService = useService<IChatService>(IChatServiceId);
+  const serviceMessages = useServiceEvent<ServiceChatMessage[]>(chatService.onDidMessageUpdate, []);
 
-  return { messages, appendMessage };
+  const messages = useMemo<ChatMessage[]>(() => {
+    const uiMessages = serviceMessages.map(mapServiceMessageToUI);
+    return [...initialMessages, ...uiMessages];
+  }, [initialMessages, serviceMessages]);
+
+  return { messages };
 }
 

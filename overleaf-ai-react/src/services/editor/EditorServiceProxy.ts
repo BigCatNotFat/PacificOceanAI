@@ -73,6 +73,13 @@ export class EditorServiceProxy extends Disposable implements IEditorService {
   }
 
   /**
+   * 在当前光标位置插入文本
+   */
+  async insertTextAtCursor(text: string): Promise<boolean> {
+    return this.rpcClient.call<boolean>('insertTextAtCursor', text);
+  }
+
+  /**
    * 轮询检查活动文件变化
    * 因为 RPC 无法直接传递事件，所以使用轮询模拟
    */

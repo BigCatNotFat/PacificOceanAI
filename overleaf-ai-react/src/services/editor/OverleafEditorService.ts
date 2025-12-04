@@ -209,6 +209,59 @@ export class OverleafEditorService extends Disposable implements IEditorService 
     }
   }
 
+  /**
+   * 在当前光标位置插入文本
+   * 使用 DOM 操作直接插入到 CodeMirror 6 的 contenteditable 区域
+   * 这个实现基于测试成功的代码
+   */
+  insertTextAtCursor(text: string): boolean {
+    try {
+      // 查找 CodeMirror 6 的可编辑内容区域
+      const cmContent = document.querySelector('.cm-content[contenteditable="true"]') as HTMLElement;
+      
+      if (!cmContent) {
+        console.error('未找到 .cm-content[contenteditable="true"] 元素');
+        return false;
+      }
+
+      // 聚焦编辑器
+      cmContent.focus();
+
+      // 获取当前选区
+      const selection = window.getSelection();
+      if (!selection || !selection.rangeCount) {
+        console.error('没有选区');
+        return false;
+      }
+
+      // 获取当前范围
+      const range = selection.getRangeAt(0);
+      
+      // 删除选中的内容（如果有）
+      range.deleteContents();
+
+      // 创建文本节点并插入
+      const textNode = document.createTextNode(text);
+      range.insertNode(textNode);
+
+      // 将光标移动到插入文本的末尾
+      range.setStartAfter(textNode);
+      range.setEndAfter(textNode);
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      // 触发输入事件，让 CodeMirror 知道内容已更改
+      cmContent.dispatchEvent(new Event('input', { bubbles: true }));
+      cmContent.dispatchEvent(new Event('change', { bubbles: true }));
+
+      console.log(`✅ 已在光标位置插入文本: "${text}"`);
+      return true;
+    } catch (error) {
+      console.error('插入文本失败:', error);
+      return false;
+    }
+  }
+
   private parseOutlineItems(items: NodeListOf<Element> | Element[]): OutlineItem[] {
     const result: OutlineItem[] = [];
 

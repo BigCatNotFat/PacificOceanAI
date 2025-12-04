@@ -35,7 +35,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const handleRef = useRef<HTMLDivElement | null>(null);
   const chatHistoryRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const { messages, appendMessage } = useChatMessages(initialMessages);
+  const { messages } = useChatMessages(initialMessages);
   const configService = useService<IConfigurationService>(IConfigurationServiceId);
   const chatService = useService<IChatService>(IChatServiceId);
   

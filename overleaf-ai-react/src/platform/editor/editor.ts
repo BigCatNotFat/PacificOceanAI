@@ -13,6 +13,13 @@ export interface IEditorService {
   readFileOutline(): OutlineItem[] | Promise<OutlineItem[]>;
   readFileTree(): FileTreeItem[] | Promise<FileTreeItem[]>;
   readImagePreviewUrl(fileName: string): Promise<string | null>;
+  
+  /**
+   * 在当前光标位置插入文本
+   * @param text - 要插入的文本
+   * @returns 是否插入成功
+   */
+  insertTextAtCursor(text: string): boolean | Promise<boolean>;
 }
 
 export const IEditorServiceId: symbol = Symbol('IEditorService');

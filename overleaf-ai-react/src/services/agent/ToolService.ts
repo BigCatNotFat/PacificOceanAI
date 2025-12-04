@@ -7,21 +7,24 @@
  * - 统一错误处理和日志记录
  */
 
-import {
+import { injectable } from '../../platform/instantiation/descriptors';
+import type {
   IToolService,
-  IToolServiceId,
   ITool,
   ToolExecutionResult
 } from '../../platform/agent/IToolService';
+import { IToolServiceId } from '../../platform/agent/IToolService';
 
 /**
  * ToolService 实现
  */
+@injectable()
 export class ToolService implements IToolService {
   /** 工具注册表 */
   private readonly _tools: Map<string, ITool> = new Map();
 
   constructor() {
+    console.log('[ToolService] 依赖注入成功');
     // 初始化内置工具
     this.initializeBuiltInTools();
   }

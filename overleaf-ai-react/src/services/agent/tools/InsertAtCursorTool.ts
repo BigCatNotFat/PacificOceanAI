@@ -77,17 +77,11 @@ export class InsertAtCursorTool implements ITool {
         };
       }
       
-      // TODO: 等待 IEditorService 扩展插入文本的方法
-      // 目前 IEditorService 接口中没有 insertText 方法
-      // 需要在 platform/editor/editor.ts 中添加类似以下方法：
-      // insertTextAtCursor(text: string): Promise<void>;
-      // 或者
-      // applyEdit(edit: TextEdit): Promise<void>;
+      // 调用 editorService 的 insertTextAtCursor 方法
+      // 该方法已经在 OverleafEditorService 中实现，使用测试成功的 DOM 操作
+      const success = await editorService.insertTextAtCursor(textToInsert);
       
-      // 临时方案：检查 editorService 是否有 insertTextAtCursor 方法
-      if (typeof (editorService as any).insertTextAtCursor === 'function') {
-        await (editorService as any).insertTextAtCursor(textToInsert);
-        
+      if (success) {
         return {
           success: true,
           data: {
@@ -98,11 +92,10 @@ export class InsertAtCursorTool implements ITool {
           displayMessage: `成功在光标处插入文本: "${textToInsert}"`
         };
       } else {
-        // 如果没有实现该方法，返回提示信息
         return {
           success: false,
-          errorMessage: 'insertTextAtCursor method not implemented in EditorService',
-          displayMessage: `编辑器服务尚未实现 insertTextAtCursor 方法。需要在 IEditorService 中添加该方法。`
+          errorMessage: 'Failed to insert text at cursor',
+          displayMessage: '插入文本失败，请确保光标在编辑器中'
         };
       }
       
