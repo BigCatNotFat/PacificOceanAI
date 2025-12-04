@@ -21,11 +21,11 @@
     "name": "modulepreload-polyfill"
   },
   "main.tsx-loader.js": {
-    "file": "assets/main.tsx-loader-kMCn4QJw.js",
+    "file": "assets/main.tsx-loader-BP-_gwta.js",
     "src": "main.tsx-loader.js"
   },
   "src/extension/content/main.tsx": {
-    "file": "assets/main.tsx-DTCHjza4.js",
+    "file": "assets/main.tsx-C9qT42x0.js",
     "name": "main.tsx",
     "src": "src/extension/content/main.tsx",
     "isEntry": true,

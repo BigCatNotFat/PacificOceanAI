@@ -6,6 +6,8 @@ import { ChatMessage } from '../types/chat';
 import { useService } from '../hooks/useService';
 import { IConfigurationServiceId } from '../../platform/configuration/configuration';
 import type { IConfigurationService, AIModelConfig } from '../../platform/configuration/configuration';
+import { IChatServiceId } from '../../platform/agent/IChatService';
+import type { IChatService } from '../../platform/agent/IChatService';
 
 type SidebarProps = {
   isOpen: boolean;
@@ -35,11 +37,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const { messages, appendMessage } = useChatMessages(initialMessages);
   const configService = useService<IConfigurationService>(IConfigurationServiceId);
+  const chatService = useService<IChatService>(IChatServiceId);
   
   const [availableModels, setAvailableModels] = useState<AIModelConfig[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [thinkingStates, setThinkingStates] = useState<Record<string, boolean>>({});
   const [chatMode, setChatMode] = useState<'agent' | 'chat' | 'normal'>('chat');
+  const [hasApiKey, setHasApiKey] = useState<boolean>(false);
+  const [isCheckingApiKey, setIsCheckingApiKey] = useState<boolean>(true);
   const [conversations] = useState([
     { id: '1', name: '新对话' },
     { id: '2', name: 'React组件优化' },
@@ -69,6 +74,33 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
     loadModels();
   }, [configService, selectedModel]);
 
+  // 检查是否配置了 API Key
+  useEffect(() => {
+    const checkApiKey = async () => {
+      setIsCheckingApiKey(true);
+      try {
+        // TODO: 实现真实的 API Key 检查
+        // const configured = await configService.hasApiKey();
+        
+        // 临时：检查是否有已启用的模型
+        // 真实实现时，应该检查每个模型对应的 API Key 是否配置
+        const models = await configService.getModels();
+        const hasConfiguredModel = models.some(m => m.enabled);
+        setHasApiKey(hasConfiguredModel);
+        
+        if (!hasConfiguredModel) {
+          console.warn('[Sidebar] 未检测到已启用的模型，请前往设置配置');
+        }
+      } catch (error) {
+        console.error('[Sidebar] 检查 API Key 失败:', error);
+        setHasApiKey(false);
+      } finally {
+        setIsCheckingApiKey(false);
+      }
+    };
+    checkApiKey();
+  }, [configService]);
+
   useEffect(() => {
     const chat = chatHistoryRef.current;
     if (chat) {
@@ -76,19 +108,35 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
     }
   }, [messages]);
 
-  const sendMessage = useCallback(() => {
+  const sendMessage = useCallback(async () => {
     const value = inputRef.current?.value?.trim() ?? '';
     if (!value) return;
+    
+    // 检查 API Key
+    if (!hasApiKey) {
+      console.error('[Sidebar] 未配置 API Key，无法发送消息');
+      return;
+    }
 
-    appendMessage('user', value);
+    // 清空输入框
     if (inputRef.current) {
       inputRef.current.value = '';
     }
 
-    setTimeout(() => {
-      appendMessage('bot', '收到');
-    }, 500);
-  }, [appendMessage]);
+    // TODO: 从 UI 收集上下文条目
+    // - 用户选中的文件
+    // - 用户选中的代码片段
+    // - 其他附加信息
+    const contextItems = [];
+
+    // 调用 ChatService 发送消息
+    await chatService.sendMessage(value, {
+      mode: chatMode,
+      modelId: selectedModel,
+      contextItems,
+      conversationId: currentConversation
+    });
+  }, [chatService, chatMode, selectedModel, currentConversation]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -296,6 +344,21 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
           })}
         </div>
 
+        {/* API Key 警告提示 */}
+        {!isCheckingApiKey && !hasApiKey && (
+          <div className="ai-warning-banner">
+            <span className="material-symbols" style={{ color: '#ff9800', marginRight: '8px' }}>warning</span>
+            <span style={{ flex: 1 }}>未检测到 API Key 配置，请先</span>
+            <button 
+              className="ai-toolbar-btn" 
+              onClick={openSettings}
+              style={{ marginLeft: '8px', textDecoration: 'underline' }}
+            >
+              前往设置
+            </button>
+          </div>
+        )}
+
         <div className="ai-input-area">
           <div className="ai-input-wrapper">
             <textarea
@@ -390,7 +453,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
               <button className="ai-toolbar-btn" title="语音输入">
                 <span className="material-symbols">mic</span>
               </button>
-              <button className="ai-send-btn-new" onClick={sendMessage} title="发送">
+              <button 
+                className="ai-send-btn-new" 
+                onClick={sendMessage} 
+                disabled={!hasApiKey || isCheckingApiKey}
+                title={!hasApiKey ? '请先配置 API Key' : '发送'}
+                style={{ opacity: (!hasApiKey || isCheckingApiKey) ? 0.5 : 1, cursor: (!hasApiKey || isCheckingApiKey) ? 'not-allowed' : 'pointer' }}
+              >
                 <span className="material-symbols">send</span>
               </button>
             </div>
