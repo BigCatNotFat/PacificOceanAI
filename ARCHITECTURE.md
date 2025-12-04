@@ -49,6 +49,7 @@ src/
 ├── base/                   # [L1] 基础库 (严禁包含业务逻辑)
 │   ├── common/             # 通用工具 (Event, Disposable, UUID, URI)
 │   └── browser/            # 浏览器API封装 (Storage, DOM Utils)
+│   └── ...                 # 其他工具
 │
 ├── platform/               # [L2] 接口定义层 (只定义 Interface 和 DI 标识符)
 │   ├── editor/             # IEditorService.ts
@@ -57,6 +58,7 @@ src/
 │   ├── tools/              # ITool.ts (AI 工具标准接口)
 │   ├── instantiation/      # DI 容器核心代码 (ServiceCollection)
 │   └── configuration/      # IConfigurationService.ts
+│   └── ...                 # 其他接口
 │
 ├── services/               # [L3] 业务实现层 (具体的逻辑代码)
 │   ├── editor/             # OverleafEditorService.ts (DOM 操作/RPC 调用)
@@ -64,11 +66,13 @@ src/
 │   ├── agent/              # AgentService.ts (LLM 调用核心)
 │   │   └── tools/          # 具体工具实现 (如 ReadFileTool.ts, WebSearchTool.ts)
 │   └── log/                # LogService.ts
+│   └── ...                 # 其他服务
 │
 ├── workbench/              # [L4] UI 表现层 (React 组件)
 │   ├── parts/              # 具体功能面板 (ChatPanel, LoginPanel)
 │   ├── common/             # 通用 UI 组件 (Button, Input)
 │   └── hooks/              # useService.ts (连接 React 与 Service 层的桥梁)
+│   └── ...                 # 其他组件
 │
 └── extension/              # [Entry] 插件入口
     ├── content/            # Content Script (注入页面，负责 DOM 操作)
