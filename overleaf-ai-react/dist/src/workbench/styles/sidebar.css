@@ -363,6 +363,65 @@
   color: var(--text-secondary);
 }
 
+/* ==================== Tool Call Block ==================== */
+.ai-tool-block {
+  border-left: 2px dashed var(--border-secondary);
+  padding-left: 12px;
+  margin-left: 2px;
+  margin-top: 8px;
+}
+
+.ai-tool-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 0;
+  transition: color 0.2s;
+}
+
+.ai-tool-header:hover {
+  color: var(--text-primary);
+}
+
+.ai-tool-label {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.ai-tool-name {
+  color: var(--text-tertiary);
+  opacity: 0.9;
+}
+
+.ai-tool-chevron {
+  font-size: 14px;
+  transition: transform 0.2s;
+  color: var(--text-tertiary);
+}
+
+.ai-tool-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.ai-tool-content {
+  margin-top: 8px;
+  padding: 12px;
+  background-color: var(--bg-secondary);
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.ai-tool-pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-monospace, Menlo, Monaco, Consolas, "Courier New", monospace);
+}
+
 /* ==================== Error Item ==================== */
 .ai-error-item {
   padding: 8px 0;

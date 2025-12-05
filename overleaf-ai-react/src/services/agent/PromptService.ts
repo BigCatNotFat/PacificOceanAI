@@ -198,7 +198,7 @@ Mode: ${mode}`;
 You are in AGENT mode. You have access to tools that can help you complete tasks.
 
 **Important Instructions:**
-1. First, think carefully about the user's request in a <thinking> section.
+1. First, think carefully about the user's request 
 2. Break down complex tasks into steps.
 3. Use tools when necessary to accomplish tasks.
 4. For code editing operations, you MUST use the appropriate tool (edit_code) instead of just describing changes.
@@ -211,8 +211,7 @@ You are in AGENT mode. You have access to tools that can help you complete tasks
 - Some tools (like edit_code) require user approval
 - If a tool fails, explain the error and suggest alternatives
 
-**Thinking Process:**
-Use <thinking>...</thinking> tags to show your reasoning process. This helps users understand your approach but won't be saved in history.`;
+`;
 
     // 添加工具列表
     if (tools && tools.length > 0) {
@@ -279,6 +278,7 @@ Keep responses clear and to the point.`;
     includeThinking: boolean = false
   ): LLMMessage[] {
     const llmMessages: LLMMessage[] = [];
+    const useReasoningField = true;
 
     for (const msg of history) {
       // 跳过 system 消息（已经在最前面添加了）
@@ -289,8 +289,9 @@ Keep responses clear and to the point.`;
       // 构建内容
       let content = msg.content;
 
-      // 可选：包含思考内容（仅用于调试）
-      if (includeThinking && msg.thinking && msg.role === 'assistant') {
+      // 可选：在可见 content 中包含思考内容（仅用于调试）
+      // 注意：对于 DeepSeek 等推理模型，真正用于续写的仍然是 reasoning_content 字段
+      if (!useReasoningField && includeThinking && msg.thinking && msg.role === 'assistant') {
         content = `<thinking>\n${msg.thinking}\n</thinking>\n\n${content}`;
       }
 
@@ -299,8 +300,8 @@ Keep responses clear and to the point.`;
         content
       };
 
-      // 添加工具调用信息
-      if (msg.toolCalls && msg.toolCalls.length > 0) {
+      // 对 assistant 消息添加工具调用信息（OpenAI: 只有 assistant 可以带 tool_calls）
+      if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
         llmMsg.tool_calls = msg.toolCalls.map(tc => ({
           id: tc.id,
           type: 'function' as const,
@@ -311,10 +312,16 @@ Keep responses clear and to the point.`;
         }));
       }
 
-      // Tool 消息需要特殊处理
+      // Tool 消息需要特殊处理：只设置 tool_call_id / name，不再设置 tool_calls
       if (msg.role === 'tool' && msg.toolCalls && msg.toolCalls[0]) {
         llmMsg.tool_call_id = msg.toolCalls[0].id;
         llmMsg.name = msg.toolCalls[0].name;
+      }
+
+      // 对于带有思考内容的 assistant 消息，将其写入 reasoning_content 字段
+      // 以兼容 DeepSeek v3.2 等需要该字段的推理模型（尤其是在使用工具调用时）
+      if (useReasoningField && msg.role === 'assistant' && msg.thinking) {
+        (llmMsg as any).reasoning_content = msg.thinking;
       }
 
       llmMessages.push(llmMsg);

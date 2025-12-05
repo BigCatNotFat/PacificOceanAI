@@ -17,14 +17,14 @@
   "content_scripts": [
     {
       "js": [
-        "assets/main.tsx-loader-DVCIhkyy.js"
+        "assets/main.tsx-loader-CGOSJKZB.js"
       ],
       "matches": [
         "https://www.overleaf.com/*"
       ],
       "run_at": "document_idle",
       "css": [
-        "assets/main-BbDROD55.css"
+        "assets/main-DbrKFK2W.css"
       ]
     }
   ],
@@ -37,7 +37,7 @@
         "src/workbench/styles/sidebar.css",
         "assets/client-BaofO1uk.js",
         "assets/StorageService-CiLsaoTq.js",
-        "assets/main.tsx-BEuLFA5Q.js"
+        "assets/main.tsx-np0hu28N.js"
       ],
       "use_dynamic_url": false
     }

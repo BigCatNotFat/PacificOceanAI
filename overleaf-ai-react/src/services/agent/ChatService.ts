@@ -1,37 +1,3 @@
-/**
- * ChatService - Services 层实现
- * 
- * 核心对话编排服务，负责：
- * - 状态管理（消息列表、处理状态）
- * - Agent 循环（LLM 调用 -> 工具检测 -> 工具执行 -> 继续调用）
- * - 工具审批流程
- * 
- * 使用示例：
- * ```typescript
- * const chatService = new ChatService();
- * 
- * // 监听消息更新
- * chatService.onDidMessageUpdate((messages) => {
- *   console.log('消息更新:', messages);
- * });
- * 
- * // 监听工具审批请求
- * chatService.onDidToolCallPending((event) => {
- *   console.log('工具需要审批:', event.toolName);
- *   // 显示审批弹窗...
- *   // 用户点击批准后：
- *   chatService.approveToolCall(event.id);
- * });
- * 
- * // 发送消息
- * await chatService.sendMessage('帮我读取第三行', {
- *   modelId: 'gpt-4',
- *   mode: 'agent',
- *   contextItems: []
- * });
- * ```
- */
-
 import { injectable } from '../../platform/instantiation/descriptors';
 import { Emitter, Event } from '../../base/common/event';
 import type {
@@ -115,6 +81,11 @@ export class ChatService implements IChatService {
     }
 
     this._isProcessing = true;
+
+    // 新一轮用户提问前，清除历史 assistant 消息中的思考内容
+    // 对应 DeepSeek 官方示例中的 clear_reasoning_content(messages)
+    // 不影响当前 Agent Loop 内部的工具调用链（该链路不会再次调用 sendMessage）
+    this.clearHistoryThinking();
     
     // 保存当前选项，用于后续的 Agent Loop
     this._currentOptions = options;
@@ -300,6 +271,19 @@ export class ChatService implements IChatService {
   // ==================== 私有方法 ====================
 
   /**
+   * 清除历史 assistant 消息中的思考内容
+   * 防止在新的用户提问中继续携带过往的 reasoning_content，
+   * 与 DeepSeek 官方 demo 中 clear_reasoning_content(messages) 的行为保持一致。
+   */
+  private clearHistoryThinking(): void {
+    for (const msg of this._messages) {
+      if (msg.role === 'assistant') {
+        msg.thinking = undefined;
+      }
+    }
+  }
+
+  /**
    * 启动 Agent Loop（第一轮）
    * @param options - 聊天选项
    * @param llmMessages - 已构建好的 LLM 消息列表（包含 system prompt 和历史）
@@ -316,14 +300,49 @@ export class ChatService implements IChatService {
       try {
         // 获取模型配置
         const modelConfig = this.modelRegistry.getDefaultConfig(options.modelId);
-        
-        // 调用流式 API
+        const modelCapabilities = this.modelRegistry.getCapabilities(options.modelId);
+        if (!modelConfig) {
+          throw new Error(`未找到模型配置: ${options.modelId}`);
+        }
+
+        // 根据模型能力和当前模式，决定是否启用工具调用
+        const enableTools =
+          !!modelCapabilities &&
+          modelCapabilities.supportsTools &&
+          (options.mode === 'agent' || options.mode === 'chat');
+
+        // 为 OpenAI 兼容接口构建 tools 参数
+        let toolsForLLM: any[] | undefined;
+        if (enableTools) {
+          const tools =
+            options.mode === 'agent'
+              ? this.toolService.getAllTools()
+              : this.toolService.getReadOnlyTools();
+
+          if (tools && tools.length > 0) {
+            toolsForLLM = tools.map(tool => ({
+              type: 'function',
+              function: {
+                name: tool.name,
+                description: tool.description,
+                parameters: tool.parameters
+              }
+            }));
+          }
+        }
+
+        // 基于模型默认配置构建 LLM 调用配置
+        // - modelConfig.modelId 作为实际底层模型 ID（例如 deepseek-reasoner -> deepseek-chat）
+        // - 透传 maxTokensParamName、thinking 等额外参数
         const stream = await this.llmService.streamResponse(llmMessages, {
-          modelId: options.modelId,
-          temperature: modelConfig?.temperature,
-          topP: modelConfig?.topP,
-          maxTokens: modelConfig?.maxTokens,
-          stream: true
+          ...(modelConfig as any),
+          modelId: modelConfig.modelId || options.modelId,
+          stream: true,
+          // 仅在模型支持工具且当前模式允许时传入 tools / tool_choice
+          ...(toolsForLLM && {
+            tools: toolsForLLM,
+            tool_choice: 'auto'
+          })
         });
 
         // 存储当前流，用于 abort
@@ -356,7 +375,11 @@ export class ChatService implements IChatService {
           // 更新最终内容
           assistantMessage.content = finalMessage.content;
           assistantMessage.status = 'completed';
-          assistantMessage.thinking = undefined; // 清除思考内容
+
+          // 如果最终消息中包含 thinking，则保留完整思考内容
+          if (finalMessage.thinking) {
+            assistantMessage.thinking = finalMessage.thinking;
+          }
           
           // 检查是否有工具调用
           if (finalMessage.toolCalls && finalMessage.toolCalls.length > 0) {

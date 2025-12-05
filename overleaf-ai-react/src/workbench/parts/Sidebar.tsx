@@ -19,12 +19,13 @@ type SidebarProps = {
 
 // 扩展消息类型以支持更多UI元素
 interface ExtendedChatMessage extends ChatMessage {
-  type?: 'normal' | 'action' | 'thinking' | 'error' | 'warning';
+  type?: 'normal' | 'action' | 'thinking' | 'tool' | 'error' | 'warning';
   metadata?: {
     thinkingTime?: number;
     actionIcon?: string;
     fileName?: string;
     collapsed?: boolean;
+    toolName?: string;
   };
 }
 
@@ -333,7 +334,31 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                     )}
                   </div>
                 )}
-                
+
+                {msgType === 'tool' && (
+                  <div className="ai-tool-block">
+                    <div
+                      className="ai-tool-header"
+                      onClick={() => toggleThinking(msg.id)}
+                    >
+                      <span className="ai-tool-label">
+                        Tool
+                        {extMsg.metadata?.toolName && (
+                          <span className="ai-tool-name"> ({extMsg.metadata.toolName})</span>
+                        )}
+                      </span>
+                      <span className={`material-symbols ai-tool-chevron ${thinkingStates[msg.id] ? 'expanded' : ''}`}>
+                        chevron_right
+                      </span>
+                    </div>
+                    {thinkingStates[msg.id] && (
+                      <div className="ai-tool-content">
+                        <pre className="ai-tool-pre">{msg.content}</pre>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {msgType === 'error' && (
                   <div className="ai-error-item">
                     <span className="ai-error-text">Error: {msg.content}</span>

@@ -208,14 +208,10 @@ export class LLMService implements ILLMService {
       // 3. 根据协议格式调用对应的 API
       switch (apiFormat) {
         case 'anthropic':
-          // 只有 Claude / Anthropic 走自己的实现（当前为模拟）
-          await this.callAnthropic(messages, config, abortController, onTokenEmitter, onDoneEmitter);
-          break;
         case 'openai':
         case 'openai-compatible':
         case 'custom':
         default:
-          // ChatGPT / Gemini / DeepSeek / 以及大部分自建网关都统一走 OpenAI 兼容流式接口
           await this.callOpenAIStreaming(messages, config, abortController, onTokenEmitter, onDoneEmitter);
           break;
       }
@@ -260,7 +256,7 @@ export class LLMService implements ILLMService {
    */
   private async getOpenAIRequestConfig(config: LLMConfig): Promise<{ apiKey: string; endpoint: string }> {
     let apiKey = '';
-    let baseUrl = 'https://api.openai.com/v1';
+    let baseUrl = '';
     
     if (this.configService) {
       const apiConfig = await this.configService.getAPIConfig();
@@ -304,7 +300,7 @@ export class LLMService implements ILLMService {
     ): Promise<void> {
       // 1. 获取用户配置
     let apiKey = '';
-    let baseUrl = 'https://api.openai.com/v1';
+    let baseUrl = '';
     
     if (this.configService) {
       const apiConfig = await this.configService.getAPIConfig();
@@ -409,6 +405,24 @@ export class LLMService implements ILLMService {
       payload[maxTokensParamName] = config.maxTokens;
     }
 
+    // 工具调用：如果上层传入了 tools / tool_choice，则透传给 OpenAI 兼容接口
+    const tools = (config as any).tools;
+    if (Array.isArray(tools) && tools.length > 0) {
+      payload.tools = tools;
+
+      const toolChoice = (config as any).tool_choice;
+      if (toolChoice) {
+        payload.tool_choice = toolChoice;
+      }
+    }
+
+    // DeepSeek v3.2 等推理模型的 thinking 开关
+    // 等价于 Python SDK 中的 extra_body={"thinking": {"type": "enabled"}}
+    const thinking = (config as any).thinking;
+    if (thinking) {
+      payload.thinking = thinking;
+    }
+
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -432,8 +446,11 @@ export class LLMService implements ILLMService {
     const decoder = new TextDecoder();
 
     let accumulatedContent = '';
+    let accumulatedThinking: string | undefined;
     let finishReason: LLMFinalMessage['finishReason'] | undefined;
     let usage: LLMFinalMessage['usage'] | undefined;
+    // 累积工具调用的增量片段（按 index 存储）
+    const toolCallDeltas: Array<{ id?: string; name?: string; arguments: string }> = [];
     let buffer = '';
 
     while (true) {
@@ -489,6 +506,17 @@ export class LLMService implements ILLMService {
           const choice = parsed.choices?.[0];
           const delta = choice?.delta;
 
+          // DeepSeek 等推理模型可能使用 reasoning_content 字段承载思考内容
+          const reasoningDelta = (delta as any)?.reasoning_content;
+          if (reasoningDelta) {
+            const text = String(reasoningDelta);
+            accumulatedThinking = (accumulatedThinking || '') + text;
+            onTokenEmitter.fire({
+              delta: text,
+              type: 'thinking'
+            });
+          }
+
           if (delta?.content) {
             const text = String(delta.content);
             accumulatedContent += text;
@@ -496,6 +524,42 @@ export class LLMService implements ILLMService {
               delta: text,
               type: 'content'
             });
+          }
+
+          // 工具调用增量：OpenAI Chat Completions 在 delta.tool_calls 中返回
+          const toolCallsDelta = (delta as any)?.tool_calls;
+          if (Array.isArray(toolCallsDelta) && toolCallsDelta.length > 0) {
+            for (const tcDelta of toolCallsDelta) {
+              const index = typeof tcDelta.index === 'number' ? tcDelta.index : 0;
+              if (!toolCallDeltas[index]) {
+                toolCallDeltas[index] = { id: undefined, name: undefined, arguments: '' };
+              }
+              const target = toolCallDeltas[index];
+
+              if (tcDelta.id) {
+                target.id = tcDelta.id;
+              }
+
+              const fn = tcDelta.function;
+              if (fn?.name) {
+                target.name = fn.name;
+              }
+              const argsDelta = typeof fn?.arguments === 'string' ? fn.arguments : '';
+              if (argsDelta) {
+                target.arguments = (target.arguments || '') + argsDelta;
+
+                // 向上层发出工具调用增量事件（可选，用于调试或 UI 展示）
+                onTokenEmitter.fire({
+                  delta: argsDelta,
+                  type: 'tool_call',
+                  toolCall: {
+                    id: target.id,
+                    name: target.name,
+                    arguments: target.arguments
+                  }
+                });
+              }
+            }
           }
 
           if (choice?.finish_reason) {
@@ -514,8 +578,50 @@ export class LLMService implements ILLMService {
     }
 
     if (!abortController.signal.aborted) {
+      try {
+        // 对于使用 <thinking> 标签的模型，从 content 中再尝试解析一次
+        const { thinking } = this.extractThinkingFromContent(accumulatedContent);
+        if (thinking && !accumulatedThinking) {
+          accumulatedThinking = thinking;
+        }
+      } catch (err) {
+        console.warn('[LLMService] 解析思考内容时出错:', err);
+      }
+
+      if (accumulatedThinking) {
+        console.log('[LLMService] 解析到思考内容:', accumulatedThinking);
+      }
+
+      // 将累积的工具调用增量整理为最终的 toolCalls 列表
+      let finalToolCalls: LLMFinalMessage['toolCalls'] | undefined;
+      if (toolCallDeltas.length > 0) {
+        finalToolCalls = [];
+        toolCallDeltas.forEach((tc, index) => {
+          if (!tc) {
+            return;
+          }
+          const rawArgs = (tc.arguments || '').trim();
+          let parsedArgs: Record<string, any> = {};
+          if (rawArgs) {
+            try {
+              parsedArgs = JSON.parse(rawArgs);
+            } catch (err) {
+              console.warn('[LLMService] 解析工具调用参数失败:', err, rawArgs);
+            }
+          }
+
+          finalToolCalls!.push({
+            id: tc.id || String(index),
+            name: tc.name || '',
+            arguments: parsedArgs
+          });
+        });
+      }
+
       onDoneEmitter.fire({
         content: accumulatedContent,
+        thinking: accumulatedThinking,
+        toolCalls: finalToolCalls,
         finishReason: finishReason || 'stop',
         usage
       });
@@ -634,6 +740,32 @@ export class LLMService implements ILLMService {
    */
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * 从完整文本中解析 <thinking>...</thinking> 段落
+   * 目前仅用于日志打印，不改变对外返回的 content
+   */
+  private extractThinkingFromContent(
+    fullText: string
+  ): { thinking?: string; visibleContent: string } {
+    if (!fullText) {
+      return { visibleContent: '' };
+    }
+
+    const thinkingRegex = /<thinking>([\s\S]*?)<\/thinking>/i;
+    const match = thinkingRegex.exec(fullText);
+
+    if (!match) {
+      return { visibleContent: fullText };
+    }
+
+    const thinking = match[1].trim();
+    const before = fullText.slice(0, match.index);
+    const after = fullText.slice(match.index + match[0].length);
+    const visibleContent = `${before}${after}`;
+
+    return { thinking, visibleContent };
   }
 
   /**

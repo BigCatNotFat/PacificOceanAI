@@ -21,6 +21,11 @@ export type LLMMessageRole = 'system' | 'user' | 'assistant' | 'tool';
 export interface LLMMessage {
   role: LLMMessageRole;
   content: string;
+  /**
+   * 推理内容（DeepSeek 等推理模型使用）
+   * 对应 OpenAI/DeepSeek 协议中的 reasoning_content 字段
+   */
+  reasoning_content?: string;
   /** 工具调用信息（assistant 消息可能包含） */
   tool_calls?: Array<{
     id: string;

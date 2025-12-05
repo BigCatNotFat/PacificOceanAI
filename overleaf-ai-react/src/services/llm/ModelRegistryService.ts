@@ -90,32 +90,6 @@ export class ModelRegistryService implements IModelRegistryService {
 
   // ==================== 私有方法 ====================
 
-  /**
-   * 初始化所有模型配置
-   * 
-   * 注册新模型示例（最简形式）：
-   * this.registerModel({
-   *   id: 'my-model',
-   *   name: 'My Model',
-   *   provider: 'other',
-   *   description: '我的自定义模型'
-   * });
-   * // 以上会使用所有默认值：supportsTools: true, maxContextTokens: 128000, temperature: 1.0 等
-   * 
-   * 只覆盖部分字段示例：
-   * this.registerModel({
-   *   id: 'my-model',
-   *   name: 'My Model',
-   *   provider: 'other',
-   *   capabilities: {
-   *     supportsVision: true,  // 只改这一个字段
-   *     maxContextTokens: 200000  // 和这一个字段
-   *   },
-   *   defaultConfig: {
-   *     temperature: 0.7  // 只改温度
-   *   }
-   * });
-   */
   private initializeModels(): void {
     // OpenAI 系列
     this.registerModel({
@@ -239,13 +213,13 @@ export class ModelRegistryService implements IModelRegistryService {
     });
 
     this.registerModel({
-      id: 'claude-3-opus',
-      name: 'Claude 3 Opus',
+      id: 'claude-haiku-4-5-20251001',
+      name: 'claude-haiku-4-5-20251001',
       provider: 'anthropic',
-      description: 'Claude 3 最强大版本',
+      description: 'claude-haiku-4-5-20251001',
       capabilities: {
         supportsTools: true,
-        supportsReasoning: false,
+        supportsReasoning: true,
         maxContextTokens: 200000,
         maxOutputTokens: 4096,
         supportsVision: true,
@@ -253,9 +227,7 @@ export class ModelRegistryService implements IModelRegistryService {
         supportsStreaming: true
       },
       defaultConfig: {
-        modelId: 'claude-3-opus',
-        temperature: 1.0,
-        topP: 1.0,
+        modelId: 'claude-haiku-4-5-20251001',
         maxTokens: 4096
       }
     });
@@ -284,13 +256,13 @@ export class ModelRegistryService implements IModelRegistryService {
     });
 
     this.registerModel({
-      id: 'gemini-1.5-pro',
-      name: 'Gemini 1.5 Pro',
+      id: 'gemini-2.5-pro',
+      name: 'Gemini 2.5 Pro',
       provider: 'openai-compatible',
       description: 'Google 高性能模型，超大上下文窗口',
       capabilities: {
         supportsTools: true,
-        supportsReasoning: false,
+        supportsReasoning: true,
         maxContextTokens: 2000000,
         maxOutputTokens: 8192,
         supportsVision: true,
@@ -298,13 +270,33 @@ export class ModelRegistryService implements IModelRegistryService {
         supportsStreaming: true
       },
       defaultConfig: {
-        modelId: 'gemini-1.5-pro',
+        modelId: 'gemini-2.5-pro',
         temperature: 1.0,
         topP: 0.95,
         maxTokens: 4096
       }
     });
-
+    this.registerModel({
+      id: 'gemini-3-pro-preview',
+      name: 'gemini-3-pro-preview',
+      provider: 'openai-compatible',
+      description: 'Google 高性能模型，超大上下文窗口',
+      capabilities: {
+        supportsTools: true,
+        supportsReasoning: true,
+        maxContextTokens: 2000000,
+        maxOutputTokens: 8192,
+        supportsVision: true,
+        supportsSystemPrompt: true,
+        supportsStreaming: true
+      },
+      defaultConfig: {
+        modelId: 'gemini-3-pro-preview',
+        temperature: 1.0,
+        topP: 0.95,
+        maxTokens: 4096
+      }
+    });
     // DeepSeek 系列
     this.registerModel({
       id: 'deepseek-chat',
@@ -312,18 +304,21 @@ export class ModelRegistryService implements IModelRegistryService {
       provider: 'openai-compatible',
       description: 'DeepSeek 对话模型，性价比高',
       capabilities: {
-        maxContextTokens: 64000
+        maxContextTokens: 64000,
+        supportsTools: true,
+        supportsReasoning: false
       }
       // 其他所有字段都使用默认值
     });
 
     this.registerModel({
       id: 'deepseek-reasoner',
-      name: 'DeepSeek Reasoner',
+      name: 'DeepSeek Reasoner (v3.2)',
       provider: 'openai-compatible',
-      description: 'DeepSeek 推理模型，具有强大的思考能力',
+      description: 'DeepSeek 推理模式：基于 deepseek-chat，启用 thinking 参数',
       capabilities: {
-        supportsTools: false,
+        // 推理模式下仍然支持工具调用
+        supportsTools: true,
         supportsReasoning: true,
         maxContextTokens: 64000,
         maxOutputTokens: 8192,
@@ -332,9 +327,14 @@ export class ModelRegistryService implements IModelRegistryService {
         supportsStreaming: true
       },
       defaultConfig: {
-        modelId: 'deepseek-reasoner',
+        // 实际调用底层 deepseek-chat 模型
+        modelId: 'deepseek-chat',
         temperature: 1.0,
-        maxTokens: 8192
+        maxTokens: 8192,
+        // 启用 DeepSeek v3.2 推理能力
+        thinking: {
+          type: 'enabled'
+        }
       }
     });
   }

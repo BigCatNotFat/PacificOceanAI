@@ -19,6 +19,11 @@ export type LLMMessageRole = 'system' | 'user' | 'assistant' | 'tool';
 export interface LLMMessage {
   role: LLMMessageRole;
   content: string;
+  /**
+   * 推理内容（DeepSeek 等推理模型使用）
+   * 对应 OpenAI/DeepSeek 协议中的 reasoning_content 字段
+   */
+  reasoning_content?: string;
   /** 工具调用信息（assistant 消息可能包含） */
   tool_calls?: Array<{
     id: string;
@@ -46,6 +51,14 @@ export interface LLMConfig {
   topP?: number;
   /** 最大生成 tokens */
   maxTokens?: number;
+  /**
+   * DeepSeek 等模型的推理控制参数。
+   * 例如：{ type: 'enabled' } 表示开启推理模式。
+   */
+  thinking?: {
+    type: 'enabled' | 'disabled';
+    [key: string]: any;
+  };
   /** 推理强度（针对支持推理的模型） */
   reasoningEffort?: 'low' | 'medium' | 'high';
   /** 是否启用流式输出 */
