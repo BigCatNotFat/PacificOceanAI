@@ -5,7 +5,6 @@
  */
 
 import type { LLMMessage, LLMConfig } from '../../../platform/llm/ILLMService';
-import type { LLMProviderRequest } from '../../../platform/llm/ILLMProviderService';
 
 /**
  * API 配置
@@ -20,17 +19,15 @@ export interface APIConfig {
  */
 export abstract class BaseLLMAdapter {
   /**
-   * 构建请求配置
+   * 聊天接口 - 所有 Provider 必须实现
    * @param messages - 消息列表
    * @param config - LLM 配置
-   * @param apiConfig - API 配置
-   * @returns 厂商特定的请求配置
+   * @returns 完整的最终响应
    */
-  abstract buildRequest(
+  abstract chat(
     messages: LLMMessage[],
-    config: LLMConfig,
-    apiConfig: APIConfig
-  ): LLMProviderRequest;
+    config: LLMConfig
+  ): Promise<import('../../../platform/llm/ILLMService').LLMFinalMessage>;
 
   /**
    * 格式化消息列表（某些厂商可能需要特殊处理）

@@ -1,11 +1,17 @@
 /**
  * AgentService - Services 层实现
  * 
- * Agent 编排服务实现，负责：
- * - Agent Loop 循环控制
+ * 核心职责：
+ * - Agent Loop 生命周期管理
+ * - 根据意图（agent/chat/normal）决定行为
+ * - 模型调用（通过 LLMService）
  * - 工具调用决策（自动执行 vs 需要审批）
  * - 工具审批状态管理
- * - 根据模型能力选择工具
+ * 
+ * 维护列表三：当前执行视图 (The Working Memory)
+ * - 给当前 AI 看的，包含当前轮的思维链细节
+ * - 不包含之前轮的细节
+ * - 高保真：保留所有细节（Thinking、Tool Output）
  */
 
 import { injectable } from '../../platform/instantiation/descriptors';
@@ -22,7 +28,7 @@ import type {
   MessageRole,
   ToolCallPendingEvent
 } from '../../platform/agent/IChatService';
-import type { ILLMService } from '../../platform/llm/ILLMService';
+import type { ILLMService, LLMConfig } from '../../platform/llm/ILLMService';
 import { ILLMServiceId } from '../../platform/llm/ILLMService';
 import type { IPromptService } from '../../platform/agent/IPromptService';
 import { IPromptServiceId } from '../../platform/agent/IPromptService';
@@ -48,12 +54,8 @@ interface PendingToolCall {
  */
 @injectable(ILLMServiceId, IPromptServiceId, IToolServiceId, IModelRegistryServiceId)
 export class AgentService implements IAgentService {
-  // ==================== 事件发射器 ====================
-  private readonly _onDidLoopUpdate = new Emitter<AgentLoopState>();
-  public readonly onDidLoopUpdate = this._onDidLoopUpdate.event;
-
+  // ==================== 内部事件发射器（不对外暴露） ====================
   private readonly _onDidToolCallPending = new Emitter<ToolCallPendingEvent>();
-  public readonly onDidToolCallPending = this._onDidToolCallPending.event;
 
   // ==================== 核心状态 ====================
   
@@ -72,30 +74,12 @@ export class AgentService implements IAgentService {
     console.log('[AgentService] 依赖注入成功');
   }
 
-  // ==================== 公共方法 ====================
-//       test1: [
-//   {
-//     "id": "msg_0",
-//     "role": "user",
-//     "content": "你好",
-//     "status": "pending",
-//     "timestamp": 1764906453216
-//   },
-//   {
-//     "id": "msg_1",
-//     "role": "assistant",
-//     "content": "",
-//     "status": "streaming",
-//     "timestamp": 1764906453216
-//   }
-// ]
-// test2: {
-//   "modelId": "deepseek-chat",
-//   "mode": "chat",
-//   "contextItems": [],
-//   "maxIterations": 10
-// }
-  async startLoop(
+  // ==================== 公共方法（唯一） ====================
+  
+  /**
+   * 执行 Agent 任务（唯一的公共方法）
+   */
+  async execute(
     initialMessages: ChatMessage[],
     options: AgentOptions
   ): Promise<AgentLoopController> {
@@ -112,6 +96,7 @@ export class AgentService implements IAgentService {
       loopId,
       options,
       messages: [...initialMessages],
+      workingMemory: [], // 初始化工作记忆为空
       iteration: 0,
       status: 'running',
       pendingToolCalls: new Map(),
@@ -126,17 +111,22 @@ export class AgentService implements IAgentService {
     // 异步执行 Loop
     this.executeLoop(context);
 
-    // 返回控制器
+    // 返回控制器（包含工具审批方法和事件）
     return {
       id: loopId,
       abort: () => this.abortLoop(loopId),
+      approveToolCall: (toolCallId: string) => this.approveToolCall(loopId, toolCallId),
+      rejectToolCall: (toolCallId: string) => this.rejectToolCall(loopId, toolCallId),
       onDone: onDoneEmitter.event,
       onUpdate: onUpdateEmitter.event,
-      onError: onErrorEmitter.event
+      onError: onErrorEmitter.event,
+      onToolCallPending: this._onDidToolCallPending.event
     };
   }
 
-  async approveToolCall(loopId: string, toolCallId: string): Promise<void> {
+  // ==================== 私有方法（通过 controller 调用） ====================
+
+  private async approveToolCall(loopId: string, toolCallId: string): Promise<void> {
     const context = this.activeLoops.get(loopId);
     if (!context) {
       console.warn(`[AgentService] Loop ${loopId} 不存在`);
@@ -168,7 +158,7 @@ export class AgentService implements IAgentService {
     }
   }
 
-  async rejectToolCall(loopId: string, toolCallId: string): Promise<void> {
+  private async rejectToolCall(loopId: string, toolCallId: string): Promise<void> {
     const context = this.activeLoops.get(loopId);
     if (!context) {
       console.warn(`[AgentService] Loop ${loopId} 不存在`);
@@ -190,8 +180,6 @@ export class AgentService implements IAgentService {
     pendingCall.reject(new Error('用户拒绝了工具调用'));
   }
 
-  // ==================== 私有方法 ====================
-
   /**
    * 执行 Agent Loop
    */
@@ -202,20 +190,23 @@ export class AgentService implements IAgentService {
       while (context.iteration < maxIterations && !context.aborted) {
         console.log(`[AgentService] Loop ${context.loopId} 第 ${context.iteration + 1} 轮迭代`);
 
+        // 重置当前轮的工作记忆
+        context.workingMemory = [];
+
         // 1. 选择可用工具
         const availableTools = this.selectToolsForModel(
           context.options.modelId,
           context.options.mode
         );
 
-        // 2. 构建 Prompt
+        // 2. 构建 Prompt（基于完整历史，但不包含之前轮的详细 thinking 等）
         const llmMessages = await this.promptService.constructMessages(
           context.messages,
           context.options.mode,
           context.options.contextItems,
           {
             modelId: context.options.modelId,
-            tools: availableTools
+            includeThinking: false // 不包含历史轮次的 thinking 细节
           }
         );
 
@@ -225,114 +216,33 @@ export class AgentService implements IAgentService {
           availableTools
         );
 
-        // 4. 调用 LLM
-        // 检查最后一条消息是否已经是 assistant 占位消息
-        let assistantMessage: ChatMessage;
-        const lastMessage = context.messages[context.messages.length - 1];
-        if (lastMessage && lastMessage.role === 'assistant' && !lastMessage.content && lastMessage.status === 'streaming') {
-          // 使用已存在的占位消息
-          assistantMessage = lastMessage;
-          console.log('[AgentService] 使用已存在的 assistant 占位消息');
-        } else {
-          // 创建新的 assistant 消息
-          assistantMessage = this.createMessage('assistant', '');
-          assistantMessage.status = 'streaming';
-          context.messages.push(assistantMessage);
-          context.onUpdateEmitter.fire([...context.messages]);
-          console.log('[AgentService] 创建新的 assistant 消息');
-        }
-        
-        // console.log('[AgentService] LLM 调用参数:', JSON.stringify({
-        //   llmMessages,
-        //   llmConfig
-        // }, null, 2));
-        
-        const stream = await this.llmService.streamResponse(llmMessages, llmConfig);
-
-        // 5. 等待流式响应完成
-        const finalMessage = await this.waitForStreamCompletion(
-          stream,
-          assistantMessage,
-          context
-        );
-
-        // 6. 检查是否有工具调用
-        if (!finalMessage.toolCalls || finalMessage.toolCalls.length === 0) {
-          // 没有工具调用，结束循环
-          console.log(`[AgentService] Loop ${context.loopId} 完成（无工具调用）`);
-          break;
-        }
-
-        // 7. 处理工具调用
-        const shouldContinue = await this.handleToolCallsInLoop(
-          context,
-          finalMessage.toolCalls
-        );
-
-        if (!shouldContinue) {
-          // 有需要审批的工具，暂停循环等待用户操作
-          console.log(`[AgentService] Loop ${context.loopId} 暂停（等待审批）`);
-          context.status = 'waiting_approval';
-          this.emitLoopState(context);
-          return; // 等待 approveToolCall 或 rejectToolCall
-        }
-
-        context.iteration++;
-      }
-
-      // Loop 完成
-      context.status = 'completed';
-      this.emitLoopState(context);
-      context.onDoneEmitter.fire([...context.messages]);
-      this.activeLoops.delete(context.loopId);
-
-    } catch (error) {
-      console.error(`[AgentService] Loop ${context.loopId} 错误:`, error);
-      context.status = 'error';
-      this.emitLoopState(context);
-      context.onErrorEmitter.fire(error instanceof Error ? error : new Error(String(error)));
-      this.activeLoops.delete(context.loopId);
-    }
-  }
-
-  /**
-   * 等待流式响应完成
-   */
-  private async waitForStreamCompletion(
-    stream: any,
-    assistantMessage: ChatMessage,
-    context: LoopContext
-  ): Promise<ChatMessage> {
-    return new Promise((resolve, reject) => {
-      // 监听 token 流
-      stream.onToken((chunk: any) => {
-        if (chunk.type === 'thinking') {
-          assistantMessage.thinking = (assistantMessage.thinking || '') + chunk.delta;
-        } else if (chunk.type === 'content') {
-          assistantMessage.content += chunk.delta;
-        }
+        // 4. 调用 LLM（使用新的 chat 接口）
+        // 创建 assistant 占位消息
+        const assistantMessage = this.createMessage('assistant', '');
+        assistantMessage.status = 'streaming';
+        context.messages.push(assistantMessage);
+        context.workingMemory.push(assistantMessage); // 加入工作记忆
         context.onUpdateEmitter.fire([...context.messages]);
-      });
 
-      // 监听错误
-      stream.onError((error: Error) => {
-        assistantMessage.status = 'error';
-        assistantMessage.error = error.message;
-        context.onUpdateEmitter.fire([...context.messages]);
-        reject(error);
-      });
-
-      // 监听完成
-      stream.onDone((finalMsg: any) => {
-        assistantMessage.content = finalMsg.content;
+        // 将当前回答对应的消息 ID 传递给 LLMConfig，方便底层 Provider 做 UI 流式更新
+        (llmConfig as LLMConfig).uiStreamMeta = {
+          conversationId: context.loopId,
+          messageId: assistantMessage.id
+        };
+        
+        // 5. 调用 LLM（一次性返回完整结果，UI 更新由 Provider 内部实时推送）
+        const finalResult = await this.llmService.chat(llmMessages, llmConfig);
+        
+        // 6. 更新 assistant 消息
+        assistantMessage.content = finalResult.content;
         assistantMessage.status = 'completed';
         
-        if (finalMsg.thinking) {
-          assistantMessage.thinking = finalMsg.thinking;
+        if (finalResult.thinking) {
+          assistantMessage.thinking = finalResult.thinking;
         }
         
-        if (finalMsg.toolCalls) {
-          assistantMessage.toolCalls = finalMsg.toolCalls.map((tc: any) => ({
+        if (finalResult.toolCalls) {
+          assistantMessage.toolCalls = finalResult.toolCalls.map((tc: any) => ({
             id: tc.id,
             name: tc.name,
             arguments: tc.arguments,
@@ -341,9 +251,41 @@ export class AgentService implements IAgentService {
         }
         
         context.onUpdateEmitter.fire([...context.messages]);
-        resolve(assistantMessage);
-      });
-    });
+
+        // 7. 检查是否有工具调用
+        if (!assistantMessage.toolCalls || assistantMessage.toolCalls.length === 0) {
+          // 没有工具调用，结束循环
+          console.log(`[AgentService] Loop ${context.loopId} 完成（无工具调用）`);
+          break;
+        }
+
+        // 8. 处理工具调用
+        const shouldContinue = await this.handleToolCallsInLoop(
+          context,
+          assistantMessage.toolCalls!
+        );
+
+        if (!shouldContinue) {
+          // 有需要审批的工具，暂停循环等待用户操作
+          console.log(`[AgentService] Loop ${context.loopId} 暂停（等待审批）`);
+          context.status = 'waiting_approval';
+          return; // 等待 controller.approveToolCall 或 controller.rejectToolCall
+        }
+
+        context.iteration++;
+      }
+
+      // Loop 完成
+      context.status = 'completed';
+      context.onDoneEmitter.fire([...context.messages]);
+      this.activeLoops.delete(context.loopId);
+
+    } catch (error) {
+      console.error(`[AgentService] Loop ${context.loopId} 错误:`, error);
+      context.status = 'error';
+      context.onErrorEmitter.fire(error instanceof Error ? error : new Error(String(error)));
+      this.activeLoops.delete(context.loopId);
+    }
   }
 
   /**
@@ -406,6 +348,7 @@ export class AgentService implements IAgentService {
               status: 'completed'
             }];
             context.messages.push(toolMessage);
+            context.workingMemory.push(toolMessage); // 加入工作记忆
             context.onUpdateEmitter.fire([...context.messages]);
           },
           (error) => {
@@ -435,6 +378,7 @@ export class AgentService implements IAgentService {
             status: 'completed'
           }];
           context.messages.push(toolMessage);
+          context.workingMemory.push(toolMessage); // 加入工作记忆
           context.onUpdateEmitter.fire([...context.messages]);
         } catch (error) {
           const errorMessage = this.createMessage('tool', `工具执行失败: ${error}`);
@@ -475,7 +419,7 @@ export class AgentService implements IAgentService {
   /**
    * 构建 LLM 配置
    */
-  private buildLLMConfig(modelId: string, tools: ITool[]): any {
+  private buildLLMConfig(modelId: string, tools: ITool[]): LLMConfig {
     const defaultConfig = this.modelRegistry.getDefaultConfig(modelId);
     if (!defaultConfig) {
       throw new Error(`未找到模型配置: ${modelId}`);
@@ -514,20 +458,7 @@ export class AgentService implements IAgentService {
     console.log(`[AgentService] 中断 Loop: ${loopId}`);
     context.aborted = true;
     context.status = 'aborted';
-    this.emitLoopState(context);
     this.activeLoops.delete(loopId);
-  }
-
-  /**
-   * 发射 Loop 状态
-   */
-  private emitLoopState(context: LoopContext): void {
-    this._onDidLoopUpdate.fire({
-      loopId: context.loopId,
-      iteration: context.iteration,
-      status: context.status,
-      currentMessages: [...context.messages]
-    });
   }
 
   /**
@@ -565,7 +496,6 @@ export class AgentService implements IAgentService {
    * 释放资源
    */
   dispose(): void {
-    this._onDidLoopUpdate.dispose();
     this._onDidToolCallPending.dispose();
     this.activeLoops.clear();
   }
@@ -577,7 +507,16 @@ export class AgentService implements IAgentService {
 interface LoopContext {
   loopId: string;
   options: AgentOptions;
+  
+  /** 完整对话历史（所有轮次，包括 system + context） */
   messages: ChatMessage[];
+  
+  /** 当前轮的工作记忆（列表三：The Working Memory）
+   * 只包含当前轮次产生的内容，给 AI 看的高保真视图
+   * 包含：当前 assistant 消息、thinking、tool calls、tool results
+   */
+  workingMemory: ChatMessage[];
+  
   iteration: number;
   status: 'running' | 'waiting_approval' | 'completed' | 'error' | 'aborted';
   pendingToolCalls: Map<string, PendingToolCall>;
@@ -589,4 +528,3 @@ interface LoopContext {
 
 // 导出服务标识符
 export { IAgentServiceId };
-

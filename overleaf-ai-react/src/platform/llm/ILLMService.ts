@@ -67,6 +67,15 @@ export interface LLMConfig {
   apiEndpoint?: string;
   /** API 格式类型 */
   apiFormat?: 'openai' | 'openai-compatible' | 'anthropic' | 'custom';
+  /**
+   * UI 流式刷新相关元信息（可选）
+   * 供底层 Provider 在解析流时回调 UIStreamService 使用
+   */
+  uiStreamMeta?: {
+    conversationId?: string;
+    /** 当前这轮回答对应的 ChatMessage ID */
+    messageId?: string;
+  };
   /** 其他厂商特定参数 */
   [key: string]: any;
 }
@@ -112,7 +121,7 @@ export interface LLMFinalMessage {
 }
 
 /**
- * 流式响应接口
+ * 流式响应接口（已废弃，仅保留用于兼容）
  */
 export interface StreamResponse {
   /**
@@ -140,41 +149,29 @@ export interface StreamResponse {
 
 /**
  * ILLMService - LLM 调用服务接口
+ * 
+ * 简化后的接口，只提供一个核心方法。
+ * 流式更新由 Provider 内部通过 UIStreamService 实时推送，上层无需关心。
  */
 export interface ILLMService {
   /**
-   * 流式调用 LLM
-   * @param messages - 消息列表（已由 PromptService 构建）
-   * @param config - LLM 配置参数
-   * @returns 流式响应对象
+   * 调用 LLM（唯一的核心方法）
+   * 
+   * 工作流程：
+   * 1. 根据 config.modelId 判断供应商
+   * 2. 选择对应的 Provider
+   * 3. 调用 Provider.chat()
+   * 4. Provider 内部流式更新 UI（通过 UIStreamService）
+   * 5. 返回完整结果
+   * 
+   * @param messages - 消息列表（历史上下文）
+   * @param config - LLM 配置参数（包含 modelId）
+   * @returns 完整的最终响应
    */
-  streamResponse(
-    messages: LLMMessage[],
-    config: LLMConfig
-  ): Promise<StreamResponse>;
-
-  /**
-   * 非流式调用 LLM（一次性返回完整结果）
-   * @param messages - 消息列表
-   * @param config - LLM 配置参数
-   * @returns 完整响应
-   */
-  completeResponse(
+  chat(
     messages: LLMMessage[],
     config: LLMConfig
   ): Promise<LLMFinalMessage>;
-
-  /**
-   * 检查模型是否可用
-   * @param modelId - 模型 ID
-   * @returns 是否可用
-   */
-  isModelAvailable(modelId: string): Promise<boolean>;
-
-  /**
-   * 取消所有进行中的请求
-   */
-  cancelAll(): void;
 }
 
 /**

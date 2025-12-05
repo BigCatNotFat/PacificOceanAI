@@ -65,11 +65,13 @@ export interface ILLMProviderService {
    * 解析流式响应的单个数据块
    * @param dataString - SSE 数据字符串
    * @param provider - 厂商类型
+   * @param config - 本次调用的 LLM 配置（可选，用于 UI 流式元信息等）
    * @returns 解析后的增量数据
    */
   parseStreamChunk(
     dataString: string,
-    provider: LLMProviderRequest['provider']
+    provider: LLMProviderRequest['provider'],
+    config?: LLMConfig
   ): ParsedStreamChunk | null;
 }
 
@@ -77,4 +79,3 @@ export interface ILLMProviderService {
  * ILLMProviderService 的服务标识符
  */
 export const ILLMProviderServiceId: symbol = Symbol('ILLMProviderService');
-

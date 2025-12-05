@@ -33,14 +33,27 @@ export interface AgentOptions {
 export interface AgentLoopController {
   /** Loop ID */
   id: string;
+  
   /** 中断 Loop */
   abort(): void;
+  
+  /** 批准工具调用 */
+  approveToolCall(toolCallId: string): Promise<void>;
+  
+  /** 拒绝工具调用 */
+  rejectToolCall(toolCallId: string): Promise<void>;
+  
   /** Loop 完成事件 */
   onDone: Event<ChatMessage[]>;
+  
   /** Loop 更新事件（每轮迭代） */
   onUpdate: Event<ChatMessage[]>;
+  
   /** Loop 错误事件 */
   onError: Event<Error>;
+  
+  /** 工具调用待审批事件 */
+  onToolCallPending: Event<ToolCallPendingEvent>;
 }
 
 /**
@@ -57,42 +70,28 @@ export interface AgentLoopState {
 
 /**
  * IAgentService - Agent 编排服务接口
+ * 
+ * 简化后只提供一个核心方法，其他操作通过返回的 controller 进行。
  */
 export interface IAgentService {
   /**
-   * 启动 Agent Loop
+   * 执行 Agent 任务（唯一的公共方法）
+   * 
+   * 工作流程：
+   * 1. 根据 mode (agent/chat/normal) 决定行为
+   * 2. 通过 PromptService 获取提示词
+   * 3. 调用 LLM（通过 LLMService）
+   * 4. 通过 ToolService 处理工具调用
+   * 5. 管理工具审批流程
+   * 
    * @param initialMessages - 初始消息列表（包含用户问题）
    * @param options - Agent 选项
-   * @returns AgentLoopController - 用于控制循环的句柄
+   * @returns AgentLoopController - 控制器，包含 abort/approve/reject 等方法
    */
-  startLoop(
+  execute(
     initialMessages: ChatMessage[],
     options: AgentOptions
   ): Promise<AgentLoopController>;
-
-  /**
-   * 批准工具调用（由外部触发）
-   * @param loopId - Loop ID
-   * @param toolCallId - 工具调用 ID
-   */
-  approveToolCall(loopId: string, toolCallId: string): Promise<void>;
-
-  /**
-   * 拒绝工具调用
-   * @param loopId - Loop ID
-   * @param toolCallId - 工具调用 ID
-   */
-  rejectToolCall(loopId: string, toolCallId: string): Promise<void>;
-
-  /**
-   * Agent Loop 状态更新事件
-   */
-  onDidLoopUpdate: Event<AgentLoopState>;
-
-  /**
-   * 工具调用待审批事件
-   */
-  onDidToolCallPending: Event<ToolCallPendingEvent>;
 }
 
 /**

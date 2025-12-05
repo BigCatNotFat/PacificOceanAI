@@ -1,16 +1,19 @@
 /**
- * ChatService - Services 层实现（重构后）
+ * ChatService - Services 层实现
  * 
- * 职责简化为：
+ * 核心职责：
+ * - 维护列表一：用户视图 (The Master List)
+ *   · 给用户看的，全量存储
+ *   · 包含所有细节：thinking、工具调用参数和结果
+ * 
+ * - 生成列表二：历史上下文视图 (The Context List)
+ *   · 给 AI 看的，有损压缩
+ *   · 剔除 thinking，折叠失败的工具调用
+ *   · 临时性，不存储，每次请求前计算
+ * 
  * - 会话状态管理
- * - 消息历史管理
  * - 事件分发（消息更新、工具审批）
  * - 会话持久化
- * 
- * 不再负责：
- * - Agent Loop 逻辑（移至 AgentService）
- * - 工具调用决策（移至 AgentService）
- * - LLM 调用（由 AgentService 负责）
  */
 
 import { injectable } from '../../platform/instantiation/descriptors';
@@ -40,7 +43,10 @@ export class ChatService implements IChatService {
 
   // ==================== 核心状态 ====================
   
-  /** 当前活跃会话的消息列表 */
+  /** 列表一：用户视图 (The Master List)
+   * - 全量存储，给用户看的
+   * - 包含所有细节：thinking、工具调用等
+   */
   private _messages: ChatMessage[] = [];
 
   /** 防止重复提交 */
@@ -59,10 +65,7 @@ export class ChatService implements IChatService {
       hasAgentService: !!agentService
     });
 
-    // 订阅 AgentService 的工具审批事件，转发给 UI
-    this.agentService.onDidToolCallPending((event) => {
-      this._onDidToolCallPending.fire(event);
-    });
+    console.log('[ChatService] 初始化完成');
   }
 
   // ==================== 公共方法 ====================
@@ -82,6 +85,8 @@ export class ChatService implements IChatService {
     try {
       // 1. 写入用户消息
       const userMessage = this.createMessage('user', input);
+      // 用户消息在发送完成后即视为 completed，确保会被包含在上下文列表中
+      userMessage.status = 'completed';
       this._messages.push(userMessage);
       this._onDidMessageUpdate.fire([...this._messages]);
 
@@ -94,45 +99,22 @@ export class ChatService implements IChatService {
       console.log('[ChatService] 发送消息:', {
         mode: options.mode,
         modelId: options.modelId,
-        contextItemsCount: options.contextItems?.length || 0
+        contextItemsCount: options.contextItems?.length || 0,
+        userMessageId: userMessage.id,
+        assistantPlaceholderId: assistantPlaceholder.id
       });
 
-      // 构造一份用于 Agent Loop 的消息副本，去掉 assistant 的 thinking，避免旧的 reasoning_content 影响新一轮对话
-      const loopMessages = this.stripThinkingForLoop(this._messages);
-      // const test1 = loopMessages;
-      // const test2 = {
-      //     modelId: options.modelId,
-      //     mode: options.mode,
-      //     contextItems: options.contextItems,
-      //     maxIterations: 10
-      //   };
-      // console.log('test1:', JSON.stringify(test1, null, 2));
-      // console.log('test2:', JSON.stringify(test2, null, 2));
-//       test1: [
-//   {
-//     "id": "msg_0",
-//     "role": "user",
-//     "content": "你好",
-//     "status": "pending",
-//     "timestamp": 1764906453216
-//   },
-//   {
-//     "id": "msg_1",
-//     "role": "assistant",
-//     "content": "",
-//     "status": "streaming",
-//     "timestamp": 1764906453216
-//   }
-// ]
-// test2: {
-//   "modelId": "deepseek-chat",
-//   "mode": "chat",
-//   "contextItems": [],
-//   "maxIterations": 10
-// }
-      // 3. 启动 Agent Loop（交给 AgentService）
-      this._currentLoop = await this.agentService.startLoop(
-        loopMessages,
+      // 生成列表二：历史上下文视图（给 AI 看的，有损压缩）
+      const contextList = this.buildContextList(this._messages);
+
+      console.log('[ChatService] Context list before AgentService.execute:', {
+        contextMessageCount: contextList.length,
+        contextMessages: contextList.map(m => ({ id: m.id, role: m.role, status: m.status }))
+      });
+
+      // 3. 执行 Agent 任务（交给 AgentService）
+      this._currentLoop = await this.agentService.execute(
+        contextList, // 传递列表二（压缩后的历史）
         {
           modelId: options.modelId,
           mode: options.mode,
@@ -141,28 +123,25 @@ export class ChatService implements IChatService {
         }
       );
 
-      // 3. 监听 Loop 更新
+      // 4. 监听 Loop 更新（更新列表一）
       this._currentLoop.onUpdate((updatedMessages) => {
         this._messages = updatedMessages;
         this._onDidMessageUpdate.fire([...this._messages]);
       });
 
-      // 4. 监听 Loop 完成
+      // 5. 监听 Loop 完成（更新列表一）
       this._currentLoop.onDone((finalMessages) => {
         this._messages = finalMessages;
         this._onDidMessageUpdate.fire([...this._messages]);
         this._isProcessing = false;
         
-        // 🔑 不再在这里清理思考内容，而是在发送新消息时清理
-        // 这样可以让用户看到当前轮次的完整思考过程
-        
-        // TODO: 持久化对话时可以选择不保存 thinking 字段
-        // await this.conversationStore.save(conversationId, this._messages);
+        // 注意：列表一保留所有细节（包括 thinking），给用户看
+        // 列表二会在下次请求时动态生成，自动剔除 thinking
         
         console.log('[ChatService] 对话完成');
       });
 
-      // 5. 监听 Loop 错误
+      // 6. 监听 Loop 错误
       this._currentLoop.onError((error) => {
         console.error('[ChatService] Agent Loop 错误:', error);
         
@@ -172,6 +151,12 @@ export class ChatService implements IChatService {
         this._onDidMessageUpdate.fire([...this._messages]);
         
         this._isProcessing = false;
+      });
+
+      // 7. 监听工具审批事件（转发给 UI）
+      this._currentLoop.onToolCallPending((event) => {
+        console.log('[ChatService] 工具调用待审批:', event);
+        this._onDidToolCallPending.fire(event);
       });
 
     } catch (error) {
@@ -213,7 +198,7 @@ export class ChatService implements IChatService {
   }
 
   /**
-   * 批准工具调用
+   * 批准工具调用（通过 controller）
    */
   async approveToolCall(toolCallId: string): Promise<void> {
     if (!this._currentLoop) {
@@ -224,7 +209,7 @@ export class ChatService implements IChatService {
     console.log('[ChatService] 批准工具调用:', toolCallId);
     
     try {
-      await this.agentService.approveToolCall(this._currentLoop.id, toolCallId);
+      await this._currentLoop.approveToolCall(toolCallId);
     } catch (error) {
       console.error('[ChatService] approveToolCall error:', error);
       
@@ -236,7 +221,7 @@ export class ChatService implements IChatService {
   }
 
   /**
-   * 拒绝工具调用
+   * 拒绝工具调用（通过 controller）
    */
   async rejectToolCall(toolCallId: string): Promise<void> {
     if (!this._currentLoop) {
@@ -246,7 +231,7 @@ export class ChatService implements IChatService {
 
     console.log('[ChatService] 拒绝工具调用:', toolCallId);
     
-    await this.agentService.rejectToolCall(this._currentLoop.id, toolCallId);
+    await this._currentLoop.rejectToolCall(toolCallId);
     
     // 添加拒绝消息
     const rejectMessage = this.createMessage('assistant', '你已拒绝该操作。');
@@ -258,26 +243,39 @@ export class ChatService implements IChatService {
   // ==================== 私有方法 ====================
 
   /**
-   * 为 Agent Loop 构造干净的消息副本（不带 thinking）
+   * 生成列表二：历史上下文视图 (The Context List)
+   * 
+   * 从列表一（用户视图）生成给 AI 看的压缩版本：
+   * 1. 剔除所有 assistant 消息的 thinking 字段
+   * 2. 折叠/移除失败的工具调用（可选）
+   * 3. 移除中间状态的消息（streaming、aborted 等）
+   * 
+   * 目的：
+   * - 节省 Token
+   * - 防止 AI 被上一轮错误的推理路径误导（Attention 污染）
+   * - 只保留关键的“用户意图”和“最终结果”
    */
-  private stripThinkingForLoop(messages: ChatMessage[]): ChatMessage[] {
-    return messages.map(msg =>
-      msg.role === 'assistant'
-        ? { ...msg, thinking: undefined }
-        : { ...msg }
-    );
-  }
-
-  /**
-   * 清除历史 assistant 消息中的思考内容
-   * 防止在新的用户提问中继续携带过往的 reasoning_content
-   */
-  private clearHistoryThinking(): void {
-    for (const msg of this._messages) {
-      if (msg.role === 'assistant') {
-        msg.thinking = undefined;
-      }
-    }
+  private buildContextList(messages: ChatMessage[]): ChatMessage[] {
+    return messages
+      .filter(msg => {
+        // 移除中间状态的消息
+        if (msg.status === 'streaming' || msg.status === 'pending') {
+          return false;
+        }
+        // 移除失败的消息（可选）
+        if (msg.status === 'error' || msg.status === 'aborted') {
+          return false; // 或者保留，但简化错误信息
+        }
+        return true;
+      })
+      .map(msg => {
+        // 剔除 assistant 消息的 thinking
+        if (msg.role === 'assistant') {
+          const { thinking, ...rest } = msg;
+          return rest;
+        }
+        return { ...msg };
+      });
   }
 
   /**
@@ -291,6 +289,13 @@ export class ChatService implements IChatService {
       status: 'pending',
       timestamp: Date.now()
     };
+  }
+
+  /**
+   * 获取列表一（用户视图）
+   */
+  getMessages(): ChatMessage[] {
+    return [...this._messages];
   }
 
   /**

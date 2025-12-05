@@ -19,7 +19,9 @@ import type { IModelRegistryService } from '../../platform/llm/IModelRegistrySer
 import { IModelRegistryServiceId } from '../../platform/llm/IModelRegistryService';
 import type { IConfigurationService } from '../../platform/configuration/configuration';
 import { IConfigurationServiceId } from '../../platform/configuration/configuration';
-import { OpenAIAdapter } from './adapters/OpenAIAdapter';
+import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
+import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
+import { OpenAIProvider } from './adapters/OpenAIProvider';
 import { OpenAICompatibleAdapter } from './adapters/OpenAICompatibleAdapter';
 import { AnthropicAdapter } from './adapters/AnthropicAdapter';
 import { GeminiAdapter } from './adapters/GeminiAdapter';
@@ -28,14 +30,15 @@ import type { BaseLLMAdapter } from './adapters/BaseLLMAdapter';
 /**
  * LLMProviderService 实现
  */
-@injectable(IModelRegistryServiceId, IConfigurationServiceId)
+@injectable(IModelRegistryServiceId, IConfigurationServiceId, IUIStreamServiceId)
 export class LLMProviderService implements ILLMProviderService {
   /** 适配器缓存 */
   private adapterCache: Map<string, BaseLLMAdapter> = new Map();
 
   constructor(
     private readonly modelRegistry: IModelRegistryService,
-    private readonly configService: IConfigurationService
+    private readonly configService: IConfigurationService,
+    private readonly uiStreamService: IUIStreamService
   ) {
     console.log('[LLMProviderService] 依赖注入成功');
   }
@@ -76,7 +79,8 @@ export class LLMProviderService implements ILLMProviderService {
 
   parseStreamChunk(
     dataString: string,
-    provider: LLMProviderRequest['provider']
+    provider: LLMProviderRequest['provider'],
+    config?: LLMConfig
   ): ParsedStreamChunk | null {
     if (!dataString || dataString === '[DONE]') {
       return { done: true, finishReason: 'stop' };
@@ -87,17 +91,21 @@ export class LLMProviderService implements ILLMProviderService {
 
       // 🔑 每个厂商使用独立的解析方法
       switch (provider) {
-        case 'openai':
-          return this.parseOpenAIChunk(parsed);
+        case 'openai': {
+          const adapter = this.getAdapter('openai') as OpenAIProvider;
+          return adapter.parseStreamChunk(parsed, config);
+        }
         case 'openai-compatible':
           return this.parseOpenAICompatibleChunk(parsed);
         case 'gemini':
           return this.parseGeminiChunk(parsed);
         case 'anthropic':
           return this.parseAnthropicChunk(parsed);
-        default:
+        default: {
           console.warn(`[LLMProviderService] 未知提供商: ${provider}，使用 OpenAI 格式`);
-          return this.parseOpenAIChunk(parsed);
+          const adapter = this.getAdapter('openai') as OpenAIProvider;
+          return adapter.parseStreamChunk(parsed, config);
+        }
       }
     } catch (err) {
       console.warn('[LLMProviderService] 解析流数据失败:', err, dataString);
@@ -136,7 +144,7 @@ export class LLMProviderService implements ILLMProviderService {
     let adapter: BaseLLMAdapter;
     switch (provider) {
       case 'openai':
-        adapter = new OpenAIAdapter(this.modelRegistry);
+        adapter = new OpenAIProvider(this.modelRegistry, this.uiStreamService);
         break;
       case 'openai-compatible':
         adapter = new OpenAICompatibleAdapter(this.modelRegistry);
@@ -394,4 +402,3 @@ export class LLMProviderService implements ILLMProviderService {
 
 // 导出服务标识符
 export { ILLMProviderServiceId };
-

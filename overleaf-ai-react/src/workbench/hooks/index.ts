@@ -10,3 +10,4 @@ export {
   useServiceEventWithCallback,
   useServiceEventArray
 } from './useServiceEvent';
+export { useUIStreamUpdates } from './useUIStreamUpdates';

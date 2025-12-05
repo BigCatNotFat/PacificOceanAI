@@ -1,342 +1,169 @@
 /**
  * LLMService - Services 层实现（重构后）
  * 
- * 职责简化为：
- * - 发送 HTTP 请求
- * - 处理流式响应
- * - 解析 SSE 数据流
+ * 新职责（路由层）：
+ * - 根据 modelId 判断供应商（通过 ModelRegistryService）
+ * - 选择对应的 Provider（OpenAI、Gemini、Anthropic 等）
+ * - 准备 Provider 需要的数据（messages + config + apiConfig）
+ * - 调用 provider.chat() 获取结果
+ * - 返回统一格式的 LLMFinalMessage 给上层
  * 
  * 不再负责：
- * - 厂商适配（移至 LLMProviderService）
- * - 参数转换（移至 LLMProviderService）
- * - 协议选择（移至 LLMProviderService）
+ * - HTTP 请求（移至各个 Provider 内部）
+ * - 流式解析（移至各个 Provider 内部）
+ * - UI 更新（Provider 内部通过 UIStreamService 实时更新）
  */
 
 import { injectable } from '../../platform/instantiation/descriptors';
-import { Emitter } from '../../base/common/event';
 import type {
   ILLMService,
   LLMMessage,
   LLMConfig,
-  StreamResponse,
-  LLMDeltaChunk,
   LLMFinalMessage
 } from '../../platform/llm/ILLMService';
 import { ILLMServiceId } from '../../platform/llm/ILLMService';
-import type { ILLMProviderService } from '../../platform/llm/ILLMProviderService';
-import { ILLMProviderServiceId } from '../../platform/llm/ILLMProviderService';
+import type { IModelRegistryService } from '../../platform/llm/IModelRegistryService';
+import { IModelRegistryServiceId } from '../../platform/llm/IModelRegistryService';
+import type { IConfigurationService } from '../../platform/configuration/configuration';
+import { IConfigurationServiceId } from '../../platform/configuration/configuration';
+import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
+import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
+import { OpenAIProvider } from './adapters/OpenAIProvider';
+import type { APIConfig } from './adapters/BaseLLMAdapter';
 
 /**
  * LLMService 实现
  */
-@injectable(ILLMProviderServiceId)
+@injectable(IModelRegistryServiceId, IConfigurationServiceId, IUIStreamServiceId)
 export class LLMService implements ILLMService {
-  /** 当前活跃的请求 */
-  private activeRequests: Set<AbortController> = new Set();
+  /** Provider 缓存 */
+  private providerCache = new Map<string, any>();
 
   constructor(
-    private readonly providerService: ILLMProviderService
+    private readonly modelRegistry: IModelRegistryService,
+    private readonly configService: IConfigurationService,
+    private readonly uiStreamService: IUIStreamService
   ) {
     console.log('[LLMService] 依赖注入成功', {
-      hasProviderService: !!providerService
+      hasModelRegistry: !!modelRegistry,
+      hasConfigService: !!configService,
+      hasUIStreamService: !!uiStreamService
     });
   }
 
   // ==================== 公共方法 ====================
 
   /**
-   * 流式调用 LLM
+   * 调用 LLM（唯一的公共方法）
+   * 
+   * 工作流程：
+   * 1. 根据 config.modelId 判断供应商
+   * 2. 获取 API 配置
+   * 3. 选择对应的 Provider
+   * 4. 调用 Provider.chat()
+   * 5. Provider 内部流式更新 UI（通过 UIStreamService）
+   * 6. 返回完整结果
+   * 
+   * 注意：上层 AgentService 无需关心调用的是哪个模型或供应商
    */
-  async streamResponse(
+  async chat(
     messages: LLMMessage[],
     config: LLMConfig
-  ): Promise<StreamResponse> {
-    console.log('[LLMService] 开始流式调用', {
+  ): Promise<LLMFinalMessage> {
+    console.log('[LLMService] 开始调用 LLM', {
       modelId: config.modelId,
       messageCount: messages.length
     });
 
-    // 创建事件发射器
-    const onTokenEmitter = new Emitter<LLMDeltaChunk>();
-    const onErrorEmitter = new Emitter<Error>();
-    const onDoneEmitter = new Emitter<LLMFinalMessage>();
-
-    // 创建取消控制器
-    const abortController = new AbortController();
-    this.activeRequests.add(abortController);
-
-    // 异步执行流式请求
-    this.executeStreamRequest(
-      messages,
-      config,
-      abortController,
-      onTokenEmitter,
-      onErrorEmitter,
-      onDoneEmitter
-    );
-
-    return {
-      onToken: onTokenEmitter.event,
-      onError: onErrorEmitter.event,
-      onDone: onDoneEmitter.event,
-      cancel: () => {
-        console.log('[LLMService] 取消请求');
-        abortController.abort();
-        this.activeRequests.delete(abortController);
-      }
-    };
-  }
-
-
-
-  /**
-   * 检查模型是否可用
-   */
-  async isModelAvailable(modelId: string): Promise<boolean> {
-    // 委托给 ProviderService
-    try {
-      const request = await this.providerService.buildRequestConfig(
-        [{ role: 'user', content: 'test' }],
-        { modelId, stream: false }
-      );
-      return !!request.endpoint;
-    } catch {
-      return false;
+    // 1. 获取模型信息，判断供应商
+    const modelInfo = this.modelRegistry.getModelInfo(config.modelId);
+    if (!modelInfo) {
+      throw new Error(`未找到模型: ${config.modelId}`);
     }
+
+    console.log('[LLMService] 模型供应商:', modelInfo.provider);
+
+    // 2. 获取 API 配置
+    const apiConfig = await this.getAPIConfig();
+
+    // 3. 根据供应商选择 Provider
+    const provider = await this.getProvider(modelInfo.provider, apiConfig);
+
+    // 4. 调用 Provider 的 chat 方法
+    const result = await provider.chat(messages, config);
+
+    console.log('[LLMService] 调用完成', {
+      contentLength: result.content?.length || 0,
+      hasThinking: !!result.thinking,
+      toolCallsCount: result.toolCalls?.length || 0
+    });
+
+    return result;
   }
 
-  /**
-   * 取消所有进行中的请求
-   */
-  cancelAll(): void {
-    console.log(`[LLMService] 取消所有请求 (${this.activeRequests.size} 个)`);
-    this.activeRequests.forEach(controller => controller.abort());
-    this.activeRequests.clear();
-  }
 
   // ==================== 私有方法 ====================
 
   /**
-   * 执行流式请求
+   * 获取 API 配置
    */
-  private async executeStreamRequest(
-    messages: LLMMessage[],
-    config: LLMConfig,
-    abortController: AbortController,
-    onTokenEmitter: Emitter<LLMDeltaChunk>,
-    onErrorEmitter: Emitter<Error>,
-    onDoneEmitter: Emitter<LLMFinalMessage>
-  ): Promise<void> {
-    try {
-      // 1. 通过 ProviderService 构建请求配置
-      const request = await this.providerService.buildRequestConfig(messages, config);
-
-      console.log('[LLMService] 请求配置:', {
-        endpoint: request.endpoint,
-        provider: request.provider
-      });
-
-      // 2. 发送 HTTP 请求
-      const response = await fetch(request.endpoint, {
-        method: 'POST',
-        headers: request.headers,
-        body: JSON.stringify(request.body),
-        signal: abortController.signal
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`LLM 请求失败 (${response.status}): ${errorText || response.statusText}`);
-      }
-
-      if (!response.body) {
-        throw new Error('响应 body 为空，当前环境可能不支持流式读取');
-      }
-
-      // 3. 处理流式响应
-      await this.processStreamResponse(
-        response.body,
-        request.provider,
-        abortController,
-        onTokenEmitter,
-        onDoneEmitter
-      );
-
-      // 请求完成，移除记录
-      this.activeRequests.delete(abortController);
-
-    } catch (error) {
-      console.error('[LLMService] 流式请求失败:', error);
-      
-      if (abortController.signal.aborted) {
-        console.log('[LLMService] 请求已取消');
-      } else {
-        onErrorEmitter.fire(error instanceof Error ? error : new Error(String(error)));
-      }
-      
-      this.activeRequests.delete(abortController);
+  private async getAPIConfig(): Promise<APIConfig> {
+    const config = await this.configService.getAPIConfig();
+    if (!config || !config.apiKey) {
+      throw new Error('未配置 API Key，请先在设置中配置');
     }
+
+    return {
+      apiKey: config.apiKey,
+      baseUrl: config.baseUrl || 'https://api.openai.com/v1'
+    };
   }
 
   /**
-   * 处理流式响应
+   * 根据供应商类型获取对应的 Provider
    */
-  private async processStreamResponse(
-    body: ReadableStream<Uint8Array>,
-    provider: string,
-    abortController: AbortController,
-    onTokenEmitter: Emitter<LLMDeltaChunk>,
-    onDoneEmitter: Emitter<LLMFinalMessage>
-  ): Promise<void> {
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
+  private async getProvider(providerType: string, apiConfig: APIConfig): Promise<any> {
+    // 检查缓存
+    if (this.providerCache.has(providerType)) {
+      return this.providerCache.get(providerType);
+    }
 
-    let accumulatedContent = '';
-    let accumulatedThinking: string | undefined;
-    let finishReason: LLMFinalMessage['finishReason'] | undefined;
-    let usage: LLMFinalMessage['usage'] | undefined;
+    // 根据供应商类型创建 Provider
+    let provider: any;
     
-    // 累积工具调用的增量片段（按 index 存储）
-    const toolCallDeltas: Array<{ id?: string; name?: string; arguments: string }> = [];
-    let buffer = '';
-
-    while (true) {
-      if (abortController.signal.aborted) {
-        try {
-          await reader.cancel();
-        } catch {
-          // ignore
-        }
-        console.log('[LLMService] 请求已通过 AbortController 取消');
-        return;
-      }
-
-      const { done, value } = await reader.read();
-      if (done) {
+    switch (providerType) {
+      case 'openai':
+      case 'openai-compatible':
+        provider = new OpenAIProvider(
+          this.modelRegistry,
+          this.uiStreamService,
+          apiConfig
+        );
         break;
-      }
-      if (!value) {
-        continue;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-
-      // 解析 SSE 格式：data: {...}\n\n
-      let separatorIndex: number;
-      while ((separatorIndex = buffer.indexOf('\n\n')) !== -1) {
-        const rawEvent = buffer.slice(0, separatorIndex);
-        buffer = buffer.slice(separatorIndex + 2);
-
-        const lines = rawEvent.split('\n');
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith(':')) {
-            continue;
-          }
-          if (!trimmed.startsWith('data:')) {
-            continue;
-          }
-
-          const dataStr = trimmed.slice('data:'.length).trim();
-          if (!dataStr || dataStr === '[DONE]') {
-            finishReason = finishReason || 'stop';
-            break;
-          }
-
-          // 使用 ProviderService 解析数据块
-          const parsed = this.providerService.parseStreamChunk(dataStr, provider as any);
-          if (!parsed) {
-            continue;
-          }
-
-          // 处理增量数据
-          if (parsed.chunk) {
-            const chunk = parsed.chunk;
-            
-            if (chunk.type === 'thinking' && chunk.delta) {
-              accumulatedThinking = (accumulatedThinking || '') + chunk.delta;
-              onTokenEmitter.fire(chunk);
-            } else if (chunk.type === 'content' && chunk.delta) {
-              accumulatedContent += chunk.delta;
-              onTokenEmitter.fire(chunk);
-            } else if (chunk.type === 'tool_call' && chunk.toolCall) {
-              // 累积工具调用信息
-              const index = 0; // 简化：暂时只支持单个工具调用
-              if (!toolCallDeltas[index]) {
-                toolCallDeltas[index] = { id: undefined, name: undefined, arguments: '' };
-              }
-              const target = toolCallDeltas[index];
-              
-              if (chunk.toolCall.id) target.id = chunk.toolCall.id;
-              if (chunk.toolCall.name) target.name = chunk.toolCall.name;
-              if (chunk.toolCall.arguments) {
-                target.arguments += chunk.toolCall.arguments;
-              }
-              
-              onTokenEmitter.fire(chunk);
-            }
-          }
-
-          // 处理完成状态
-          if (parsed.finishReason) {
-            finishReason = parsed.finishReason;
-          }
-          if (parsed.usage) {
-            usage = parsed.usage;
-          }
-        }
-      }
+      
+      case 'anthropic':
+        // TODO: 实现 AnthropicProvider
+        throw new Error('Anthropic provider 尚未实现');
+      
+      case 'gemini':
+        // TODO: 实现 GeminiProvider
+        throw new Error('Gemini provider 尚未实现');
+      
+      default:
+        throw new Error(`不支持的供应商类型: ${providerType}`);
     }
 
-    // 发送完成事件
-    if (!abortController.signal.aborted) {
-      // 解析工具调用
-      let finalToolCalls: LLMFinalMessage['toolCalls'] | undefined;
-      if (toolCallDeltas.length > 0) {
-        finalToolCalls = [];
-        toolCallDeltas.forEach((tc, index) => {
-          if (!tc) return;
-          
-          const rawArgs = (tc.arguments || '').trim();
-          let parsedArgs: Record<string, any> = {};
-          if (rawArgs) {
-            try {
-              parsedArgs = JSON.parse(rawArgs);
-            } catch (err) {
-              console.warn('[LLMService] 解析工具调用参数失败:', err, rawArgs);
-            }
-          }
-
-          finalToolCalls!.push({
-            id: tc.id || String(index),
-            name: tc.name || '',
-            arguments: parsedArgs
-          });
-        });
-      }
-
-      onDoneEmitter.fire({
-        content: accumulatedContent,
-        thinking: accumulatedThinking,
-        toolCalls: finalToolCalls,
-        finishReason: finishReason || 'stop',
-        usage
-      });
-    }
-  }
-
-  /**
-   * 延时工具函数
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    // 缓存 Provider
+    this.providerCache.set(providerType, provider);
+    
+    return provider;
   }
 
   /**
    * 释放资源
    */
   dispose(): void {
-    this.cancelAll();
+    this.providerCache.clear();
   }
 }
 

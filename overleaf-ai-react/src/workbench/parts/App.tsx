@@ -17,6 +17,7 @@ import { LLMProviderService, ILLMProviderServiceId } from '../../services/llm/LL
 import { PromptService, IPromptServiceId } from '../../services/agent/PromptService';
 import { ToolService, IToolServiceId } from '../../services/agent/ToolService';
 import { ModelRegistryService, IModelRegistryServiceId } from '../../services/llm/ModelRegistryService';
+import { UIStreamService, IUIStreamServiceId } from '../../services/agent/UIStreamService';
 
 const App: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -53,6 +54,15 @@ const App: React.FC = () => {
         IToolServiceId,
         ToolService,
         getServiceDependencies(ToolService)
+      )
+    );
+
+    // 注册 UI 流式更新服务（基础服务，无依赖）
+    di.registerDescriptor(
+      new ServiceDescriptor(
+        IUIStreamServiceId,
+        UIStreamService,
+        getServiceDependencies(UIStreamService)
       )
     );
 
