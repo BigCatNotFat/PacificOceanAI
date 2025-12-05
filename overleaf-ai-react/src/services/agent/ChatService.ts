@@ -1,3 +1,18 @@
+/**
+ * ChatService - Services 层实现（重构后）
+ * 
+ * 职责简化为：
+ * - 会话状态管理
+ * - 消息历史管理
+ * - 事件分发（消息更新、工具审批）
+ * - 会话持久化
+ * 
+ * 不再负责：
+ * - Agent Loop 逻辑（移至 AgentService）
+ * - 工具调用决策（移至 AgentService）
+ * - LLM 调用（由 AgentService 负责）
+ */
+
 import { injectable } from '../../platform/instantiation/descriptors';
 import { Emitter, Event } from '../../base/common/event';
 import type {
@@ -5,27 +20,16 @@ import type {
   ChatMessage,
   ChatOptions,
   MessageRole,
-  ToolCallPendingEvent,
-  ToolCall
+  ToolCallPendingEvent
 } from '../../platform/agent/IChatService';
 import { IChatServiceId } from '../../platform/agent/IChatService';
-import type {
-  IModelRegistryService,
-  ModelCapabilities,
-  ModelConfig
-} from '../../platform/llm/IModelRegistryService';
-import { IModelRegistryServiceId } from '../../platform/llm/IModelRegistryService';
-import type { IPromptService } from '../../platform/agent/IPromptService';
-import { IPromptServiceId } from '../../platform/agent/IPromptService';
-import type { IToolService } from '../../platform/agent/IToolService';
-import { IToolServiceId } from '../../platform/agent/IToolService';
-import type { ILLMService } from '../../platform/llm/ILLMService';
-import { ILLMServiceId } from '../../platform/llm/ILLMService';
+import type { IAgentService, AgentLoopController } from '../../platform/agent/IAgentService';
+import { IAgentServiceId } from '../../platform/agent/IAgentService';
 
 /**
  * ChatService 实现
  */
-@injectable(ILLMServiceId, IPromptServiceId, IToolServiceId, IModelRegistryServiceId)
+@injectable(IAgentServiceId)
 export class ChatService implements IChatService {
   // ==================== 事件发射器 ====================
   private readonly _onDidMessageUpdate = new Emitter<ChatMessage[]>();
@@ -36,35 +40,28 @@ export class ChatService implements IChatService {
 
   // ==================== 核心状态 ====================
   
-  /** 当前活跃会话的消息列表（仅内存中的视图） */
+  /** 当前活跃会话的消息列表 */
   private _messages: ChatMessage[] = [];
 
-  /** 防止重复提交和并发请求 */
+  /** 防止重复提交 */
   private _isProcessing: boolean = false;
 
-  /** 当前正在进行的 LLM 流，用于 abort */
-  private _currentStream?: any; // StreamResponse 类型暂时用 any
-
-  /** 存放等待用户审批的工具调用 */
-  private _pendingToolCalls: Map<string, PendingToolCall> = new Map();
+  /** 当前 Agent Loop 控制器 */
+  private _currentLoop?: AgentLoopController;
 
   /** 当前消息 ID 计数器 */
   private _messageIdCounter: number = 0;
 
-  /** 当前对话的选项（用于继续 Agent Loop） */
-  private _currentOptions?: ChatOptions;
-
   constructor(
-    private readonly llmService: ILLMService,
-    private readonly promptService: IPromptService,
-    private readonly toolService: IToolService,
-    private readonly modelRegistry: IModelRegistryService
+    private readonly agentService: IAgentService
   ) {
     console.log('[ChatService] 依赖注入成功', {
-      hasLLMService: !!llmService,
-      hasPromptService: !!promptService,
-      hasToolService: !!toolService,
-      hasModelRegistry: !!modelRegistry
+      hasAgentService: !!agentService
+    });
+
+    // 订阅 AgentService 的工具审批事件，转发给 UI
+    this.agentService.onDidToolCallPending((event) => {
+      this._onDidToolCallPending.fire(event);
     });
   }
 
@@ -82,103 +79,123 @@ export class ChatService implements IChatService {
 
     this._isProcessing = true;
 
-    // 新一轮用户提问前，清除历史 assistant 消息中的思考内容
-    // 对应 DeepSeek 官方示例中的 clear_reasoning_content(messages)
-    // 不影响当前 Agent Loop 内部的工具调用链（该链路不会再次调用 sendMessage）
-    this.clearHistoryThinking();
-    
-    // 保存当前选项，用于后续的 Agent Loop
-    this._currentOptions = options;
-
     try {
       // 1. 写入用户消息
       const userMessage = this.createMessage('user', input);
-//       {
-//   "id": "msg_0",
-//   "role": "user",
-//   "content": "帮我读取第三行",
-//   "status": "pending",
-//   "timestamp": 1716300000000  // 当前时间的毫秒时间戳
-// }
       this._messages.push(userMessage);
-      console.log(JSON.stringify(this._messages, null, 2)); // 打印当前数组内容
-// [
+      this._onDidMessageUpdate.fire([...this._messages]);
+
+      // 2. 立即创建占位的 assistant 消息，显示"正在发送..."
+      const assistantPlaceholder = this.createMessage('assistant', '');
+      assistantPlaceholder.status = 'streaming';
+      this._messages.push(assistantPlaceholder);
+      this._onDidMessageUpdate.fire([...this._messages]);
+
+      console.log('[ChatService] 发送消息:', {
+        mode: options.mode,
+        modelId: options.modelId,
+        contextItemsCount: options.contextItems?.length || 0
+      });
+
+      // 构造一份用于 Agent Loop 的消息副本，去掉 assistant 的 thinking，避免旧的 reasoning_content 影响新一轮对话
+      const loopMessages = this.stripThinkingForLoop(this._messages);
+      // const test1 = loopMessages;
+      // const test2 = {
+      //     modelId: options.modelId,
+      //     mode: options.mode,
+      //     contextItems: options.contextItems,
+      //     maxIterations: 10
+      //   };
+      // console.log('test1:', JSON.stringify(test1, null, 2));
+      // console.log('test2:', JSON.stringify(test2, null, 2));
+//       test1: [
 //   {
 //     "id": "msg_0",
 //     "role": "user",
-//     "content": "帮我读取第三行",
+//     "content": "你好",
 //     "status": "pending",
-//     "timestamp": 1716300000000
+//     "timestamp": 1764906453216
+//   },
+//   {
+//     "id": "msg_1",
+//     "role": "assistant",
+//     "content": "",
+//     "status": "streaming",
+//     "timestamp": 1764906453216
 //   }
 // ]
-
-      this._onDidMessageUpdate.fire([...this._messages]);//通知外界（通常是前端 UI），消息列表已经更新了，请立刻刷新显示。
-
-      // 2. 获取模型能力和默认配置
-      const modelCapabilities = this.modelRegistry.getCapabilities(options.modelId);
-      const modelConfig = this.modelRegistry.getDefaultConfig(options.modelId);
-      
-      // 检查模型是否存在
-      if (!modelCapabilities || !modelConfig) {
-        throw new Error(`未找到模型: ${options.modelId}`);
-      }
-
-      // 根据模式检查模型能力
-      if (options.mode === 'agent' && !modelCapabilities.supportsTools) {
-        console.warn(`[ChatService] 模型 ${options.modelId} 不支持工具调用，但当前模式为 agent`);
-      }
-
-      console.log('[ChatService] 模型能力:', modelCapabilities);
-      console.log('[ChatService] 默认配置:', modelConfig);
-
-      userMessage.status = 'completed'; 
-        // 再次通知 UI 更新（让用户消息停止转圈）
-      this._onDidMessageUpdate.fire([...this._messages]);
-      // 3. 构建 Prompt
-      const llmMessages = await this.promptService.constructMessages(
-        this._messages,
-        options.mode,
-        options.contextItems,
-        { modelId: options.modelId }
+// test2: {
+//   "modelId": "deepseek-chat",
+//   "mode": "chat",
+//   "contextItems": [],
+//   "maxIterations": 10
+// }
+      // 3. 启动 Agent Loop（交给 AgentService）
+      this._currentLoop = await this.agentService.startLoop(
+        loopMessages,
+        {
+          modelId: options.modelId,
+          mode: options.mode,
+          contextItems: options.contextItems,
+          maxIterations: 10
+        }
       );
-      console.log('[ChatService] 构建的 LLM 消息数量:', llmMessages.length);
-      console.log('[ChatService] System Prompt 预览:', llmMessages[0]?.content.substring(0, 100) + '...');
-      console.log('============== [Debug: startAgentLoop 之前] ==============');
-      
-      // 打印 options：查看当前的模式、模型ID、上下文参数
-      console.log('[ChatService] Options:', JSON.stringify(options, null, 2));
-      
-      // 打印 llmMessages：查看最终发给 LLM 的完整消息列表（包含 system prompt）
-      console.log('[ChatService] LLM Messages:', JSON.stringify(llmMessages, null, 2));
-      
-      console.log('==========================================================');
-      // 4. 启动 Agent Loop
-      await this.startAgentLoop(options, llmMessages);
+
+      // 3. 监听 Loop 更新
+      this._currentLoop.onUpdate((updatedMessages) => {
+        this._messages = updatedMessages;
+        this._onDidMessageUpdate.fire([...this._messages]);
+      });
+
+      // 4. 监听 Loop 完成
+      this._currentLoop.onDone((finalMessages) => {
+        this._messages = finalMessages;
+        this._onDidMessageUpdate.fire([...this._messages]);
+        this._isProcessing = false;
+        
+        // 🔑 不再在这里清理思考内容，而是在发送新消息时清理
+        // 这样可以让用户看到当前轮次的完整思考过程
+        
+        // TODO: 持久化对话时可以选择不保存 thinking 字段
+        // await this.conversationStore.save(conversationId, this._messages);
+        
+        console.log('[ChatService] 对话完成');
+      });
+
+      // 5. 监听 Loop 错误
+      this._currentLoop.onError((error) => {
+        console.error('[ChatService] Agent Loop 错误:', error);
+        
+        const errorMessage = this.createMessage('assistant', `抱歉，发生了错误: ${error.message}`);
+        errorMessage.status = 'error';
+        this._messages.push(errorMessage);
+        this._onDidMessageUpdate.fire([...this._messages]);
+        
+        this._isProcessing = false;
+      });
 
     } catch (error) {
       console.error('[ChatService] sendMessage error:', error);
+      
       const errorMessage = this.createMessage('assistant', '抱歉，发生了错误');
       errorMessage.status = 'error';
       errorMessage.error = error instanceof Error ? error.message : String(error);
       this._messages.push(errorMessage);
       this._onDidMessageUpdate.fire([...this._messages]);
-    } finally {
+      
       this._isProcessing = false;
     }
   }
 
   /**
-   * 中断当前正在进行的 LLM 流式生成
+   * 中断当前正在进行的对话
    */
   abort(): void {
     console.log('[ChatService] 中断请求');
     
-    // 取消 LLM 流
-    if (this._currentStream) {
-      if (typeof this._currentStream.cancel === 'function') {
-        this._currentStream.cancel();
-      }
-      this._currentStream = undefined;
+    if (this._currentLoop) {
+      this._currentLoop.abort();
+      this._currentLoop = undefined;
     }
 
     // 更新最后一条消息为已中断
@@ -187,7 +204,7 @@ export class ChatService implements IChatService {
       if (lastMessage.role === 'assistant' && lastMessage.status === 'streaming') {
         lastMessage.status = 'aborted';
         lastMessage.content += '\n\n[已中断]';
-        lastMessage.thinking = undefined; // 清除思考内容
+        lastMessage.thinking = undefined;
         this._onDidMessageUpdate.fire([...this._messages]);
       }
     }
@@ -199,46 +216,18 @@ export class ChatService implements IChatService {
    * 批准工具调用
    */
   async approveToolCall(toolCallId: string): Promise<void> {
-    const pendingCall = this._pendingToolCalls.get(toolCallId);
-    if (!pendingCall) {
-      console.warn('[ChatService] 未找到待审批的工具调用:', toolCallId);
+    if (!this._currentLoop) {
+      console.warn('[ChatService] 未找到当前 Loop');
       return;
     }
 
-    // 移除 pending 记录
-    this._pendingToolCalls.delete(toolCallId);
-
+    console.log('[ChatService] 批准工具调用:', toolCallId);
+    
     try {
-      console.log('[ChatService] 用户批准工具调用:', pendingCall.toolName);
-      
-      // 执行工具
-      const result = await this.toolService.executeTool(
-        pendingCall.toolName,
-        pendingCall.arguments
-      );
-      console.log('[ChatService] 工具执行结果:', result);
-
-      // 将工具执行结果封装为一条 ToolMessage
-      const toolMessage = this.createMessage('tool', JSON.stringify(result.data || result));
-      toolMessage.toolCalls = [{
-        id: toolCallId,
-        name: pendingCall.toolName,
-        arguments: pendingCall.arguments,
-        result: result.data,
-        status: result.success ? 'completed' : 'error'
-      }];
-      this._messages.push(toolMessage);
-      this._onDidMessageUpdate.fire([...this._messages]);
-
-      // 继续 Agent Loop - 将工具执行结果作为新的上下文发送给 LLM
-      if (this._currentOptions) {
-        await this.continueAgentLoop(this._currentOptions);
-      } else {
-        console.warn('[ChatService] 未找到当前 options，无法继续 Agent Loop');
-      }
-
+      await this.agentService.approveToolCall(this._currentLoop.id, toolCallId);
     } catch (error) {
       console.error('[ChatService] approveToolCall error:', error);
+      
       const errorMessage = this.createMessage('assistant', `工具执行失败: ${error}`);
       errorMessage.status = 'error';
       this._messages.push(errorMessage);
@@ -250,30 +239,38 @@ export class ChatService implements IChatService {
    * 拒绝工具调用
    */
   async rejectToolCall(toolCallId: string): Promise<void> {
-    const pendingCall = this._pendingToolCalls.get(toolCallId);
-    if (!pendingCall) {
-      console.warn('[ChatService] 未找到待审批的工具调用:', toolCallId);
+    if (!this._currentLoop) {
+      console.warn('[ChatService] 未找到当前 Loop');
       return;
     }
 
-    // 移除 pending 记录
-    this._pendingToolCalls.delete(toolCallId);
-
-    // 添加一条系统消息说明用户拒绝了该操作
-    const rejectMessage = this.createMessage('assistant', `用户拒绝了工具调用: ${pendingCall.toolName}`);
+    console.log('[ChatService] 拒绝工具调用:', toolCallId);
+    
+    await this.agentService.rejectToolCall(this._currentLoop.id, toolCallId);
+    
+    // 添加拒绝消息
+    const rejectMessage = this.createMessage('assistant', '你已拒绝该操作。');
     rejectMessage.status = 'completed';
     this._messages.push(rejectMessage);
     this._onDidMessageUpdate.fire([...this._messages]);
-
-    // 可选：将该信息作为上下文再次发给 LLM，让其给出替代方案
   }
 
   // ==================== 私有方法 ====================
 
   /**
+   * 为 Agent Loop 构造干净的消息副本（不带 thinking）
+   */
+  private stripThinkingForLoop(messages: ChatMessage[]): ChatMessage[] {
+    return messages.map(msg =>
+      msg.role === 'assistant'
+        ? { ...msg, thinking: undefined }
+        : { ...msg }
+    );
+  }
+
+  /**
    * 清除历史 assistant 消息中的思考内容
-   * 防止在新的用户提问中继续携带过往的 reasoning_content，
-   * 与 DeepSeek 官方 demo 中 clear_reasoning_content(messages) 的行为保持一致。
+   * 防止在新的用户提问中继续携带过往的 reasoning_content
    */
   private clearHistoryThinking(): void {
     for (const msg of this._messages) {
@@ -281,374 +278,6 @@ export class ChatService implements IChatService {
         msg.thinking = undefined;
       }
     }
-  }
-
-  /**
-   * 启动 Agent Loop（第一轮）
-   * @param options - 聊天选项
-   * @param llmMessages - 已构建好的 LLM 消息列表（包含 system prompt 和历史）
-   */
-  private async startAgentLoop(options: ChatOptions, llmMessages: any[]): Promise<void> {
-    // 创建 assistant 消息占位符
-    const assistantMessage = this.createMessage('assistant', '');
-    assistantMessage.status = 'streaming';
-    this._messages.push(assistantMessage);
-    this._onDidMessageUpdate.fire([...this._messages]);
-
-    // 调用 LLM 服务
-    if (llmMessages.length > 0) {
-      try {
-        // 获取模型配置
-        const modelConfig = this.modelRegistry.getDefaultConfig(options.modelId);
-        const modelCapabilities = this.modelRegistry.getCapabilities(options.modelId);
-        if (!modelConfig) {
-          throw new Error(`未找到模型配置: ${options.modelId}`);
-        }
-
-        // 根据模型能力和当前模式，决定是否启用工具调用
-        const enableTools =
-          !!modelCapabilities &&
-          modelCapabilities.supportsTools &&
-          (options.mode === 'agent' || options.mode === 'chat');
-
-        // 为 OpenAI 兼容接口构建 tools 参数
-        let toolsForLLM: any[] | undefined;
-        if (enableTools) {
-          const tools =
-            options.mode === 'agent'
-              ? this.toolService.getAllTools()
-              : this.toolService.getReadOnlyTools();
-
-          if (tools && tools.length > 0) {
-            toolsForLLM = tools.map(tool => ({
-              type: 'function',
-              function: {
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.parameters
-              }
-            }));
-          }
-        }
-
-        // 基于模型默认配置构建 LLM 调用配置
-        // - modelConfig.modelId 作为实际底层模型 ID（例如 deepseek-reasoner -> deepseek-chat）
-        // - 透传 maxTokensParamName、thinking 等额外参数
-        const stream = await this.llmService.streamResponse(llmMessages, {
-          ...(modelConfig as any),
-          modelId: modelConfig.modelId || options.modelId,
-          stream: true,
-          // 仅在模型支持工具且当前模式允许时传入 tools / tool_choice
-          ...(toolsForLLM && {
-            tools: toolsForLLM,
-            tool_choice: 'auto'
-          })
-        });
-
-        // 存储当前流，用于 abort
-        this._currentStream = stream;
-
-        // 监听 token 流
-        stream.onToken((chunk) => {
-          if (chunk.type === 'thinking') {
-            // 更新思考内容
-            assistantMessage.thinking = (assistantMessage.thinking || '') + chunk.delta;
-          } else if (chunk.type === 'content') {
-            // 更新回答内容
-            assistantMessage.content += chunk.delta;
-          }
-          this._onDidMessageUpdate.fire([...this._messages]);
-        });
-
-        // 监听错误
-        stream.onError((error) => {
-          console.error('[ChatService] LLM 流式调用错误:', error);
-          assistantMessage.status = 'error';
-          assistantMessage.error = error.message;
-          this._onDidMessageUpdate.fire([...this._messages]);
-        });
-
-        // 监听完成
-        stream.onDone(async (finalMessage) => {
-          console.log('[ChatService] LLM 流式调用完成:', finalMessage);
-          
-          // 更新最终内容
-          assistantMessage.content = finalMessage.content;
-          assistantMessage.status = 'completed';
-
-          // 如果最终消息中包含 thinking，则保留完整思考内容
-          if (finalMessage.thinking) {
-            assistantMessage.thinking = finalMessage.thinking;
-          }
-          
-          // 检查是否有工具调用
-          if (finalMessage.toolCalls && finalMessage.toolCalls.length > 0) {
-            console.log('[ChatService] 检测到工具调用:', finalMessage.toolCalls);
-            
-            // 将工具调用信息添加到 assistant 消息中
-            assistantMessage.toolCalls = finalMessage.toolCalls.map(tc => ({
-              id: tc.id,
-              name: tc.name,
-              arguments: tc.arguments,
-              status: 'pending'
-            }));
-            
-            // 处理工具调用
-            await this.handleToolCalls(finalMessage.toolCalls, options);
-          }
-          
-          this._onDidMessageUpdate.fire([...this._messages]);
-          this._currentStream = undefined;
-        });
-
-      } catch (error) {
-        console.error('[ChatService] 启动 LLM 流式调用失败:', error);
-        assistantMessage.status = 'error';
-        assistantMessage.error = error instanceof Error ? error.message : String(error);
-        this._onDidMessageUpdate.fire([...this._messages]);
-      }
-    } else {
-      console.warn('[ChatService] llmService 未初始化或消息为空，使用模拟响应');
-      // 备用：模拟 LLM 流式响应
-      await this.simulateStreamResponse(assistantMessage, options, llmMessages);
-    }
-  }
-
-  /**
-   * 处理工具调用
-   * 
-   * 完整流程：
-   * 1. LLM 返回工具调用 -> handleToolCalls
-   * 2. 遍历每个工具调用
-   * 3. 检查工具元信息（needApproval）
-   * 4a. 如果需要审批：
-   *     - 存储到 _pendingToolCalls
-   *     - 触发 onDidToolCallPending 事件
-   *     - UI 显示审批弹窗
-   *     - 用户点击批准 -> approveToolCall
-   *     - 执行工具 -> 继续 Agent Loop
-   * 4b. 如果不需要审批：
-   *     - 直接执行工具 (executeToolDirectly)
-   *     - 继续 Agent Loop
-   * 5. Agent Loop：将工具结果作为新消息发给 LLM
-   * 6. LLM 返回最终回答或更多工具调用
-   * 
-   * @param toolCalls - 工具调用列表
-   * @param options - 聊天选项
-   */
-  private async handleToolCalls(toolCalls: any[], options: ChatOptions): Promise<void> {
-    console.log('[ChatService] 开始处理工具调用，共 %d 个', toolCalls.length);
-    
-    for (const toolCall of toolCalls) {
-      const { id: toolCallId, name: toolName, arguments: toolArgs } = toolCall;
-      
-      console.log(`[ChatService] 处理工具: ${toolName} (${toolCallId})`);
-      
-      // 获取工具元信息
-      let tool = this.toolService.getTool(toolName);
-      
-      if (!tool) {
-        console.warn(`[ChatService] 未找到工具: ${toolName}，使用 mock 工具`);
-        // 使用 mock 工具
-        tool = this.createMockTool(toolName);
-      }
-      
-      // 检查是否需要审批
-      if (tool.needApproval) {
-        console.log(`[ChatService] 工具 ${toolName} 需要用户审批`);
-        
-        // 存储待审批的工具调用
-        this._pendingToolCalls.set(toolCallId, {
-          id: toolCallId,
-          toolName,
-          arguments: toolArgs,
-          messageId: this._messages[this._messages.length - 1]?.id || ''
-        });
-        
-        // 触发工具调用待审批事件
-        this._onDidToolCallPending.fire({
-          id: toolCallId,
-          toolName,
-          arguments: toolArgs,
-          targetFile: toolArgs.file_path || toolArgs.fileName || '未知文件',
-          summary: this.generateToolCallSummary(toolName, toolArgs),
-          messageId: this._messages[this._messages.length - 1]?.id || ''
-        });
-        
-        // 等待用户审批，这里不继续执行
-        // 用户点击批准后会调用 approveToolCall
-      } else {
-        console.log(`[ChatService] 工具 ${toolName} 不需要审批，直接执行`);
-        
-        // 直接执行工具
-        await this.executeToolDirectly(toolCallId, toolName, toolArgs, options);
-      }
-    }
-  }
-
-  /**
-   * 直接执行工具（不需要审批的工具）
-   */
-  private async executeToolDirectly(
-    toolCallId: string,
-    toolName: string,
-    toolArgs: any,
-    options: ChatOptions
-  ): Promise<void> {
-    try {
-      // 执行工具
-      const result = await this.toolService.executeTool(toolName, toolArgs);
-      
-      console.log(`[ChatService] 工具 ${toolName} 执行结果:`, result);
-      
-      // 将工具执行结果封装为一条 ToolMessage
-      const toolMessage = this.createMessage('tool', JSON.stringify(result.data || result));
-      toolMessage.toolCalls = [{
-        id: toolCallId,
-        name: toolName,
-        arguments: toolArgs,
-        result: result.data,
-        status: result.success ? 'completed' : 'error'
-      }];
-      this._messages.push(toolMessage);
-      this._onDidMessageUpdate.fire([...this._messages]);
-      
-      // 继续 Agent Loop - 将工具结果作为新上下文发给 LLM
-      await this.continueAgentLoop(options);
-      
-    } catch (error) {
-      console.error(`[ChatService] 工具 ${toolName} 执行失败:`, error);
-      
-      const errorMessage = this.createMessage('tool', `工具执行失败: ${error}`);
-      errorMessage.status = 'error';
-      this._messages.push(errorMessage);
-      this._onDidMessageUpdate.fire([...this._messages]);
-    }
-  }
-
-  /**
-   * 继续 Agent Loop
-   * 在工具执行完成后，将结果作为新的上下文发送给 LLM
-   */
-  private async continueAgentLoop(options: ChatOptions): Promise<void> {
-    console.log('[ChatService] 继续 Agent Loop...');
-    
-    // 重新构建 prompt（包含工具执行结果）
-    const llmMessages = await this.promptService.constructMessages(
-      this._messages,
-      options.mode,
-      options.contextItems,
-      { modelId: options.modelId }
-    );
-    
-    // 启动新一轮 LLM 调用
-    await this.startAgentLoop(options, llmMessages);
-  }
-
-  /**
-   * 创建 Mock 工具
-   */
-  private createMockTool(toolName: string): any {
-    return {
-      name: toolName,
-      description: `Mock tool for ${toolName}`,
-      parameters: { type: 'object', properties: {} },
-      needApproval: toolName.includes('edit') || toolName.includes('insert') || toolName.includes('delete'),
-      type: 'read',
-      execute: async (args: any) => ({
-        success: true,
-        data: { message: `Mock 工具 ${toolName} 执行成功`, args }
-      })
-    };
-  }
-
-  /**
-   * 生成工具调用摘要
-   */
-  private generateToolCallSummary(toolName: string, args: any): string {
-    switch (toolName) {
-      case 'read_third_line':
-        return '读取第三行文本';
-      case 'insert_at_cursor':
-        return `插入文本: "${args.text || 'aabb'}"`;
-      case 'edit_code':
-        return `修改文件 ${args.file_path || '未知'}`;
-      case 'read_file':
-        return `读取文件 ${args.file_path || '未知'}`;
-      default:
-        return `执行工具 ${toolName}`;
-    }
-  }
-
-  /**
-   * 模拟流式响应（临时实现）
-   * @param message - 当前 assistant 消息
-   * @param options - 聊天选项
-   * @param llmMessages - 已构建的 LLM 消息（未来将发送给 LLM API）
-   */
-  private async simulateStreamResponse(message: ChatMessage, options: ChatOptions, llmMessages: any[]): Promise<void> {
-    // 模拟思考内容
-    message.thinking = '正在分析用户的问题...';
-    this._onDidMessageUpdate.fire([...this._messages]);
-
-    await this.sleep(500);
-
-    message.thinking += '\n思考完成，准备生成回答。';
-    this._onDidMessageUpdate.fire([...this._messages]);
-
-    await this.sleep(500);
-
-    // 模拟回答内容（显示提示词构建情况）
-    const response = `收到你的消息！\n\n当前模式：${options.mode}\n当前模型：${options.modelId}\n会话ID：${options.conversationId || '无'}\n\n提示词构建情况：\n- LLM 消息数量：${llmMessages.length}\n- 包含 System Prompt：${llmMessages.length > 0 ? '是' : '否'}\n- 历史消息数：${llmMessages.filter(m => m.role !== 'system').length}`;
-    
-    // 逐字输出（模拟流式）
-    for (let i = 0; i < response.length; i++) {
-      message.content += response[i];
-      this._onDidMessageUpdate.fire([...this._messages]);
-      await this.sleep(20);
-    }
-
-    message.status = 'completed';
-    message.thinking = undefined; // 完成后清除思考内容
-    this._onDidMessageUpdate.fire([...this._messages]);
-
-    // 如果是 agent 模式，模拟一个工具调用请求
-    if (options.mode === 'agent') {
-      await this.sleep(500);
-      this.simulateToolCallRequest(message);
-    }
-  }
-
-  /**
-   * 模拟工具调用请求（临时实现）
-   */
-  private simulateToolCallRequest(message: ChatMessage): void {
-    const toolCallId = `tool_${Date.now()}`;
-    const toolName = 'edit_code';
-    const toolArguments = {
-      file: 'example.tex',
-      operation: 'replace',
-      target: 'title',
-      newValue: 'Hello World'
-    };
-
-    // 存储待审批的工具调用
-    this._pendingToolCalls.set(toolCallId, {
-      id: toolCallId,
-      toolName,
-      arguments: toolArguments,
-      messageId: message.id
-    });
-
-    // 触发工具调用待审批事件
-    this._onDidToolCallPending.fire({
-      id: toolCallId,
-      toolName,
-      arguments: toolArguments,
-      targetFile: 'example.tex',
-      summary: '将标题修改为 "Hello World"',
-      messageId: message.id
-    });
   }
 
   /**
@@ -665,31 +294,14 @@ export class ChatService implements IChatService {
   }
 
   /**
-   * 延时工具函数
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  /**
    * 释放资源
    */
   dispose(): void {
     this._onDidMessageUpdate.dispose();
     this._onDidToolCallPending.dispose();
     this._messages = [];
-    this._pendingToolCalls.clear();
+    this._currentLoop = undefined;
   }
-}
-
-/**
- * 待审批的工具调用
- */
-interface PendingToolCall {
-  id: string;
-  toolName: string;
-  arguments: Record<string, any>;
-  messageId: string;
 }
 
 // 导出服务标识符

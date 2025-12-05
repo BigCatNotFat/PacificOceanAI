@@ -67,7 +67,7 @@ export interface ModelInfo {
   /** 显示名称 */
   name: string;
   /** 提供商（以及使用的协议类型） */
-  provider: 'openai' | 'openai-compatible' | 'anthropic' | 'other';
+  provider: 'openai' | 'openai-compatible' | 'anthropic' | 'gemini' | 'other';
   /** 模型能力 */
   capabilities: ModelCapabilities;
   /** 默认配置 */

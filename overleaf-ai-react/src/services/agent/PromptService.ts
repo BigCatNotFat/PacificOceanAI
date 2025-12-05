@@ -286,6 +286,14 @@ Keep responses clear and to the point.`;
         continue;
       }
 
+      // 🔑 跳过空内容且没有工具调用的消息
+      // 这些通常是 UI 占位消息（如 AgentService 创建的流式占位），不应发送给 LLM
+      // 避免某些厂商（如 Gemini）拒绝空消息导致 400 错误
+      if (!msg.content?.trim() && (!msg.toolCalls || msg.toolCalls.length === 0)) {
+        console.log('[PromptService] 跳过空消息', { role: msg.role, id: msg.id });
+        continue;
+      }
+
       // 构建内容
       let content = msg.content;
 

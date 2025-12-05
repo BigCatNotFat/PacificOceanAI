@@ -618,108 +618,357 @@ chatService.rejectToolCall(pendingTool.id);
   - 整个流程结束，等待下一次用户提问。
 
 ---
-6. 需要新增的关键文件
-- src/base/common/llm/modelCapabilities.ts（类型定义：ModelId / ModelCapabilities / ModelConfig）
-- platform/llm/IModelRegistryService.ts（模型注册表接口）
-- services/llm/ModelRegistryService.ts（模型注册表实现）
-- platform/agent/IChatService.ts（对话编排接口）
-- platform/agent/IPromptService.ts（提示词组装接口）
-- services/agent/ChatService.ts（核心业务循环：对话 + Agent Loop）
-- services/agent/PromptService.ts（提示词组装：System Prompt + 历史 + 上下文）
-- services/agent/tools/ToolService.ts（工具管理与执行）
-- workbench/parts/chat/ChatPanel.tsx（UI：消息展示、输入、工具审批）
-这套修改后的架构依然严格遵守你的单向依赖和依赖注入原则，并且进一步明确了：
-- Base 只做类型地基；
-- Platform 只定义接口契约；
-- Services 集中处理对话状态、工具循环与模型选择逻辑；
-- Workbench 只负责展示与交互。
-补充：
-1. Platform 层（工具契约）
-文件：platform/tools/ITool.ts
-作用：
- 定义“一个工具究竟是什么”。这里不实现任何逻辑，只说明工具的“名片”和“能力”。
-关键内容：
-- 工具元信息：
-  - name：供 LLM 调用时使用的工具名（如 "read_file", "edit_code"）。
-  - description：给 LLM 的自然语言说明。
-  - needApproval：是否需要用户手动审批（如修改代码）。
-  - isReadOnly：是否只读（读文件 / 搜索）还是会修改用户数据。
-  - parametersSchema：工具入参的 JSON Schema / OpenAI Tool Schema 等。
-- 执行接口：
-  - execute(args, context) -> ToolResult
-    - args：LLM 给出的参数对象（已从 JSON 反序列化）。
-    - context：执行上下文，内部可以访问：
-      - IEditorService（文件读写）
-      - 其他基础服务（日志、配置等）
-    - ToolResult：统一工具返回值结构（包括 success / data / errorMessage）。
-这一层只做类型声明：工具有什么字段、execute 怎么签名，不关心怎么实现。
+6. 架构重构：解耦与职责分离 (2024 重构)
 
-platform/tools/IToolService.ts
-作用：
- 定义“工具注册中心 + 执行器”的接口。ChatService & PromptService 只依赖这个接口。
-关键内容：
-- registerTool(tool)：注册一个工具。
-- getTool(name)：根据名称获取工具实例（包含元信息和 execute）。
-- listTools()：返回所有已注册工具（用于 PromptService 拼 Agent 工具定义）。
-- executeTool(name, args)：根据名字 + 参数执行工具，返回统一的 ToolResult。
+本节描述 2024 年对 Agent 系统的重大重构，目标是解决服务耦合、职责不清的问题。
+
+6.1 重构前的问题
+
+问题 1：ChatService 是"上帝类"
+- 承担了太多职责：会话管理、Agent Loop、工具决策、LLM 调用、模型配置
+- 代码量过大（600+ 行），难以维护和测试
+- 违反单一职责原则
+
+问题 2：LLMService 职责混乱
+- 既是 HTTP 客户端，又做厂商适配
+- 需要处理不同厂商的参数差异（maxTokensParamName 等）
+- 协议选择逻辑复杂（OpenAI / Anthropic / Custom）
+
+问题 3：工具调用逻辑分散
+- 工具选择在 ChatService
+- 工具审批在 ChatService
+- 工具执行在 ToolService
+- Agent Loop 又回到 ChatService
+- 缺少统一的编排层
+
+6.2 重构后的架构
+
+新架构分层（从上到下）：
+
+┌─────────────────────────────────────────────────────────────┐
+│                        Workbench (UI)                         │
+│                     只负责展示和用户交互                        │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                       ChatService                             │
+│  职责：会话状态管理、消息历史、事件分发                        │
+│  依赖：IAgentService                                          │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                       AgentService (新增)                     │
+│  职责：Agent Loop 编排、工具调用决策、审批流程管理              │
+│  依赖：ILLMService, IPromptService, IToolService,             │
+│        IModelRegistryService                                  │
+└──────────┬──────────────────────────┬───────────────────────┘
+           │                          │
+           ▼                          ▼
+┌──────────────────────┐    ┌──────────────────────┐
+│   PromptService      │    │   ToolService        │
+│ 职责：提示词构建      │    │ 职责：工具注册+执行   │
+└──────────────────────┘    └──────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    LLMProviderService (新增)                  │
+│  职责：LLM 厂商适配、参数转换、协议适配                         │
+│  依赖：IModelRegistryService, IConfigurationService           │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│                       LLMService                              │
+│  职责：纯粹的 HTTP 客户端，发送请求、解析流                     │
+│  依赖：ILLMProviderService                                    │
+└─────────────────────────────────────────────────────────────┘
+
+6.3 新增服务详解
+
+6.3.1 AgentService（核心编排层）
+
+职责：
+- Agent Loop 循环控制（最多 N 轮迭代）
+- 根据模型能力选择工具（agent 模式 vs chat 模式）
+- 工具调用决策（自动执行 vs 需要审批）
+- 工具审批状态管理
+- 防止死循环
+
+关键接口（platform/agent/IAgentService.ts）：
+
+export interface IAgentService {
+  startLoop(
+    initialMessages: ChatMessage[],
+    options: AgentOptions
+  ): Promise<AgentLoopController>;
+  
+  approveToolCall(loopId: string, toolCallId: string): Promise<void>;
+  rejectToolCall(loopId: string, toolCallId: string): Promise<void>;
+  
+  onDidLoopUpdate: Event<AgentLoopState>;
+  onDidToolCallPending: Event<ToolCallPendingEvent>;
+}
+
+核心流程：
+1. 根据 modelId 和 mode 选择可用工具
+2. 构建 LLM 配置（透传模型默认配置 + 工具定义）
+3. 调用 LLM 获取响应
+4. 检查是否有工具调用
+5. 如果有工具且需要审批：
+   - 触发 onDidToolCallPending 事件
+   - 暂停 Loop，等待 approveToolCall
+6. 如果有工具且不需要审批：
+   - 直接执行工具
+   - 将结果加入消息列表
+   - 继续下一轮 Loop
+7. 如果没有工具调用：结束 Loop
+
+6.3.2 LLMProviderService（厂商适配层）
+
+职责：
+- 根据模型选择正确的适配器（OpenAI / OpenAI-Compatible / Anthropic）
+- 将统一的 LLMConfig 转换为各厂商的请求格式
+- 处理厂商差异（maxTokensParamName、system prompt 格式等）
+- 提供流解析策略
+
+关键接口（platform/llm/ILLMProviderService.ts）：
+
+export interface ILLMProviderService {
+  buildRequestConfig(
+    messages: LLMMessage[],
+    config: LLMConfig
+  ): Promise<LLMProviderRequest>;
+  
+  parseStreamChunk(
+    dataString: string,
+    provider: 'openai' | 'openai-compatible' | 'anthropic'
+  ): ParsedStreamChunk | null;
+}
+
+适配器架构：
+
+services/llm/adapters/
+├── BaseLLMAdapter.ts          # 适配器基类
+├── OpenAIAdapter.ts           # OpenAI 官方 API
+├── OpenAICompatibleAdapter.ts # DeepSeek / Gemini 等
+└── AnthropicAdapter.ts        # Claude API
+
+每个适配器负责：
+- 构建请求端点和请求头
+- 转换消息格式（如 Anthropic 的 system 参数单独传递）
+- 处理模型特定参数（thinking、reasoning_effort 等）
+
+6.4 重构后的职责划分
+
+服务          职责                               依赖
+────────────────────────────────────────────────────────────────
+ChatService   会话管理、消息历史、事件分发       IAgentService
+
+AgentService  Agent Loop、工具编排、审批管理     ILLMService
+                                                 IPromptService
+                                                 IToolService
+                                                 IModelRegistryService
+
+LLMProvider   厂商适配、参数转换                 IModelRegistryService
+Service                                          IConfigurationService
+
+LLMService    HTTP 客户端、流解析                ILLMProviderService
+
+PromptService 提示词构建                         无
+
+ToolService   工具注册、执行                     无
+
+ModelRegistry 模型能力查询                       无
+Service
+
+6.5 核心优势
+
+1. 单一职责：每个服务只做一件事
+   - ChatService：200 行（原 700 行）
+   - LLMService：300 行（原 780 行）
+
+2. 易于测试：可以独立 mock 每个服务
+   - 测试 AgentService 时，mock LLMService
+   - 测试 ChatService 时，mock AgentService
+
+3. 易于扩展：
+   - 新增模型？只需添加 Adapter
+   - 新增 Agent 策略？只需修改 AgentService
+   - 新增工具？只需注册到 ToolService
+
+4. 符合架构原则：严格遵守单向依赖和依赖注入
+
+6.6 迁移指南
+
+从旧版本迁移到新版本：
+
+步骤 1：更新服务注册顺序（App.tsx）
+
+// 旧版本（错误）
+di.registerDescriptor(new ServiceDescriptor(IChatServiceId, ChatService, ...));
+di.registerDescriptor(new ServiceDescriptor(ILLMServiceId, LLMService, ...));
+
+// 新版本（正确）
+di.registerDescriptor(new ServiceDescriptor(IModelRegistryServiceId, ModelRegistryService, ...));
+di.registerDescriptor(new ServiceDescriptor(IToolServiceId, ToolService, ...));
+di.registerDescriptor(new ServiceDescriptor(IPromptServiceId, PromptService, ...));
+di.registerDescriptor(new ServiceDescriptor(ILLMProviderServiceId, LLMProviderService, ...));
+di.registerDescriptor(new ServiceDescriptor(ILLMServiceId, LLMService, ...));
+di.registerDescriptor(new ServiceDescriptor(IAgentServiceId, AgentService, ...));
+di.registerDescriptor(new ServiceDescriptor(IChatServiceId, ChatService, ...));
+
+步骤 2：UI 层无需改动
+
+// ChatPanel.tsx 保持不变
+const chatService = useService<IChatService>(IChatServiceId);
+await chatService.sendMessage(input, options);
+
+原因：IChatService 接口未改变，只是内部实现委托给了 AgentService。
+
+步骤 3：扩展新模型
+
+// services/llm/adapters/CustomAdapter.ts
+export class CustomAdapter extends BaseLLMAdapter {
+  buildRequest(messages, config, apiConfig) {
+    // 自定义厂商的请求格式
+  }
+}
+
+// LLMProviderService.ts
+private getAdapter(provider: string): BaseLLMAdapter {
+  switch (provider) {
+    case 'custom': return new CustomAdapter(this.modelRegistry);
+    // ...
+  }
+}
 
 ---
-2. Services 层（工具管理与实现）
-文件：services/agent/tools/ToolService.ts
-作用：
- Platform 层 IToolService 的默认实现，是真正的“工具注册表 + 单一入口执行器”。
-依赖注入：
-- 通过 @injectable(IEditorServiceId, ...) 注入：
-  - IEditorService：给大部分工具用来读写 Overleaf 编辑器内容。
-  - （可选）ILogService / IConfigurationService 等。
+7. 关键文件列表（更新后）
+
+Platform 层（接口定义）：
+- platform/agent/IChatService.ts（对话编排接口）
+- platform/agent/IAgentService.ts（Agent Loop 接口，新增）
+- platform/agent/IPromptService.ts（提示词组装接口）
+- platform/agent/IToolService.ts（工具服务接口）
+- platform/llm/ILLMService.ts（LLM 调用接口）
+- platform/llm/ILLMProviderService.ts（厂商适配接口，新增）
+- platform/llm/IModelRegistryService.ts（模型注册表接口）
+
+Services 层（业务实现）：
+- services/agent/ChatService.ts（会话管理，重构简化）
+- services/agent/AgentService.ts（Agent Loop 核心，新增）
+- services/agent/PromptService.ts（提示词组装）
+- services/agent/ToolService.ts（工具管理与执行）
+- services/llm/LLMService.ts（HTTP 客户端，重构简化）
+- services/llm/LLMProviderService.ts（厂商适配，新增）
+- services/llm/adapters/BaseLLMAdapter.ts（适配器基类，新增）
+- services/llm/adapters/OpenAIAdapter.ts（OpenAI 适配器，新增）
+- services/llm/adapters/OpenAICompatibleAdapter.ts（OpenAI 兼容适配器，新增）
+- services/llm/adapters/AnthropicAdapter.ts（Anthropic 适配器，新增）
+- services/llm/ModelRegistryService.ts（模型注册表实现）
+
+Workbench 层（UI）：
+- workbench/parts/Sidebar.tsx（侧边栏，包含聊天面板）
+- workbench/parts/App.tsx（应用入口，DI 容器注册）
+
+这套重构后的架构严格遵守单向依赖和依赖注入原则，并且进一步明确了：
+- Base 只做类型地基
+- Platform 只定义接口契约
+- Services 职责清晰，每个服务单一职责
+- Workbench 只负责展示与交互
+---
+8. 工具系统详解（Tools System）
+
+8.1 Platform 层（工具契约）
+
+文件：platform/agent/IToolService.ts
+
+作用：定义"一个工具究竟是什么"。这里不实现任何逻辑，只说明工具的"名片"和"能力"。
+
+关键内容：
+- 工具元信息（ITool 接口）：
+  - name：供 LLM 调用时使用的工具名（如 "read_file", "edit_code"）
+  - description：给 LLM 的自然语言说明
+  - needApproval：是否需要用户手动审批（如修改代码）
+  - type：工具类型（'read' | 'write' | 'search'）
+  - parameters：工具入参的 JSON Schema
+- 执行接口：
+  - execute(args) -> Promise<ToolExecutionResult>
+    - args：LLM 给出的参数对象（已从 JSON 反序列化）
+    - 返回：{ success: boolean; data?: any; error?: string }
+
+工具服务接口（IToolService）：
+- registerTool(tool: ITool)：注册一个工具
+- getTool(name: string)：根据名称获取工具实例
+- executeTool(name: string, args: any)：执行工具
+- listTools()：返回所有已注册工具
+- getReadOnlyTools()：返回不需要审批的工具（chat 模式使用）
+- getAllTools()：返回所有工具（agent 模式使用）
+
+8.2 Services 层（工具管理与实现）
+
+文件：services/agent/ToolService.ts
+
+作用：Platform 层 IToolService 的默认实现，是真正的"工具注册表 + 单一入口执行器"。
+
+依赖注入：@injectable()（无依赖，工具本身通过参数获取需要的服务）
+
 内部状态：
 - 一个 Map<string, ITool>：
   - key：工具名（tool.name）
   - value：工具对象（含元信息 + execute）
-主要职责：
-1967. 工具注册（初始化阶段）
-  - 在扩展初始化时（如 extension/sidepanel/index.ts 或 Agent 启动时）：
-    - 创建各种工具实例（new ReadFileTool() / new EditCodeTool() 等）。
-    - 调用 toolService.registerTool(...) 注册到容器里。
-  - 工具本身不维护全局状态，只通过 DI 的 context 拿到需要的服务。
-1968. 工具查询
-  - getTool(name)：
- ChatService 解析 LLM 的 tool_call 时，通过工具名称获取元信息：
-    - 用于判断 needApproval / isReadOnly。
-    - 用于获取 parametersSchema 等。
-1969. 工具执行统一入口
-  - executeTool(name, args)：
-    - 从 Map 中找出对应 ITool。
-    - 构造执行上下文（IEditorService 等）。
-    - 调用 tool.execute(args, context)。
-    - 捕获异常并包装成统一的 ToolResult（包含 ok / data / errorMessage）。
 
----
-具体工具类位置与职责
-所有具体工具类放在：
-services/agent/tools/ 目录下，每个工具一个文件，命名统一。
-示例分类（蓝图）
-2680. 编辑器类工具 (Editor Tools)
+主要职责：
+1. 工具注册（初始化阶段）
+   - 在构造函数中调用 initializeBuiltInTools()
+   - 注册内置工具：read_file, edit_code, search_content, list_files
+   - 外部可通过 registerTool() 动态注册新工具
+
+2. 工具查询
+   - getTool(name)：AgentService 解析 LLM 的 tool_call 时使用
+   - 用于判断 needApproval / type
+
+3. 工具执行统一入口
+  - executeTool(name, args)：
+     - 从 Map 中找出对应 ITool
+     - 调用 tool.execute(args)
+     - 捕获异常并包装成统一的 ToolExecutionResult
+     - 记录执行时间
+
+8.3 具体工具类位置与职责
+
+所有具体工具类目前内联在 ToolService 中，未来可拆分到独立文件：
+
+services/agent/tools/ 目录下，每个工具一个文件
+
+示例分类（蓝图）：
+1. 编辑器类工具 (Editor Tools)
   - 位置：services/agent/tools/editor/
   - 例子：
-    - ReadFileTool：只读，读取 Overleaf 文件内容。
-    - EditCodeTool：修改文件内容（编辑 tex / 代码），需要审批。
-2681. 项目类工具 (Project Tools)
+     - ReadFileTool：只读，读取 Overleaf 文件内容
+     - EditCodeTool：修改文件内容（编辑 tex / 代码），需要审批
+
+2. 项目类工具 (Project Tools)
   - 位置：services/agent/tools/project/
   - 例子：
-    - ListFilesTool：列出项目中的文件列表。
-    - SearchInProjectTool：在项目中搜索特定文本/宏。
-2682. 外部服务类工具 (External Tools)
+     - ListFilesTool：列出项目中的文件列表
+     - SearchInProjectTool：在项目中搜索特定文本/宏
+
+3. 外部服务类工具 (External Tools)
   - 位置：services/agent/tools/external/
   - 例子：
-    - WebSearchTool：调用搜索 API。
-    - CitationLookupTool：查文献 / DOI。
-每个工具类都实现 ITool 接口，不直接依赖 UI，也不直接操作 DOM，所有需要的能力都从 IToolContext（如 IEditorService）中获取。
+     - WebSearchTool：调用搜索 API
+     - CitationLookupTool：查文献 / DOI
+
+每个工具类都实现 ITool 接口，不直接依赖 UI，也不直接操作 DOM，所有需要的能力都从注入的服务（如 IEditorService）中获取。
 
 
 
 
-1. 检查清单 (Pre-commit Checklist)
+---
+9. 检查清单 (Pre-commit Checklist)
    
 在提交代码前，请自问：
 
@@ -737,4 +986,15 @@ services/agent/tools/ 目录下，每个工具一个文件，命名统一。
 
 [ ] 服务是否正确注册到 DI 容器（使用 ServiceDescriptor 或 registerInstance）？
 
-核心口号： 所有的 UI 都是暂时的，所有的接口才是永恒的。 编写代码时，请想象 UI 可能会被完全重写，但你的 Service 逻辑应该不需要改动。
+[ ] 服务职责是否单一？（如果一个服务超过 500 行，考虑拆分）
+
+[ ] 是否有循环依赖？（A 依赖 B，B 又依赖 A）
+
+[ ] 是否正确使用了适配器模式？（新增 LLM 厂商应该创建新的 Adapter，而不是修改 LLMService）
+
+核心口号： 
+- "所有的 UI 都是暂时的，所有的接口才是永恒的。"
+- "单一职责，职责分离。一个服务只做一件事。"
+- "依赖抽象，不依赖实现。依赖 Interface，不依赖 Class。"
+
+编写代码时，请想象 UI 可能会被完全重写，但你的 Service 逻辑应该不需要改动。

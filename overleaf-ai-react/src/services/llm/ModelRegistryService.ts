@@ -44,7 +44,7 @@ const DEFAULT_MODEL_CONFIG: Omit<ModelConfig, 'modelId'> = {
 type PartialModelInfo = {
   id: ModelId;
   name: string;
-  provider: 'openai' | 'openai-compatible' | 'anthropic' | 'other';
+  provider: 'openai' | 'openai-compatible' | 'anthropic' | 'gemini' | 'other';
   description?: string;
   capabilities?: Partial<ModelCapabilities>;
   defaultConfig?: Partial<Omit<ModelConfig, 'modelId'>>;
@@ -236,7 +236,7 @@ export class ModelRegistryService implements IModelRegistryService {
     this.registerModel({
       id: 'gemini-2.0-flash-exp',
       name: 'Gemini 2.0 Flash',
-      provider: 'openai-compatible',
+      provider: 'gemini',
       description: 'Google 最新实验性快速模型',
       capabilities: {
         supportsTools: true,
@@ -258,7 +258,7 @@ export class ModelRegistryService implements IModelRegistryService {
     this.registerModel({
       id: 'gemini-2.5-pro',
       name: 'Gemini 2.5 Pro',
-      provider: 'openai-compatible',
+      provider: 'gemini',
       description: 'Google 高性能模型，超大上下文窗口',
       capabilities: {
         supportsTools: true,
@@ -276,10 +276,34 @@ export class ModelRegistryService implements IModelRegistryService {
         maxTokens: 4096
       }
     });
+    
+    // 🔑 新增：Gemini 2.5 Flash - 快速模型，支持思考输出
+    this.registerModel({
+      id: 'gemini-2.5-flash',
+      name: 'Gemini 2.5 Flash',
+      provider: 'gemini',
+      description: 'Google 快速模型，支持思考过程输出',
+      capabilities: {
+        supportsTools: true,
+        supportsReasoning: true,  // 支持 thinking_config
+        maxContextTokens: 1000000,
+        maxOutputTokens: 8192,
+        supportsVision: true,
+        supportsSystemPrompt: true,
+        supportsStreaming: true
+      },
+      defaultConfig: {
+        modelId: 'gemini-2.5-flash',
+        temperature: 1.0,
+        topP: 0.95,
+        maxTokens: 4096
+      }
+    });
+    
     this.registerModel({
       id: 'gemini-3-pro-preview',
       name: 'gemini-3-pro-preview',
-      provider: 'openai-compatible',
+      provider: 'gemini',
       description: 'Google 高性能模型，超大上下文窗口',
       capabilities: {
         supportsTools: true,
