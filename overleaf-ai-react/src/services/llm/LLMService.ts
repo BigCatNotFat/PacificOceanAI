@@ -29,7 +29,10 @@ import { IConfigurationServiceId } from '../../platform/configuration/configurat
 import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
 import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
 import { OpenAIProvider } from './adapters/OpenAIProvider';
-import type { APIConfig } from './adapters/BaseLLMAdapter';
+import { OpenAICompatibleProvider } from './adapters/OpenAICompatibleProvider';
+import { GeminiProvider } from './adapters/GeminiProvider';
+import { AnthropicProvider } from './adapters/AnthropicProvider';
+import type { APIConfig } from './adapters/BaseLLMProvider';
 
 /**
  * LLMService 实现
@@ -133,7 +136,6 @@ export class LLMService implements ILLMService {
     
     switch (providerType) {
       case 'openai':
-      case 'openai-compatible':
         provider = new OpenAIProvider(
           this.modelRegistry,
           this.uiStreamService,
@@ -141,13 +143,29 @@ export class LLMService implements ILLMService {
         );
         break;
       
+      case 'openai-compatible':
+        provider = new OpenAICompatibleProvider(
+          this.modelRegistry,
+          this.uiStreamService,
+          apiConfig
+        );
+        break;
+      
       case 'anthropic':
-        // TODO: 实现 AnthropicProvider
-        throw new Error('Anthropic provider 尚未实现');
+        provider = new AnthropicProvider(
+          this.modelRegistry,
+          this.uiStreamService,
+          apiConfig
+        );
+        break;
       
       case 'gemini':
-        // TODO: 实现 GeminiProvider
-        throw new Error('Gemini provider 尚未实现');
+        provider = new GeminiProvider(
+          this.modelRegistry,
+          this.uiStreamService,
+          apiConfig
+        );
+        break;
       
       default:
         throw new Error(`不支持的供应商类型: ${providerType}`);

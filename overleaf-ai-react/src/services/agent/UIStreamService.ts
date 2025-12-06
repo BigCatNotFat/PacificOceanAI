@@ -56,7 +56,6 @@ export class UIStreamService extends Disposable implements IUIStreamService {
     const next = prev + (update.delta || '');
 
     this.thinkingBuffers.set(key, next);
-
     this._onDidThinkingUpdate.fire({
       ...update,
       fullText: next
@@ -74,7 +73,6 @@ export class UIStreamService extends Disposable implements IUIStreamService {
     const next = prev + (update.delta || '');
 
     this.contentBuffers.set(key, next);
-
     this._onDidContentUpdate.fire({
       ...update,
       fullText: next

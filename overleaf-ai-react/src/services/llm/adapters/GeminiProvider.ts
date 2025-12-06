@@ -1,13 +1,18 @@
 /**
- * OpenAIProvider
+ * GeminiProvider - Google Gemini API 提供者
  *
  * 职责：
- * - 完整的 OpenAI 客户端实现
+ * - 完整的 Gemini 客户端实现（使用 OpenAI 兼容接口）
  * - 接收历史上下文（messages + config）
- * - 内部构建请求并发送给 OpenAI API
+ * - 内部构建请求并发送给 Gemini API
  * - 流式接收响应，实时解析
  * - 每收到一个 chunk，立即通过 UIStreamService 更新 UI
  * - 等流式完成后，返回完整的最终结果
+ * 
+ * Gemini 特性：
+ * - 使用 OpenAI 兼容接口
+ * - 支持思考过程（通过 <thought> 标签）
+ * - 需要特殊处理 thinking_config
  */
 
 import type { LLMMessage, LLMConfig, LLMFinalMessage } from '../../../platform/llm/ILLMService';
@@ -15,7 +20,7 @@ import type { IModelRegistryService } from '../../../platform/llm/IModelRegistry
 import { BaseLLMProvider, type APIConfig } from './BaseLLMProvider';
 import type { IUIStreamService } from '../../../platform/agent/IUIStreamService';
 
-export class OpenAIProvider extends BaseLLMProvider {
+export class GeminiProvider extends BaseLLMProvider {
   constructor(
     private readonly modelRegistry: IModelRegistryService,
     private readonly uiStreamService: IUIStreamService,
@@ -31,7 +36,7 @@ export class OpenAIProvider extends BaseLLMProvider {
    * @returns 完整的最终响应
    */
   async chat(messages: LLMMessage[], config: LLMConfig): Promise<LLMFinalMessage> {
-    console.log('[OpenAIProvider] chat() called', {
+    console.log('[GeminiProvider] chat() called', {
       messageCount: messages.length,
       hasUIStreamMeta: !!config.uiStreamMeta,
       conversationId: config.uiStreamMeta?.conversationId,
@@ -42,7 +47,7 @@ export class OpenAIProvider extends BaseLLMProvider {
     // 1. 构建请求
     const { endpoint, headers, body } = this.buildRequest(messages, config);
 
-    // 2. 发送 HTTP 请求（支持上层通过 AbortController 中断）
+    // 2. 发送 HTTP 请求
     const response = await fetch(endpoint, {
       method: 'POST',
       headers,
@@ -52,7 +57,7 @@ export class OpenAIProvider extends BaseLLMProvider {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`OpenAI API 请求失败: ${response.status} ${errorText}`);
+      throw new Error(`Gemini API 请求失败: ${response.status} ${errorText}`);
     }
 
     // 3. 流式解析响应
@@ -60,7 +65,7 @@ export class OpenAIProvider extends BaseLLMProvider {
   }
 
   /**
-   * 构建 OpenAI 请求配置（内部方法）
+   * 构建 Gemini 请求配置（内部方法）
    */
   private buildRequest(
     messages: LLMMessage[],
@@ -87,9 +92,18 @@ export class OpenAIProvider extends BaseLLMProvider {
       }
     }
 
-    // 推理参数（OpenAI o1 系列）
-    if (config.reasoningEffort) {
-      payload.reasoning_effort = config.reasoningEffort;
+    // 🔑 Gemini 特定参数：启用思考过程输出
+    // 如果模型支持推理能力，自动启用 thinking_config
+    // 这样可以获得类似 DeepSeek 的 <thought> 标签包裹的思考过程
+    if (modelInfo?.capabilities?.supportsReasoning) {
+      payload.extra_body = {
+        google: {
+          thinking_config: {
+            include_thoughts: true
+          }
+        }
+      };
+      console.log('[GeminiProvider] 已启用思考过程输出', { modelId: config.modelId });
     }
 
     // 确保 API 端点格式正确
@@ -109,6 +123,10 @@ export class OpenAIProvider extends BaseLLMProvider {
 
   /**
    * 解析流式响应（内部方法）
+   * 
+   * Gemini 特殊处理：
+   * - 检测 <thought> 标签并将其内容标记为 thinking 类型
+   * - 过滤掉标签本身，只保留内容
    */
   private async parseStreamResponse(
     response: Response,
@@ -130,6 +148,9 @@ export class OpenAIProvider extends BaseLLMProvider {
     
     let finishReason: LLMFinalMessage['finishReason'];
     let usage: LLMFinalMessage['usage'];
+    
+    // Gemini 特殊状态：跟踪是否在思考标签内
+    let isInThinkingTag = false;
 
     try {
       let buffer = '';
@@ -155,37 +176,55 @@ export class OpenAIProvider extends BaseLLMProvider {
 
             const delta = choice.delta;
 
-            // 处理推理内容（thinking）
-            const reasoningDelta = (delta as any)?.reasoning_content;
-            if (reasoningDelta) {
-              const text = String(reasoningDelta);
-              fullThinking += text;
-
-              if (this.uiStreamService && messageId) {
-                this.uiStreamService.pushThinking({
-                  conversationId,
-                  messageId,
-                  delta: text
-                });
-              }
-            }
-
-            // 处理普通内容
+            // 处理内容（需要检测 Gemini 的 <thought> 标签）
             if (delta?.content) {
-              const text = String(delta.content);
-              fullContent += text;
-
-              if (this.uiStreamService && messageId) {
-                this.uiStreamService.pushContent({
-                  conversationId,
-                  messageId,
-                  delta: text
-                });
+              let text = String(delta.content);
+              
+              // 检查是否包含 <thought> 标签
+              const hasOpenTag = /<thought>/i.test(text);
+              const hasCloseTag = /<\/thought>/i.test(text);
+              
+              // 检测 Gemini 特有的思考内容标记
+              const isThinkingContent = (delta as any)?.extra_content?.google?.thought === true;
+              
+              if (hasOpenTag) {
+                isInThinkingTag = true;
+                text = text.replace(/<thought>/gi, '');
+              }
+              if (hasCloseTag) {
+                isInThinkingTag = false;
+                text = text.replace(/<\/thought>/gi, '');
+              }
+              
+              // 根据是否在思考标签内或标记决定类型
+              if (isInThinkingTag || isThinkingContent || hasOpenTag) {
+                // 这是思考内容
+                if (text.trim()) {
+                  fullThinking += text;
+                  
+                  if (this.uiStreamService && messageId) {
+                    this.uiStreamService.pushThinking({
+                      conversationId,
+                      messageId,
+                      delta: text
+                    });
+                  }
+                }
               } else {
-                console.warn('[OpenAIProvider] Cannot push content - missing service or messageId', {
-                  hasService: !!this.uiStreamService,
-                  messageId
-                });
+                // 普通内容 - 额外清理可能泄露的标签
+                text = text.replace(/<\/?thought>/gi, '');
+                
+                if (text.trim()) {
+                  fullContent += text;
+                  
+                  if (this.uiStreamService && messageId) {
+                    this.uiStreamService.pushContent({
+                      conversationId,
+                      messageId,
+                      delta: text
+                    });
+                  }
+                }
               }
             }
 
@@ -233,7 +272,7 @@ export class OpenAIProvider extends BaseLLMProvider {
               };
             }
           } catch (err) {
-            console.warn('[OpenAIProvider] 解析流数据失败:', err);
+            console.warn('[GeminiProvider] 解析流数据失败:', err);
           }
         }
       }

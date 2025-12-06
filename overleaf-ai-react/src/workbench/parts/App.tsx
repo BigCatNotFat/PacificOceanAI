@@ -13,7 +13,6 @@ import { StorageScope } from '../../base/browser/storage';
 import { ChatService, IChatServiceId } from '../../services/agent/ChatService';
 import { AgentService, IAgentServiceId } from '../../services/agent/AgentService';
 import { LLMService, ILLMServiceId } from '../../services/llm/LLMService';
-import { LLMProviderService, ILLMProviderServiceId } from '../../services/llm/LLMProviderService';
 import { PromptService, IPromptServiceId } from '../../services/agent/PromptService';
 import { ToolService, IToolServiceId } from '../../services/agent/ToolService';
 import { ModelRegistryService, IModelRegistryServiceId } from '../../services/llm/ModelRegistryService';
@@ -75,16 +74,7 @@ const App: React.FC = () => {
       )
     );
 
-    // 注册 LLM Provider 服务（厂商适配层）
-    di.registerDescriptor(
-      new ServiceDescriptor(
-        ILLMProviderServiceId,
-        LLMProviderService,
-        getServiceDependencies(LLMProviderService)
-      )
-    );
-
-    // 注册 LLM 服务（依赖 LLMProviderService）
+    // 注册 LLM 服务
     di.registerDescriptor(
       new ServiceDescriptor(
         ILLMServiceId,

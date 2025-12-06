@@ -109,36 +109,16 @@ export function useChatMessages(initialMessages: ChatMessage[] = []) {
 
   const messages = useMemo<ChatMessage[]>(() => {
     const uiMessages: ChatMessage[] = [...initialMessages];
-    const bufferKeysArray = Array.from(streamingBuffers.keys());
-    const serviceIds = serviceMessages.map(m => m.id);
-    const unmatchedBuffers = bufferKeysArray.filter(key => !serviceIds.includes(key));
-
-    // If there is exactly one unmatched buffer, treat it as the active streaming buffer
-    // for the current assistant streaming message (ChatService's placeholder message).
-    const fallbackBufferId = unmatchedBuffers.length === 1 ? unmatchedBuffers[0] : undefined;
 
     for (const msg of serviceMessages) {
-      // Check if this message has active streaming content
-      let streamingBuffer = streamingBuffers.get(msg.id);
-
-      // Fallback: if we don't find a buffer by exact ID, but we know there is exactly
-      // one unmatched buffer, and this message looks like the current streaming
-      // assistant placeholder, then reuse that unmatched buffer.
-      if (
-        !streamingBuffer &&
-        fallbackBufferId &&
-        msg.role === 'assistant' &&
-        (msg.status === 'streaming' || msg.status === 'pending')
-      ) {
-        streamingBuffer = streamingBuffers.get(fallbackBufferId);
-      }
-      
-      // Map message with streaming overlay if available
-      uiMessages.push(...mapServiceMessageToUI(
-        msg,
-        streamingBuffer?.content,
-        streamingBuffer?.thinking
-      ));
+      const streamingBuffer = streamingBuffers.get(msg.id);
+      uiMessages.push(
+        ...mapServiceMessageToUI(
+          msg,
+          streamingBuffer?.content,
+          streamingBuffer?.thinking
+        )
+      );
     }
 
     return uiMessages;

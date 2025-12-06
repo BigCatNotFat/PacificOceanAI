@@ -1,10 +1,10 @@
 /**
- * OpenAIProvider
+ * OpenAICompatibleProvider - OpenAI 兼容 API 适配器
  *
  * 职责：
- * - 完整的 OpenAI 客户端实现
+ * - 完整的 OpenAI 兼容客户端实现（用于 DeepSeek、Gemini 等）
  * - 接收历史上下文（messages + config）
- * - 内部构建请求并发送给 OpenAI API
+ * - 内部构建请求并发送给兼容 API
  * - 流式接收响应，实时解析
  * - 每收到一个 chunk，立即通过 UIStreamService 更新 UI
  * - 等流式完成后，返回完整的最终结果
@@ -15,7 +15,7 @@ import type { IModelRegistryService } from '../../../platform/llm/IModelRegistry
 import { BaseLLMProvider, type APIConfig } from './BaseLLMProvider';
 import type { IUIStreamService } from '../../../platform/agent/IUIStreamService';
 
-export class OpenAIProvider extends BaseLLMProvider {
+export class OpenAICompatibleProvider extends BaseLLMProvider {
   constructor(
     private readonly modelRegistry: IModelRegistryService,
     private readonly uiStreamService: IUIStreamService,
@@ -31,7 +31,7 @@ export class OpenAIProvider extends BaseLLMProvider {
    * @returns 完整的最终响应
    */
   async chat(messages: LLMMessage[], config: LLMConfig): Promise<LLMFinalMessage> {
-    console.log('[OpenAIProvider] chat() called', {
+    console.log('[OpenAICompatibleProvider] chat() called', {
       messageCount: messages.length,
       hasUIStreamMeta: !!config.uiStreamMeta,
       conversationId: config.uiStreamMeta?.conversationId,
@@ -42,7 +42,7 @@ export class OpenAIProvider extends BaseLLMProvider {
     // 1. 构建请求
     const { endpoint, headers, body } = this.buildRequest(messages, config);
 
-    // 2. 发送 HTTP 请求（支持上层通过 AbortController 中断）
+    // 2. 发送 HTTP 请求
     const response = await fetch(endpoint, {
       method: 'POST',
       headers,
@@ -52,7 +52,7 @@ export class OpenAIProvider extends BaseLLMProvider {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`OpenAI API 请求失败: ${response.status} ${errorText}`);
+      throw new Error(`OpenAI Compatible API 请求失败: ${response.status} ${errorText}`);
     }
 
     // 3. 流式解析响应
@@ -60,7 +60,7 @@ export class OpenAIProvider extends BaseLLMProvider {
   }
 
   /**
-   * 构建 OpenAI 请求配置（内部方法）
+   * 构建 OpenAI 兼容请求配置（内部方法）
    */
   private buildRequest(
     messages: LLMMessage[],
@@ -85,6 +85,12 @@ export class OpenAIProvider extends BaseLLMProvider {
       if (toolChoice) {
         payload.tool_choice = toolChoice;
       }
+    }
+
+    // DeepSeek 推理模式的 thinking 参数
+    const thinking = (config as any).thinking;
+    if (thinking) {
+      payload.thinking = thinking;
     }
 
     // 推理参数（OpenAI o1 系列）
@@ -155,7 +161,7 @@ export class OpenAIProvider extends BaseLLMProvider {
 
             const delta = choice.delta;
 
-            // 处理推理内容（thinking）
+            // 处理推理内容（thinking）- 支持 reasoning_content 和 content 中的 thinking
             const reasoningDelta = (delta as any)?.reasoning_content;
             if (reasoningDelta) {
               const text = String(reasoningDelta);
@@ -182,7 +188,7 @@ export class OpenAIProvider extends BaseLLMProvider {
                   delta: text
                 });
               } else {
-                console.warn('[OpenAIProvider] Cannot push content - missing service or messageId', {
+                console.warn('[OpenAICompatibleProvider] Cannot push content - missing service or messageId', {
                   hasService: !!this.uiStreamService,
                   messageId
                 });
@@ -233,7 +239,7 @@ export class OpenAIProvider extends BaseLLMProvider {
               };
             }
           } catch (err) {
-            console.warn('[OpenAIProvider] 解析流数据失败:', err);
+            console.warn('[OpenAICompatibleProvider] 解析流数据失败:', err);
           }
         }
       }

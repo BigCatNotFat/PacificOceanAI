@@ -1,7 +1,7 @@
 /**
- * BaseLLMAdapter - LLM 适配器基类
+ * BaseLLMProvider - LLM 提供者基类
  * 
- * 定义所有 LLM 厂商适配器的通用接口
+ * 定义所有 LLM 厂商提供者的通用接口
  */
 
 import type { LLMMessage, LLMConfig } from '../../../platform/llm/ILLMService';
@@ -15,9 +15,9 @@ export interface APIConfig {
 }
 
 /**
- * LLM 适配器抽象基类
+ * LLM 提供者抽象基类
  */
-export abstract class BaseLLMAdapter {
+export abstract class BaseLLMProvider {
   /**
    * 聊天接口 - 所有 Provider 必须实现
    * @param messages - 消息列表
@@ -51,7 +51,7 @@ export abstract class BaseLLMAdapter {
         return true;
       }
       // 过滤掉其他空消息
-      console.warn('[BaseLLMAdapter] 过滤空消息', { role: msg.role });
+      console.warn('[BaseLLMProvider] 过滤空消息', { role: msg.role });
       return false;
     });
   }

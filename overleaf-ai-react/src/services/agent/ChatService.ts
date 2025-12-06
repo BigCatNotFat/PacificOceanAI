@@ -55,8 +55,13 @@ export class ChatService implements IChatService {
   /** 当前 Agent Loop 控制器 */
   private _currentLoop?: AgentLoopController;
 
+  /** 当前 Loop ID（用于防止旧 Loop 的事件覆盖新消息） */
+  private _currentLoopId?: string;
+
   /** 当前消息 ID 计数器 */
   private _messageIdCounter: number = 0;
+  /** 当前这一轮对话在列表一中的起始下标（用于中断时整体回滚） */
+  private _currentTurnStartIndex: number | undefined;
 
   constructor(
     private readonly agentService: IAgentService
@@ -81,6 +86,9 @@ export class ChatService implements IChatService {
     }
 
     this._isProcessing = true;
+
+    // 记录当前这一轮对话在列表一中的起始位置
+    this._currentTurnStartIndex = this._messages.length;
 
     try {
       // 1. 写入用户消息
@@ -119,21 +127,37 @@ export class ChatService implements IChatService {
           modelId: options.modelId,
           mode: options.mode,
           contextItems: options.contextItems,
-          maxIterations: 10
+          maxIterations: 10,
+          responseMessageId: assistantPlaceholder.id
         }
       );
+      
+      // 记录当前 Loop ID
+      this._currentLoopId = this._currentLoop.id;
 
       // 4. 监听 Loop 更新（更新列表一）
+      const loopId = this._currentLoop.id;
       this._currentLoop.onUpdate((updatedMessages) => {
+        // 检查是否还是当前的 Loop（防止旧 Loop 覆盖新消息）
+        if (this._currentLoopId !== loopId) {
+          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的更新事件`);
+          return;
+        }
         this._messages = updatedMessages;
         this._onDidMessageUpdate.fire([...this._messages]);
       });
 
       // 5. 监听 Loop 完成（更新列表一）
       this._currentLoop.onDone((finalMessages) => {
+        // 检查是否还是当前的 Loop
+        if (this._currentLoopId !== loopId) {
+          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的完成事件`);
+          return;
+        }
         this._messages = finalMessages;
         this._onDidMessageUpdate.fire([...this._messages]);
         this._isProcessing = false;
+        this._currentTurnStartIndex = undefined;
         
         // 注意：列表一保留所有细节（包括 thinking），给用户看
         // 列表二会在下次请求时动态生成，自动剔除 thinking
@@ -143,6 +167,11 @@ export class ChatService implements IChatService {
 
       // 6. 监听 Loop 错误
       this._currentLoop.onError((error) => {
+        // 检查是否还是当前的 Loop
+        if (this._currentLoopId !== loopId) {
+          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的错误事件`);
+          return;
+        }
         console.error('[ChatService] Agent Loop 错误:', error);
         
         const errorMessage = this.createMessage('assistant', `抱歉，发生了错误: ${error.message}`);
@@ -151,10 +180,16 @@ export class ChatService implements IChatService {
         this._onDidMessageUpdate.fire([...this._messages]);
         
         this._isProcessing = false;
+        this._currentTurnStartIndex = undefined;
       });
 
       // 7. 监听工具审批事件（转发给 UI）
       this._currentLoop.onToolCallPending((event) => {
+        // 检查是否还是当前的 Loop
+        if (this._currentLoopId !== loopId) {
+          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的工具审批事件`);
+          return;
+        }
         console.log('[ChatService] 工具调用待审批:', event);
         this._onDidToolCallPending.fire(event);
       });
@@ -169,6 +204,7 @@ export class ChatService implements IChatService {
       this._onDidMessageUpdate.fire([...this._messages]);
       
       this._isProcessing = false;
+      this._currentTurnStartIndex = undefined;
     }
   }
 
@@ -179,19 +215,18 @@ export class ChatService implements IChatService {
     console.log('[ChatService] 中断请求');
     
     if (this._currentLoop) {
+      const abortedLoopId = this._currentLoop.id;
+      console.log(`[ChatService] 中断 Loop: ${abortedLoopId}`);
       this._currentLoop.abort();
       this._currentLoop = undefined;
+      this._currentLoopId = undefined;
     }
 
-    // 更新最后一条消息为已中断
-    if (this._messages.length > 0) {
-      const lastMessage = this._messages[this._messages.length - 1];
-      if (lastMessage.role === 'assistant' && lastMessage.status === 'streaming') {
-        lastMessage.status = 'aborted';
-        lastMessage.content += '\n\n[已中断]';
-        lastMessage.thinking = undefined;
-        this._onDidMessageUpdate.fire([...this._messages]);
-      }
+    // 回滚当前这一轮对话（从起始下标开始的所有消息全部移除）
+    if (typeof this._currentTurnStartIndex === 'number') {
+      this._messages = this._messages.slice(0, this._currentTurnStartIndex);
+      this._currentTurnStartIndex = undefined;
+      this._onDidMessageUpdate.fire([...this._messages]);
     }
 
     this._isProcessing = false;

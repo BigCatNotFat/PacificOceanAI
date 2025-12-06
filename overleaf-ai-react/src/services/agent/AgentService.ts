@@ -215,10 +215,16 @@ export class AgentService implements IAgentService {
           context.options.modelId,
           availableTools
         );
+        const abortController = new AbortController();
+        context.abortController = abortController;
+        (llmConfig as any).abortSignal = abortController.signal;
 
         // 4. 调用 LLM（使用新的 chat 接口）
         // 创建 assistant 占位消息
         const assistantMessage = this.createMessage('assistant', '');
+        if (context.options.responseMessageId) {
+          assistantMessage.id = context.options.responseMessageId;
+        }
         assistantMessage.status = 'streaming';
         context.messages.push(assistantMessage);
         context.workingMemory.push(assistantMessage); // 加入工作记忆
@@ -229,9 +235,22 @@ export class AgentService implements IAgentService {
           conversationId: context.loopId,
           messageId: assistantMessage.id
         };
+        console.log('[AgentService] 调用 LLM 前的配置', {
+          loopId: context.loopId,
+          modelId: context.options.modelId,
+          uiStreamMeta: (llmConfig as any).uiStreamMeta,
+          hasAbortSignal: !!(llmConfig as any).abortSignal
+        });
         
         // 5. 调用 LLM（一次性返回完整结果，UI 更新由 Provider 内部实时推送）
         const finalResult = await this.llmService.chat(llmMessages, llmConfig);
+        context.abortController = undefined;
+        
+        // 检查是否已被中断
+        if (context.aborted) {
+          console.log(`[AgentService] Loop ${context.loopId} 已中断，停止处理 LLM 响应`);
+          return;
+        }
         
         // 6. 更新 assistant 消息
         assistantMessage.content = finalResult.content;
@@ -276,14 +295,22 @@ export class AgentService implements IAgentService {
       }
 
       // Loop 完成
-      context.status = 'completed';
-      context.onDoneEmitter.fire([...context.messages]);
+      if (!context.aborted) {
+        context.status = 'completed';
+        context.onDoneEmitter.fire([...context.messages]);
+      } else {
+        console.log(`[AgentService] Loop ${context.loopId} 已中断，不触发完成事件`);
+      }
       this.activeLoops.delete(context.loopId);
 
     } catch (error) {
-      console.error(`[AgentService] Loop ${context.loopId} 错误:`, error);
-      context.status = 'error';
-      context.onErrorEmitter.fire(error instanceof Error ? error : new Error(String(error)));
+      if (!context.aborted) {
+        console.error(`[AgentService] Loop ${context.loopId} 错误:`, error);
+        context.status = 'error';
+        context.onErrorEmitter.fire(error instanceof Error ? error : new Error(String(error)));
+      } else {
+        console.log(`[AgentService] Loop ${context.loopId} 已中断，不触发错误事件`);
+      }
       this.activeLoops.delete(context.loopId);
     }
   }
@@ -456,6 +483,16 @@ export class AgentService implements IAgentService {
     }
 
     console.log(`[AgentService] 中断 Loop: ${loopId}`);
+
+    if (context.abortController) {
+      try {
+        context.abortController.abort();
+      } catch (error) {
+        console.warn(`[AgentService] 中断 LLM 请求失败:`, error);
+      }
+      context.abortController = undefined;
+    }
+
     context.aborted = true;
     context.status = 'aborted';
     this.activeLoops.delete(loopId);
@@ -521,6 +558,7 @@ interface LoopContext {
   status: 'running' | 'waiting_approval' | 'completed' | 'error' | 'aborted';
   pendingToolCalls: Map<string, PendingToolCall>;
   aborted: boolean;
+  abortController?: AbortController;
   onDoneEmitter: Emitter<ChatMessage[]>;
   onUpdateEmitter: Emitter<ChatMessage[]>;
   onErrorEmitter: Emitter<Error>;

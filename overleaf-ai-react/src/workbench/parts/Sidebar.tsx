@@ -8,6 +8,8 @@ import { IConfigurationServiceId } from '../../platform/configuration/configurat
 import type { IConfigurationService, AIModelConfig } from '../../platform/configuration/configuration';
 import { IChatServiceId } from '../../platform/agent/IChatService';
 import type { IChatService } from '../../platform/agent/IChatService';
+import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
+import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
 
 type SidebarProps = {
   isOpen: boolean;
@@ -36,9 +38,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const handleRef = useRef<HTMLDivElement | null>(null);
   const chatHistoryRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const lastInputRef = useRef<string>('');
   const { messages } = useChatMessages(initialMessages);
   const configService = useService<IConfigurationService>(IConfigurationServiceId);
   const chatService = useService<IChatService>(IChatServiceId);
+  const uiStreamService = useService<IUIStreamService>(IUIStreamServiceId);
   
   const [availableModels, setAvailableModels] = useState<AIModelConfig[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
@@ -46,6 +50,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const [chatMode, setChatMode] = useState<'agent' | 'chat' | 'normal'>('chat');
   const [hasApiKey, setHasApiKey] = useState<boolean>(false);
   const [isCheckingApiKey, setIsCheckingApiKey] = useState<boolean>(true);
+  const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [conversations] = useState([
     { id: '1', name: '新对话' },
     { id: '2', name: 'React组件优化' },
@@ -102,6 +107,59 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
     checkApiKey();
   }, [configService]);
 
+  // 监听thinking流式更新，自动控制展开/折叠
+  useEffect(() => {
+    if (!uiStreamService) {
+      return;
+    }
+
+    const disposable = uiStreamService.onDidThinkingUpdate((event) => {
+      // thinking消息的ID格式为 `${messageId}:thinking`
+      const thinkingMessageId = `${event.messageId}:thinking`;
+      
+      setThinkingStates((prev) => {
+        // 如果已完成，则折叠；否则展开
+        const shouldExpand = !event.done;
+        
+        // 只有在状态需要改变时才更新
+        if (prev[thinkingMessageId] !== shouldExpand) {
+          console.log(`[Sidebar] Thinking state change for ${thinkingMessageId}: ${shouldExpand}`, {
+            fullTextLength: event.fullText?.length || 0,
+            done: event.done
+          });
+          return {
+            ...prev,
+            [thinkingMessageId]: shouldExpand
+          };
+        }
+        return prev;
+      });
+    });
+
+    return () => {
+      disposable.dispose();
+    };
+  }, [uiStreamService]);
+
+  // 监听 Service 层消息变化，检测是否正在生成
+  useEffect(() => {
+    if (!chatService) {
+      return;
+    }
+
+    const disposable = chatService.onDidMessageUpdate((serviceMessages) => {
+      const hasStreamingMessage = serviceMessages.some(
+        (msg) => msg.status === 'streaming' || msg.status === 'pending'
+      );
+      setIsGenerating(hasStreamingMessage);
+    });
+
+    return () => {
+      disposable.dispose();
+    };
+  }, [chatService]);
+
+  // 自动滚动到底部
   useEffect(() => {
     const chat = chatHistoryRef.current;
     if (chat) {
@@ -119,6 +177,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
       return;
     }
 
+    lastInputRef.current = value;
+
     // 清空输入框
     if (inputRef.current) {
       inputRef.current.value = '';
@@ -131,22 +191,37 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
     const contextItems = [];
 
     // 调用 ChatService 发送消息
-    await chatService.sendMessage(value, {
-      mode: chatMode,
-      modelId: selectedModel,
-      contextItems,
-      conversationId: currentConversation
-    });
-  }, [chatService, chatMode, selectedModel, currentConversation]);
+    setIsGenerating(true);
+    try {
+      await chatService.sendMessage(value, {
+        mode: chatMode,
+        modelId: selectedModel,
+        contextItems,
+        conversationId: currentConversation
+      });
+    } catch (error) {
+      console.error('[Sidebar] 发送消息失败:', error);
+      setIsGenerating(false);
+    }
+  }, [chatService, chatMode, selectedModel, currentConversation, hasApiKey]);
+
+  const stopGeneration = useCallback(() => {
+    chatService.abort();
+    setIsGenerating(false);
+    const currentValue = inputRef.current?.value ?? '';
+    if (!currentValue.trim() && lastInputRef.current && inputRef.current) {
+      inputRef.current.value = lastInputRef.current;
+    }
+  }, [chatService]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && !isGenerating) {
         e.preventDefault();
         sendMessage();
       }
     },
-    [sendMessage]
+    [sendMessage, isGenerating]
   );
 
   const openSettings = useCallback(() => {
@@ -311,29 +386,36 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                   </div>
                 )}
                 
-                {msgType === 'thinking' && (
-                  <div className="ai-thinking-block">
-                    <div 
-                      className="ai-thinking-header"
-                      onClick={() => toggleThinking(msg.id)}
-                    >
-                      <span className="ai-thinking-label">
-                        Thinking
-                        {extMsg.metadata?.thinkingTime && (
-                          <span className="ai-thinking-time"> for {extMsg.metadata.thinkingTime}s</span>
-                        )}
-                      </span>
-                      <span className={`material-symbols ai-thinking-chevron ${thinkingStates[msg.id] ? 'expanded' : ''}`}>
-                        chevron_right
-                      </span>
-                    </div>
-                    {thinkingStates[msg.id] && (
-                      <div className="ai-thinking-content">
-                        {renderInlineCode(msg.content)}
+                {msgType === 'thinking' && (() => {
+                  // 如果状态未定义，默认在生成中展开，生成完毕后折叠
+                  const isExpanded = thinkingStates[msg.id] !== undefined 
+                    ? thinkingStates[msg.id] 
+                    : isGenerating;
+                  
+                  return (
+                    <div className="ai-thinking-block">
+                      <div 
+                        className="ai-thinking-header"
+                        onClick={() => toggleThinking(msg.id)}
+                      >
+                        <span className="ai-thinking-label">
+                          Thinking
+                          {extMsg.metadata?.thinkingTime && (
+                            <span className="ai-thinking-time"> for {extMsg.metadata.thinkingTime}s</span>
+                          )}
+                        </span>
+                        <span className={`material-symbols ai-thinking-chevron ${isExpanded ? 'expanded' : ''}`}>
+                          chevron_right
+                        </span>
                       </div>
-                    )}
-                  </div>
-                )}
+                      {isExpanded && (
+                        <div className="ai-thinking-content">
+                          {renderInlineCode(msg.content)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {msgType === 'tool' && (
                   <div className="ai-tool-block">
@@ -388,10 +470,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
           <div className="ai-input-wrapper">
             <textarea
               className="ai-input"
-              placeholder="Ask anything (Ctrl+L)"
+              placeholder={isGenerating ? "正在生成..." : "Ask anything (Ctrl+L)"}
               ref={inputRef}
               onKeyDown={handleKeyDown}
               rows={1}
+              disabled={isGenerating}
             />
           </div>
           
@@ -480,12 +563,19 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
               </button>
               <button 
                 className="ai-send-btn-new" 
-                onClick={sendMessage} 
+                onClick={isGenerating ? stopGeneration : sendMessage} 
                 disabled={!hasApiKey || isCheckingApiKey}
-                title={!hasApiKey ? '请先配置 API Key' : '发送'}
-                style={{ opacity: (!hasApiKey || isCheckingApiKey) ? 0.5 : 1, cursor: (!hasApiKey || isCheckingApiKey) ? 'not-allowed' : 'pointer' }}
+                title={
+                  !hasApiKey ? '请先配置 API Key' : 
+                  isGenerating ? '停止生成' : '发送'
+                }
+                style={{ 
+                  opacity: (!hasApiKey || isCheckingApiKey) ? 0.5 : 1, 
+                  cursor: (!hasApiKey || isCheckingApiKey) ? 'not-allowed' : 'pointer',
+                  backgroundColor: isGenerating ? '#dc2626' : undefined
+                }}
               >
-                <span className="material-symbols">send</span>
+                <span className="material-symbols">{isGenerating ? 'stop' : 'send'}</span>
               </button>
             </div>
           </div>

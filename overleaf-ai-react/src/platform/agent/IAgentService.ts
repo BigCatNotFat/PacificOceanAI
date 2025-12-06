@@ -25,6 +25,7 @@ export interface AgentOptions {
   contextItems?: ContextItem[];
   /** 最大迭代次数（防止死循环） */
   maxIterations?: number;
+  responseMessageId?: string;
 }
 
 /**
