@@ -199,18 +199,32 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
             const toolCallsDelta = (delta as any)?.tool_calls;
             if (Array.isArray(toolCallsDelta) && toolCallsDelta.length > 0) {
               for (const tcDelta of toolCallsDelta) {
-                const id = tcDelta.id || `tool_call_${tcDelta.index || 0}`;
+                // 使用 index 作为稳定的 key（流式传输中 id 可能只在第一个 chunk 出现）
+                const index = tcDelta.index ?? 0;
+                const stableKey = `tool_call_${index}`;
+                const id = tcDelta.id || stableKey;
                 const name = tcDelta.function?.name;
                 const argsText = tcDelta.function?.arguments || '';
 
-                let existing = toolCallsMap.get(id);
+                // 优先使用 stableKey 查找，因为后续 chunk 可能没有 id
+                let existing = toolCallsMap.get(stableKey);
                 if (!existing) {
                   existing = { id, name: name || '', args: '' };
-                  toolCallsMap.set(id, existing);
+                  toolCallsMap.set(stableKey, existing);
+                  console.log('[OpenAICompatibleProvider] 新建工具调用:', { stableKey, id, name });
                 }
 
+                // 更新 id（第一个 chunk 通常包含真实 id）
+                if (tcDelta.id) existing.id = tcDelta.id;
                 if (name) existing.name = name;
                 existing.args += argsText;
+                
+                console.log('[OpenAICompatibleProvider] 工具调用参数累积:', {
+                  stableKey,
+                  name: existing.name,
+                  argsLength: existing.args.length,
+                  latestDelta: argsText.substring(0, 50)
+                });
 
                 if (this.uiStreamService && messageId) {
                   this.uiStreamService.pushToolCall({
@@ -284,11 +298,46 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
       }
 
       if (toolCallsMap.size > 0) {
-        result.toolCalls = Array.from(toolCallsMap.values()).map(tc => ({
-          id: tc.id,
-          name: tc.name,
-          arguments: tc.args ? JSON.parse(tc.args) : {}
-        }));
+        console.log('[OpenAICompatibleProvider] 最终工具调用列表:', 
+          Array.from(toolCallsMap.entries()).map(([key, tc]) => ({
+            key,
+            id: tc.id,
+            name: tc.name,
+            argsLength: tc.args.length,
+            argsPreview: tc.args.substring(0, 200)
+          }))
+        );
+        result.toolCalls = Array.from(toolCallsMap.values()).map(tc => {
+          let parsedArgs = {};
+          if (tc.args) {
+            try {
+              parsedArgs = JSON.parse(tc.args);
+            } catch (parseError) {
+              console.error('[OpenAICompatibleProvider] 工具调用参数 JSON 解析失败:', {
+                toolName: tc.name,
+                rawArgs: tc.args,
+                error: parseError
+              });
+              // 尝试修复常见的 JSON 问题（如末尾缺少 }）
+              try {
+                parsedArgs = JSON.parse(tc.args + '}');
+                console.log('[OpenAICompatibleProvider] 修复后解析成功');
+              } catch {
+                // 仍然失败，保持空对象
+              }
+            }
+          } else {
+            console.warn('[OpenAICompatibleProvider] 工具调用参数为空:', {
+              toolName: tc.name,
+              toolId: tc.id
+            });
+          }
+          return {
+            id: tc.id,
+            name: tc.name,
+            arguments: parsedArgs
+          };
+        });
       }
 
       return result;

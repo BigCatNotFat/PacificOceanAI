@@ -48,6 +48,7 @@ type PartialModelInfo = {
   description?: string;
   capabilities?: Partial<ModelCapabilities>;
   defaultConfig?: Partial<Omit<ModelConfig, 'modelId'>>;
+  knowledgeCutoff?: string;
 };
 
 /**
@@ -164,7 +165,8 @@ export class ModelRegistryService implements IModelRegistryService {
       defaultConfig: {
         maxTokens: 8192,
         maxTokensParamName: 'max_completion_tokens'
-      }
+      },
+      knowledgeCutoff: '2023-10'
     });
 
     this.registerModel({
@@ -209,7 +211,8 @@ export class ModelRegistryService implements IModelRegistryService {
         temperature: 1.0,
         topP: 1.0,
         maxTokens: 4096
-      }
+      },
+      knowledgeCutoff: '2024-04'
     });
 
     this.registerModel({
@@ -229,7 +232,8 @@ export class ModelRegistryService implements IModelRegistryService {
       defaultConfig: {
         modelId: 'claude-haiku-4-5-20251001',
         maxTokens: 4096
-      }
+      },
+      knowledgeCutoff: '2024-07'
     });
 
     // Google Gemini 系列
@@ -274,7 +278,8 @@ export class ModelRegistryService implements IModelRegistryService {
         temperature: 1.0,
         topP: 0.95,
         maxTokens: 4096
-      }
+      },
+      knowledgeCutoff: '2024-11'
     });
     
     // 🔑 新增：Gemini 2.5 Flash - 快速模型，支持思考输出
@@ -297,7 +302,8 @@ export class ModelRegistryService implements IModelRegistryService {
         temperature: 1.0,
         topP: 0.95,
         maxTokens: 4096
-      }
+      },
+      knowledgeCutoff: '2024-11'
     });
     
     this.registerModel({
@@ -359,7 +365,8 @@ export class ModelRegistryService implements IModelRegistryService {
         thinking: {
           type: 'enabled'
         }
-      }
+      },
+      knowledgeCutoff: '2024-12'
     });
   }
 
@@ -387,7 +394,8 @@ export class ModelRegistryService implements IModelRegistryService {
       provider: partialInfo.provider,
       description: partialInfo.description,
       capabilities,
-      defaultConfig
+      defaultConfig,
+      knowledgeCutoff: partialInfo.knowledgeCutoff || '2024-06'
     };
 
     this._registry.set(fullInfo.id, fullInfo);

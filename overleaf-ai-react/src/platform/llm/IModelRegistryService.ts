@@ -74,6 +74,8 @@ export interface ModelInfo {
   defaultConfig: ModelConfig;
   /** 描述 */
   description?: string;
+  /** 知识截止日期（格式：YYYY-MM） */
+  knowledgeCutoff: string;
 }
 
 // ==================== Service 接口 ====================

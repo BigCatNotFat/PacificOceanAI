@@ -36,8 +36,8 @@ export interface ITool {
   };
   /** 是否需要用户审批 */
   needApproval: boolean;
-  /** 工具类型 */
-  type: 'read' | 'write' | 'search';
+  /** 工具可用模式列表 */
+  modes: ('agent' | 'chat' | 'normal')[];
   /** 执行函数 */
   execute: (args: any) => Promise<ToolExecutionResult>;
 }
@@ -82,17 +82,22 @@ export interface IToolService {
   listToolInfos(): ITool[];
 
   /**
-   * 根据类型过滤工具
-   * @param type - 工具类型
-   * @returns 符合条件的工具列表
+   * 获取 Agent 模式可用工具
+   * @returns Agent 模式工具列表
    */
-  getToolsByType(type: 'read' | 'write' | 'search'): ITool[];
+  getAgentTools(): ITool[];
 
   /**
-   * 获取只读工具（不需要审批）
-   * @returns 只读工具列表
+   * 获取 Chat 模式可用工具
+   * @returns Chat 模式工具列表
    */
-  getReadOnlyTools(): ITool[];
+  getChatTools(): ITool[];
+
+  /**
+   * 获取 Normal 模式可用工具
+   * @returns Normal 模式工具列表
+   */
+  getNormalTools(): ITool[];
 
   /**
    * 获取所有工具（包括需要审批的）

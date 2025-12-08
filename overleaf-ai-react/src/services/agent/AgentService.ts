@@ -210,6 +210,10 @@ export class AgentService implements IAgentService {
           }
         );
 
+        // 打印发送给 AI 的提示词（便于调试）
+        console.log('[AgentService] 发送给 AI 的提示词:');
+        console.log(JSON.stringify(llmMessages, null, 2));
+
         // 3. 构建 LLM 配置
         const llmConfig = this.buildLLMConfig(
           context.options.modelId,
@@ -222,7 +226,9 @@ export class AgentService implements IAgentService {
         // 4. 调用 LLM（使用新的 chat 接口）
         // 创建 assistant 占位消息
         const assistantMessage = this.createMessage('assistant', '');
-        if (context.options.responseMessageId) {
+        // 只在第一次迭代时使用外部传入的 responseMessageId
+        // 后续迭代（工具调用后）应该使用新生成的 ID，避免 ID 冲突导致 UI 重复显示
+        if (context.iteration === 0 && context.options.responseMessageId) {
           assistantMessage.id = context.options.responseMessageId;
         }
         assistantMessage.status = 'streaming';
@@ -297,6 +303,14 @@ export class AgentService implements IAgentService {
       // Loop 完成
       if (!context.aborted) {
         context.status = 'completed';
+        
+        // 确保所有消息状态都是 completed（避免 UI 一直显示"正在生成"）
+        for (const msg of context.messages) {
+          if (msg.status === 'streaming' || msg.status === 'pending') {
+            msg.status = 'completed';
+          }
+        }
+        
         context.onDoneEmitter.fire([...context.messages]);
       } else {
         console.log(`[AgentService] Loop ${context.loopId} 已中断，不触发完成事件`);
@@ -332,9 +346,15 @@ export class AgentService implements IAgentService {
       const tool = this.toolService.getTool(toolName);
       if (!tool) {
         console.warn(`[AgentService] 未找到工具: ${toolName}`);
-        // 添加错误消息
+        // 添加错误消息（必须包含 toolCalls 以提供 tool_call_id）
         const errorMessage = this.createMessage('tool', `工具 ${toolName} 不存在`);
         errorMessage.status = 'error';
+        errorMessage.toolCalls = [{
+          id: toolCallId,
+          name: toolName,
+          arguments: toolArgs,
+          status: 'error'
+        }];
         context.messages.push(errorMessage);
         continue;
       }
@@ -408,8 +428,15 @@ export class AgentService implements IAgentService {
           context.workingMemory.push(toolMessage); // 加入工作记忆
           context.onUpdateEmitter.fire([...context.messages]);
         } catch (error) {
+          // 添加错误消息（必须包含 toolCalls 以提供 tool_call_id）
           const errorMessage = this.createMessage('tool', `工具执行失败: ${error}`);
           errorMessage.status = 'error';
+          errorMessage.toolCalls = [{
+            id: toolCallId,
+            name: toolName,
+            arguments: toolArgs,
+            status: 'error'
+          }];
           context.messages.push(errorMessage);
           context.onUpdateEmitter.fire([...context.messages]);
         }
@@ -433,11 +460,11 @@ export class AgentService implements IAgentService {
 
     switch (mode) {
       case 'agent':
-        return this.toolService.getAllTools();
+        return this.toolService.getAgentTools();
       case 'chat':
-        return this.toolService.getReadOnlyTools();
+        return this.toolService.getChatTools();
       case 'normal':
-        return [];
+        return this.toolService.getNormalTools();
       default:
         return [];
     }
