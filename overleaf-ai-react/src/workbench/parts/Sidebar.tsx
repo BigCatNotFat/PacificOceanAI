@@ -490,27 +490,74 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                   const buffer = streamingBuffers.get(msg.id);
                   if (!buffer || buffer.toolCalls.size === 0) return null;
                   
-                  // 只显示正在执行的工具，完成后由消息列表显示
-                  const runningTools = Array.from(buffer.toolCalls.entries())
-                    .filter(([_, tc]) => tc.status === 'running');
+                  // 显示所有已触发的工具（running/completed/error），并使用可折叠的 Tool 样式块
+                  const visibleTools = Array.from(buffer.toolCalls.entries())
+                    .filter(([_, tc]) => tc.status === 'running' || tc.status === 'completed' || tc.status === 'error');
                   
-                  if (runningTools.length === 0) return null;
+                  if (visibleTools.length === 0) return null;
                   
-                  return runningTools.map(([toolCallId, toolCall]) => (
-                    <div key={toolCallId} className="ai-tool-status-block">
-                      <div className="ai-tool-status-header">
-                        <span className="ai-tool-status-indicator running">
-                          <span className="ai-tool-spinner"></span>
-                        </span>
-                        <span className="ai-tool-status-name">
-                          {toolCall.name || 'Tool'}
-                        </span>
-                        <span className="ai-tool-status-label">
-                          执行中...
-                        </span>
+                  return visibleTools.map(([toolCallId, toolCall]) => {
+                    const toolMsgId = `${msg.id}:${toolCallId}`;
+                    const canExpand = toolCall.status === 'completed' || toolCall.status === 'error';
+                    const isExpanded = canExpand && !!thinkingStates[toolMsgId];
+
+                    let statusLabel = '';
+                    switch (toolCall.status) {
+                      case 'running':
+                        statusLabel = '执行中...';
+                        break;
+                      case 'completed':
+                        statusLabel = '执行成功';
+                        break;
+                      case 'error':
+                        statusLabel = '执行失败';
+                        break;
+                    }
+
+                    // 结果内容：优先使用 result，其次使用 args，并尝试做 JSON 美化
+                    let detailText: string | undefined;
+                    const rawDetail = toolCall.result || toolCall.args;
+                    if (rawDetail) {
+                      try {
+                        const parsed = JSON.parse(rawDetail);
+                        detailText = JSON.stringify(parsed, null, 2);
+                      } catch {
+                        detailText = rawDetail;
+                      }
+                    }
+
+                    return (
+                      <div key={toolCallId} className="ai-tool-block">
+                        <div
+                          className="ai-tool-header"
+                          onClick={() => {
+                            if (!canExpand) return;
+                            toggleThinking(toolMsgId);
+                          }}
+                        >
+                          <span className="ai-tool-label">
+                            Tool
+                            {toolCall.name && (
+                              <span className="ai-tool-name"> ({toolCall.name})</span>
+                            )}
+                          </span>
+                          {statusLabel && (
+                            <span className="ai-tool-status-label">
+                              {statusLabel}
+                            </span>
+                          )}
+                          <span className={`material-symbols ai-tool-chevron ${isExpanded ? 'expanded' : ''}`}>
+                            chevron_right
+                          </span>
+                        </div>
+                        {canExpand && isExpanded && detailText && (
+                          <div className="ai-tool-content">
+                            <pre className="ai-tool-pre">{detailText}</pre>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ));
+                    );
+                  });
                 })()}
               </div>
             );

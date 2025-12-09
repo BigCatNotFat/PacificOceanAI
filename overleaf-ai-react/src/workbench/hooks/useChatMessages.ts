@@ -28,30 +28,7 @@ function mapServiceMessageToUI(
 
   // 工具消息：展示为单独的工具调用折叠区域
   if (message.role === 'tool') {
-    const toolCall = message.toolCalls && message.toolCalls[0];
-
-    // 尝试对内容做 JSON 美化，便于阅读
-    let prettyContent = message.content || '';
-    if (prettyContent) {
-      try {
-        const parsed = JSON.parse(prettyContent);
-        prettyContent = JSON.stringify(parsed, null, 2);
-      } catch {
-        // 非 JSON 字符串，保持原样
-      }
-    }
-
-    uiMessages.push({
-      id: `${message.id}:tool`,
-      role: 'bot',
-      content: prettyContent,
-      isHtml: false,
-      type: 'tool',
-      metadata: {
-        toolName: toolCall?.name
-      }
-    });
-
+    // 工具执行结果改由 Sidebar 中的流式 Tool 调用 UI 展示
     return uiMessages;
   }
 

@@ -211,7 +211,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
                 if (!existing) {
                   existing = { id: apiId || stableKey, name: name || '', args: '' };
                   toolCallsMap.set(stableKey, existing);
-                  // console.log('[OpenAICompatibleProvider] 新建工具调用:', { stableKey, id, name });
+                  // console.log('[OpenAICompatibleProvider] 新建工具调用:', { stableKey, id: existing.id, name });
                 }
 
                 // 更新 id（第一个 chunk 通常包含真实 id）
@@ -230,7 +230,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
                   this.uiStreamService.pushToolCall({
                     conversationId,
                     messageId,
-                    toolCallId: stableKey,
+                    toolCallId: existing.id,
                     phase: 'args',
                     name: existing.name,
                     argsDelta: argsText
@@ -276,11 +276,11 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
             done: true
           });
         }
-        for (const [id] of toolCallsMap) {
+        for (const [, tc] of toolCallsMap) {
           this.uiStreamService.pushToolCall({
             conversationId,
             messageId,
-            toolCallId: id,
+            toolCallId: tc.id,
             phase: 'end'
           });
         }
