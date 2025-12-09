@@ -33,7 +33,10 @@ export default defineManifest({
   ],
   web_accessible_resources: [
     {
-      resources: ['src/workbench/styles/sidebar.css'],
+      resources: [
+        'src/workbench/styles/sidebar.css',
+        'injected/overleafBridge.js'
+      ],
       matches: ['https://www.overleaf.com/*']
     }
   ]

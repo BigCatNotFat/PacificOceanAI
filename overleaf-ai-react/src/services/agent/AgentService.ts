@@ -71,7 +71,7 @@ export class AgentService implements IAgentService {
     private readonly toolService: IToolService,
     private readonly modelRegistry: IModelRegistryService
   ) {
-    console.log('[AgentService] 依赖注入成功');
+    // console.log('[AgentService] 依赖注入成功');
   }
 
   // ==================== 公共方法（唯一） ====================
@@ -84,7 +84,7 @@ export class AgentService implements IAgentService {
     options: AgentOptions
   ): Promise<AgentLoopController> {
     const loopId = `loop_${this.loopIdCounter++}`;
-    console.log(`[AgentService] 启动 Agent Loop: ${loopId}`, options);
+    // console.log(`[AgentService] 启动 Agent Loop: ${loopId}`, options);
 
     // 创建事件发射器
     const onDoneEmitter = new Emitter<ChatMessage[]>();
@@ -129,17 +129,17 @@ export class AgentService implements IAgentService {
   private async approveToolCall(loopId: string, toolCallId: string): Promise<void> {
     const context = this.activeLoops.get(loopId);
     if (!context) {
-      console.warn(`[AgentService] Loop ${loopId} 不存在`);
+      // console.warn(`[AgentService] Loop ${loopId} 不存在`);
       return;
     }
 
     const pendingCall = context.pendingToolCalls.get(toolCallId);
     if (!pendingCall) {
-      console.warn(`[AgentService] 工具调用 ${toolCallId} 不存在`);
+      // console.warn(`[AgentService] 工具调用 ${toolCallId} 不存在`);
       return;
     }
 
-    console.log(`[AgentService] 用户批准工具调用: ${pendingCall.toolName}`);
+    // console.log(`[AgentService] 用户批准工具调用: ${pendingCall.toolName}`);
 
     try {
       // 执行工具
@@ -161,17 +161,17 @@ export class AgentService implements IAgentService {
   private async rejectToolCall(loopId: string, toolCallId: string): Promise<void> {
     const context = this.activeLoops.get(loopId);
     if (!context) {
-      console.warn(`[AgentService] Loop ${loopId} 不存在`);
+      // console.warn(`[AgentService] Loop ${loopId} 不存在`);
       return;
     }
 
     const pendingCall = context.pendingToolCalls.get(toolCallId);
     if (!pendingCall) {
-      console.warn(`[AgentService] 工具调用 ${toolCallId} 不存在`);
+      // console.warn(`[AgentService] 工具调用 ${toolCallId} 不存在`);
       return;
     }
 
-    console.log(`[AgentService] 用户拒绝工具调用: ${pendingCall.toolName}`);
+    // console.log(`[AgentService] 用户拒绝工具调用: ${pendingCall.toolName}`);
 
     // 移除 pending 记录
     context.pendingToolCalls.delete(toolCallId);
@@ -188,7 +188,7 @@ export class AgentService implements IAgentService {
       const maxIterations = context.options.maxIterations || 10;
 
       while (context.iteration < maxIterations && !context.aborted) {
-        console.log(`[AgentService] Loop ${context.loopId} 第 ${context.iteration + 1} 轮迭代`);
+        // console.log(`[AgentService] Loop ${context.loopId} 第 ${context.iteration + 1} 轮迭代`);
 
         // 重置当前轮的工作记忆
         context.workingMemory = [];
@@ -211,8 +211,8 @@ export class AgentService implements IAgentService {
         );
 
         // 打印发送给 AI 的提示词（便于调试）
-        console.log('[AgentService] 发送给 AI 的提示词:');
-        console.log(JSON.stringify(llmMessages, null, 2));
+        // console.log('[AgentService] 发送给 AI 的提示词:');
+        // console.log(JSON.stringify(llmMessages, null, 2));
 
         // 3. 构建 LLM 配置
         const llmConfig = this.buildLLMConfig(
@@ -241,12 +241,12 @@ export class AgentService implements IAgentService {
           conversationId: context.loopId,
           messageId: assistantMessage.id
         };
-        console.log('[AgentService] 调用 LLM 前的配置', {
-          loopId: context.loopId,
-          modelId: context.options.modelId,
-          uiStreamMeta: (llmConfig as any).uiStreamMeta,
-          hasAbortSignal: !!(llmConfig as any).abortSignal
-        });
+        // console.log('[AgentService] 调用 LLM 前的配置', {
+        //   loopId: context.loopId,
+        //   modelId: context.options.modelId,
+        //   uiStreamMeta: (llmConfig as any).uiStreamMeta,
+        //   hasAbortSignal: !!(llmConfig as any).abortSignal
+        // });
         
         // 5. 调用 LLM（一次性返回完整结果，UI 更新由 Provider 内部实时推送）
         const finalResult = await this.llmService.chat(llmMessages, llmConfig);
@@ -254,7 +254,7 @@ export class AgentService implements IAgentService {
         
         // 检查是否已被中断
         if (context.aborted) {
-          console.log(`[AgentService] Loop ${context.loopId} 已中断，停止处理 LLM 响应`);
+          // console.log(`[AgentService] Loop ${context.loopId} 已中断，停止处理 LLM 响应`);
           return;
         }
         
@@ -280,7 +280,7 @@ export class AgentService implements IAgentService {
         // 7. 检查是否有工具调用
         if (!assistantMessage.toolCalls || assistantMessage.toolCalls.length === 0) {
           // 没有工具调用，结束循环
-          console.log(`[AgentService] Loop ${context.loopId} 完成（无工具调用）`);
+          // console.log(`[AgentService] Loop ${context.loopId} 完成（无工具调用）`);
           break;
         }
 
@@ -292,7 +292,7 @@ export class AgentService implements IAgentService {
 
         if (!shouldContinue) {
           // 有需要审批的工具，暂停循环等待用户操作
-          console.log(`[AgentService] Loop ${context.loopId} 暂停（等待审批）`);
+          // console.log(`[AgentService] Loop ${context.loopId} 暂停（等待审批）`);
           context.status = 'waiting_approval';
           return; // 等待 controller.approveToolCall 或 controller.rejectToolCall
         }
@@ -313,17 +313,17 @@ export class AgentService implements IAgentService {
         
         context.onDoneEmitter.fire([...context.messages]);
       } else {
-        console.log(`[AgentService] Loop ${context.loopId} 已中断，不触发完成事件`);
+        // console.log(`[AgentService] Loop ${context.loopId} 已中断，不触发完成事件`);
       }
       this.activeLoops.delete(context.loopId);
 
     } catch (error) {
       if (!context.aborted) {
-        console.error(`[AgentService] Loop ${context.loopId} 错误:`, error);
+        // console.error(`[AgentService] Loop ${context.loopId} 错误:`, error);
         context.status = 'error';
         context.onErrorEmitter.fire(error instanceof Error ? error : new Error(String(error)));
       } else {
-        console.log(`[AgentService] Loop ${context.loopId} 已中断，不触发错误事件`);
+        // console.log(`[AgentService] Loop ${context.loopId} 已中断，不触发错误事件`);
       }
       this.activeLoops.delete(context.loopId);
     }
@@ -337,7 +337,7 @@ export class AgentService implements IAgentService {
     context: LoopContext,
     toolCalls: any[]
   ): Promise<boolean> {
-    console.log(`[AgentService] 处理 ${toolCalls.length} 个工具调用`);
+    // console.log(`[AgentService] 处理 ${toolCalls.length} 个工具调用`);
 
     for (const toolCall of toolCalls) {
       const { id: toolCallId, name: toolName, arguments: toolArgs } = toolCall;
@@ -345,7 +345,7 @@ export class AgentService implements IAgentService {
       // 获取工具元信息
       const tool = this.toolService.getTool(toolName);
       if (!tool) {
-        console.warn(`[AgentService] 未找到工具: ${toolName}`);
+        // console.warn(`[AgentService] 未找到工具: ${toolName}`);
         // 添加错误消息（必须包含 toolCalls 以提供 tool_call_id）
         const errorMessage = this.createMessage('tool', `工具 ${toolName} 不存在`);
         errorMessage.status = 'error';
@@ -361,7 +361,7 @@ export class AgentService implements IAgentService {
 
       // 检查是否需要审批
       if (tool.needApproval) {
-        console.log(`[AgentService] 工具 ${toolName} 需要用户审批`);
+        // console.log(`[AgentService] 工具 ${toolName} 需要用户审批`);
 
         // 触发审批事件
         this._onDidToolCallPending.fire({
@@ -411,7 +411,7 @@ export class AgentService implements IAgentService {
         return false;
       } else {
         // 不需要审批，直接执行
-        console.log(`[AgentService] 工具 ${toolName} 不需要审批，直接执行`);
+        // console.log(`[AgentService] 工具 ${toolName} 不需要审批，直接执行`);
 
         try {
           const result = await this.toolService.executeTool(toolName, toolArgs);
@@ -454,7 +454,7 @@ export class AgentService implements IAgentService {
     const capabilities = this.modelRegistry.getCapabilities(modelId);
 
     if (!capabilities?.supportsTools) {
-      console.log(`[AgentService] 模型 ${modelId} 不支持工具调用`);
+      // console.log(`[AgentService] 模型 ${modelId} 不支持工具调用`);
       return [];
     }
 
@@ -509,13 +509,13 @@ export class AgentService implements IAgentService {
       return;
     }
 
-    console.log(`[AgentService] 中断 Loop: ${loopId}`);
+    // console.log(`[AgentService] 中断 Loop: ${loopId}`);
 
     if (context.abortController) {
       try {
         context.abortController.abort();
       } catch (error) {
-        console.warn(`[AgentService] 中断 LLM 请求失败:`, error);
+        // console.warn(`[AgentService] 中断 LLM 请求失败:`, error);
       }
       context.abortController = undefined;
     }

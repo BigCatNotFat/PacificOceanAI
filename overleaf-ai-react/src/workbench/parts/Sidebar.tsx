@@ -10,6 +10,7 @@ import { IChatServiceId } from '../../platform/agent/IChatService';
 import type { IChatService } from '../../platform/agent/IChatService';
 import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
 import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
+import { overleafEditor } from '../../services/editor/OverleafEditor';
 
 type SidebarProps = {
   isOpen: boolean;
@@ -240,6 +241,38 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
     }));
   }, []);
 
+  // 测试按钮：获取文档行数和内容
+  const testGetDocLines = useCallback(async () => {
+    try {
+      console.log('[Test] 开始获取文档信息...');
+      
+      // 1. 获取文件信息
+      const fileInfo = await overleafEditor.file.getInfo();
+      console.log('[Test] ✅ 文件信息:', fileInfo);
+      
+      // 2. 获取前10行内容
+      const lines = await overleafEditor.document.readLines(1, 10);
+      console.log('[Test] ✅ 前10行内容:', lines);
+      
+      // 格式化显示
+      const formattedLines = lines.lines
+        .map(l => `${l.lineNumber}: ${l.text}`)
+        .join('\n');
+      
+      console.log('[Test] 格式化内容:\n' + formattedLines);
+      
+      alert(
+        `文件: ${fileInfo.fileName || '当前文件'}\n` +
+        `总行数: ${fileInfo.totalLines}\n` +
+        `总字符: ${fileInfo.totalLength}\n\n` +
+        `前10行已打印到控制台`
+      );
+    } catch (error) {
+      console.error('[Test] ❌ 获取失败:', error);
+      alert(`获取失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, []);
+
   // 渲染内联代码
   const renderInlineCode = (text: string) => {
     return text.split(/(`[^`]+`)/).map((part, idx) => {
@@ -319,6 +352,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
             )}
           </div>
           <div className="ai-header-actions">
+            <button className="ai-icon-btn" onClick={testGetDocLines} title="测试: 获取文档行数">
+              <span className="material-symbols">bug_report</span>
+            </button>
             <button className="ai-icon-btn" title="新对话">
               <span className="material-symbols">add</span>
             </button>

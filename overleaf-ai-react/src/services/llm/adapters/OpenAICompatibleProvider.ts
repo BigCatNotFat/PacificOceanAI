@@ -31,13 +31,13 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
    * @returns 完整的最终响应
    */
   async chat(messages: LLMMessage[], config: LLMConfig): Promise<LLMFinalMessage> {
-    console.log('[OpenAICompatibleProvider] chat() called', {
-      messageCount: messages.length,
-      hasUIStreamMeta: !!config.uiStreamMeta,
-      conversationId: config.uiStreamMeta?.conversationId,
-      messageId: config.uiStreamMeta?.messageId,
-      hasUIStreamService: !!this.uiStreamService
-    });
+    // console.log('[OpenAICompatibleProvider] chat() called', {
+    //   messageCount: messages.length,
+    //   hasUIStreamMeta: !!config.uiStreamMeta,
+    //   conversationId: config.uiStreamMeta?.conversationId,
+    //   messageId: config.uiStreamMeta?.messageId,
+    //   hasUIStreamService: !!this.uiStreamService
+    // });
 
     // 1. 构建请求
     const { endpoint, headers, body } = this.buildRequest(messages, config);
@@ -211,7 +211,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
                 if (!existing) {
                   existing = { id, name: name || '', args: '' };
                   toolCallsMap.set(stableKey, existing);
-                  console.log('[OpenAICompatibleProvider] 新建工具调用:', { stableKey, id, name });
+                  // console.log('[OpenAICompatibleProvider] 新建工具调用:', { stableKey, id, name });
                 }
 
                 // 更新 id（第一个 chunk 通常包含真实 id）
@@ -219,12 +219,12 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
                 if (name) existing.name = name;
                 existing.args += argsText;
                 
-                console.log('[OpenAICompatibleProvider] 工具调用参数累积:', {
-                  stableKey,
-                  name: existing.name,
-                  argsLength: existing.args.length,
-                  latestDelta: argsText.substring(0, 50)
-                });
+                // console.log('[OpenAICompatibleProvider] 工具调用参数累积:', {
+                //   stableKey,
+                //   name: existing.name,
+                //   argsLength: existing.args.length,
+                //   latestDelta: argsText.substring(0, 50)
+                // });
 
                 if (this.uiStreamService && messageId) {
                   this.uiStreamService.pushToolCall({
@@ -298,39 +298,39 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
       }
 
       if (toolCallsMap.size > 0) {
-        console.log('[OpenAICompatibleProvider] 最终工具调用列表:', 
-          Array.from(toolCallsMap.entries()).map(([key, tc]) => ({
-            key,
-            id: tc.id,
-            name: tc.name,
-            argsLength: tc.args.length,
-            argsPreview: tc.args.substring(0, 200)
-          }))
-        );
+        // console.log('[OpenAICompatibleProvider] 最终工具调用列表:', 
+        //   Array.from(toolCallsMap.entries()).map(([key, tc]) => ({
+        //     key,
+        //     id: tc.id,
+        //     name: tc.name,
+        //     argsLength: tc.args.length,
+        //     argsPreview: tc.args.substring(0, 200)
+        //   }))
+        // );
         result.toolCalls = Array.from(toolCallsMap.values()).map(tc => {
           let parsedArgs = {};
           if (tc.args) {
             try {
               parsedArgs = JSON.parse(tc.args);
             } catch (parseError) {
-              console.error('[OpenAICompatibleProvider] 工具调用参数 JSON 解析失败:', {
-                toolName: tc.name,
-                rawArgs: tc.args,
-                error: parseError
-              });
+              // console.error('[OpenAICompatibleProvider] 工具调用参数 JSON 解析失败:', {
+              //   toolName: tc.name,
+              //   rawArgs: tc.args,
+              //   error: parseError
+              // });
               // 尝试修复常见的 JSON 问题（如末尾缺少 }）
               try {
                 parsedArgs = JSON.parse(tc.args + '}');
-                console.log('[OpenAICompatibleProvider] 修复后解析成功');
+                // console.log('[OpenAICompatibleProvider] 修复后解析成功');
               } catch {
                 // 仍然失败，保持空对象
               }
             }
           } else {
-            console.warn('[OpenAICompatibleProvider] 工具调用参数为空:', {
-              toolName: tc.name,
-              toolId: tc.id
-            });
+            // console.warn('[OpenAICompatibleProvider] 工具调用参数为空:', {
+            //   toolName: tc.name,
+            //   toolId: tc.id
+            // });
           }
           return {
             id: tc.id,

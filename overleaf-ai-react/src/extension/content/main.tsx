@@ -2,8 +2,14 @@ import React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import App from '../../workbench/parts/App';
 import '../../workbench/styles/sidebar.css';
+import { overleafEditor } from '../../services/editor/OverleafEditor';
 
 const CONTAINER_ID = 'overleaf-ai-react-root';
+
+// 注入桥接脚本到页面主世界
+function injectBridgeScript(): void {
+  overleafEditor.injectScript();
+}
 
 function mountApp(): void {
   let container = document.getElementById(CONTAINER_ID);
@@ -21,6 +27,8 @@ function mountApp(): void {
   }
 }
 
+// 先注入桥接脚本，再挂载应用
+injectBridgeScript();
 mountApp();
 console.log('✅ Overleaf AI 助手已加载');
 

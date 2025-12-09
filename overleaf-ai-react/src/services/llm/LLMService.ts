@@ -47,11 +47,11 @@ export class LLMService implements ILLMService {
     private readonly configService: IConfigurationService,
     private readonly uiStreamService: IUIStreamService
   ) {
-    console.log('[LLMService] 依赖注入成功', {
-      hasModelRegistry: !!modelRegistry,
-      hasConfigService: !!configService,
-      hasUIStreamService: !!uiStreamService
-    });
+    // console.log('[LLMService] 依赖注入成功', {
+    //   hasModelRegistry: !!modelRegistry,
+    //   hasConfigService: !!configService,
+    //   hasUIStreamService: !!uiStreamService
+    // });
   }
 
   // ==================== 公共方法 ====================
@@ -73,10 +73,10 @@ export class LLMService implements ILLMService {
     messages: LLMMessage[],
     config: LLMConfig
   ): Promise<LLMFinalMessage> {
-    console.log('[LLMService] 开始调用 LLM', {
-      modelId: config.modelId,
-      messageCount: messages.length
-    });
+    // console.log('[LLMService] 开始调用 LLM', {
+    //   modelId: config.modelId,
+    //   messageCount: messages.length
+    // });
 
     // 1. 获取模型信息，判断供应商
     const modelInfo = this.modelRegistry.getModelInfo(config.modelId);
@@ -84,7 +84,7 @@ export class LLMService implements ILLMService {
       throw new Error(`未找到模型: ${config.modelId}`);
     }
 
-    console.log('[LLMService] 模型供应商:', modelInfo.provider);
+    // console.log('[LLMService] 模型供应商:', modelInfo.provider);
 
     // 2. 获取 API 配置
     const apiConfig = await this.getAPIConfig();
@@ -95,11 +95,11 @@ export class LLMService implements ILLMService {
     // 4. 调用 Provider 的 chat 方法
     const result = await provider.chat(messages, config);
 
-    console.log('[LLMService] 调用完成', {
-      contentLength: result.content?.length || 0,
-      hasThinking: !!result.thinking,
-      toolCallsCount: result.toolCalls?.length || 0
-    });
+    // console.log('[LLMService] 调用完成', {
+    //   contentLength: result.content?.length || 0,
+    //   hasThinking: !!result.thinking,
+    //   toolCallsCount: result.toolCalls?.length || 0
+    // });
 
     return result;
   }

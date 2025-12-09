@@ -1,6 +1,6 @@
 {
   "../../../../../../../../../@crx/manifest": {
-    "file": "assets/crx-manifest.js-B1GFjgox.js",
+    "file": "assets/crx-manifest.js-C6PCIMSC.js",
     "name": "crx-manifest.js",
     "src": "../../../../../../../../../@crx/manifest",
     "isEntry": true
@@ -21,11 +21,11 @@
     "name": "modulepreload-polyfill"
   },
   "main.tsx-loader.js": {
-    "file": "assets/main.tsx-loader-1SSQ1rGE.js",
+    "file": "assets/main.tsx-loader-BNKBewZy.js",
     "src": "main.tsx-loader.js"
   },
   "src/extension/content/main.tsx": {
-    "file": "assets/main.tsx-D1Btz9Cs.js",
+    "file": "assets/main.tsx-BGS8HdzL.js",
     "name": "main.tsx",
     "src": "src/extension/content/main.tsx",
     "isEntry": true,

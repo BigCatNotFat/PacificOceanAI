@@ -6,6 +6,8 @@ import manifest from './manifest.config';
 export default defineConfig({
   plugins: [react(), crx({ manifest })],
   base: './',
+  // public 目录中的文件会自动复制到 dist
+  publicDir: 'public',
   build: {
     outDir: 'dist',
     sourcemap: false,

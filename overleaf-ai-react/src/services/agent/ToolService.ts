@@ -31,10 +31,10 @@ export class ToolService implements IToolService {
   private readonly registry: ToolRegistry;
 
   constructor() {
-    console.log('[ToolService] 依赖注入成功');
+    // console.log('[ToolService] 依赖注入成功');
     // 初始化工具注册中心（自动注册所有内置工具）
     this.registry = new ToolRegistry();
-    console.log(`[ToolService] 已通过 ToolRegistry 初始化 ${this.registry.getAll().length} 个工具`);
+    // console.log(`[ToolService] 已通过 ToolRegistry 初始化 ${this.registry.getAll().length} 个工具`);
   }
 
   // ==================== 公共方法 ====================
@@ -76,7 +76,7 @@ export class ToolService implements IToolService {
       };
     }
 
-    console.log(`[ToolService] 执行工具: ${name}`, args);
+    // console.log(`[ToolService] 执行工具: ${name}`, args);
     return await tool.execute(args);
   }
 

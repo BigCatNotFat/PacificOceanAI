@@ -2,6 +2,7 @@ import { Disposable } from '../../base/common/disposable';
 import { Emitter } from '../../base/common/event';
 import type { Event } from '../../base/common/event';
 import type { FileTreeItem, IEditorService, OutlineItem } from '../../platform/editor/editor';
+import { overleafEditor } from './OverleafEditor';
 
 export class OverleafEditorService extends Disposable implements IEditorService {
   private readonly _onDidChangeActiveFile = new Emitter<string | null>();
@@ -414,6 +415,78 @@ export class OverleafEditorService extends Disposable implements IEditorService 
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  // ============ 通过 Overleaf Bridge 访问内部 API ============
+
+  /**
+   * 获取文档行数（通过 Overleaf 内部 API）
+   * 使用 window.overleaf.unstable.store.get('editor.view').state.doc.lines
+   */
+  async getDocLinesViaBridge(): Promise<number> {
+    try {
+      const lines = await overleafEditor.document.getLines();
+      console.log(`[OverleafEditorService] 文档行数: ${lines}`);
+      return lines;
+    } catch (error) {
+      console.error('[OverleafEditorService] 获取文档行数失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取文档完整文本（通过 Overleaf 内部 API）
+   */
+  async getDocTextViaBridge(): Promise<string> {
+    try {
+      return await overleafEditor.document.getText();
+    } catch (error) {
+      console.error('[OverleafEditorService] 获取文档文本失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取选中的文本（通过 Overleaf 内部 API）
+   */
+  async getSelectionViaBridge(): Promise<string> {
+    try {
+      return await overleafEditor.selection.getSelection();
+    } catch (error) {
+      console.error('[OverleafEditorService] 获取选中文本失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取光标位置（通过 Overleaf 内部 API）
+   */
+  async getCursorPositionViaBridge(): Promise<{ line: number; column: number; offset: number }> {
+    try {
+      return await overleafEditor.selection.getCursorPosition();
+    } catch (error) {
+      console.error('[OverleafEditorService] 获取光标位置失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 检查 Overleaf 编辑器 API 是否可用
+   */
+  async isEditorApiAvailable(): Promise<boolean> {
+    return await overleafEditor.editor.isAvailable();
+  }
+
+  /**
+   * 在光标位置插入文本（通过 Overleaf 内部 API）
+   */
+  async insertTextViaBridge(text: string): Promise<boolean> {
+    try {
+      return await overleafEditor.editor.insertText(text);
+    } catch (error) {
+      console.error('[OverleafEditorService] 插入文本失败:', error);
+      throw error;
+    }
   }
 }
 
