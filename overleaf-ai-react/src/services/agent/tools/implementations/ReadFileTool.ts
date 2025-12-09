@@ -10,18 +10,18 @@
 import { BaseTool } from '../base/BaseTool';
 import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
-import type { ReadLinesResult, FileInfo } from '../../../editor/bridge';
+import type { ReadLinesResult } from '../../../editor/bridge';
 
 /**
  * 读取文件工具
  * 
- * 注意：当前实现只能读取 Overleaf 编辑器中当前打开的文件
- * target_file 参数目前用于记录和显示，实际读取的是当前活动文件
+ * 支持读取 Overleaf 项目中的任意文档文件
+ * 通过 target_file 参数指定要读取的文件路径
  */
 export class ReadFileTool extends BaseTool {
   protected metadata: ToolMetadata = {
     name: 'read_file',
-    description: `Read the contents of the current file in Overleaf editor. The output will be the 1-indexed file contents from start_line_one_indexed to end_line_one_indexed_inclusive, together with a summary of the lines outside that range.
+    description: `Read the contents of a file in the Overleaf project. The output will be the 1-indexed file contents from start_line_one_indexed to end_line_one_indexed_inclusive, together with a summary of the lines outside that range.
 Note that this call can view at most 20 lines at a time for performance reasons.
 
 When using this tool to gather information, it's your responsibility to ensure you have the COMPLETE context. Specifically, each time you call this command you should:
@@ -90,31 +90,30 @@ Reading entire files is often wasteful and slow, especially for large files (i.e
 
       this.log(`读取文件: ${args.target_file}`);
 
-      // 首先检查编辑器是否可用
-      const isAvailable = await overleafEditor.editor.isAvailable();
-      if (!isAvailable) {
+      // 根据 target_file 查找对应的 docId
+      const docId = await this.getDocIdByPath(args.target_file);
+      if (!docId) {
         return {
           success: false,
-          error: 'Overleaf editor is not available. Please make sure you have a file open in the editor.',
+          error: `无法找到文件 "${args.target_file}" 的文档 ID。请确保文件路径正确，且文件存在于项目中。`,
           duration: Date.now() - startTime
         };
       }
 
-      // 获取文件信息
-      const fileInfo = await overleafEditor.file.getInfo();
-      this.log(`文件信息: ${fileInfo.fileName}, 总行数: ${fileInfo.totalLines}`);
+      this.log(`找到文档 ID: ${docId}`);
 
       let result: ReadFileResult;
 
       if (args.should_read_entire_file) {
         // 读取整个文件
-        result = await this.readEntireFile(fileInfo);
+        result = await this.readEntireFile(args.target_file, docId);
       } else {
         // 读取指定行范围
         result = await this.readLineRange(
+          args.target_file,
+          docId,
           args.start_line_one_indexed,
-          args.end_line_one_indexed_inclusive,
-          fileInfo
+          args.end_line_one_indexed_inclusive
         );
       }
 
@@ -134,34 +133,36 @@ Reading entire files is often wasteful and slow, especially for large files (i.e
   /**
    * 读取整个文件
    */
-  private async readEntireFile(fileInfo: FileInfo): Promise<ReadFileResult> {
+  private async readEntireFile(targetFile: string, docId: string): Promise<ReadFileResult> {
     this.log('读取整个文件');
+
+    const content = await overleafEditor.document.getDocContent(docId);
+    const totalCharacters = content.length;
+    const lines = content.split('\n').map((text, index) => ({
+      lineNumber: index + 1,
+      text
+    }));
     
-    const result = await overleafEditor.document.readEntireFile();
+    const { lines: truncatedLines, truncated, truncatedAtLine } = this.truncateByCharacters(lines);
     
-    const totalCharacters = result.content.length;
-    
-    // 检查是否需要截断
-    const { lines: truncatedLines, truncated, truncatedAtLine } = this.truncateByCharacters(result.lines);
-    
-    // 格式化输出
     const formattedContent = this.formatLinesWithNumbers(truncatedLines);
     const displayedCharacters = truncatedLines.reduce((sum, line) => sum + line.text.length + 1, 0);
     
-    const actualEndLine = truncated ? truncatedAtLine! : result.totalLines;
-    let message = `Successfully read entire file (${result.totalLines} lines, ${totalCharacters} characters)`;
+    const totalLines = lines.length;
+    const actualEndLine = truncated ? truncatedAtLine! : totalLines;
+    let message = `Successfully read entire file (${totalLines} lines, ${totalCharacters} characters)`;
     if (truncated) {
       message += ` [TRUNCATED at line ${truncatedAtLine} due to ${this.MAX_CHARACTERS} character limit, showing ${displayedCharacters} characters]`;
     }
     
     return {
-      file: fileInfo.fileName || 'current file',
-      totalLines: result.totalLines,
+      file: targetFile,
+      totalLines,
       totalCharacters,
       startLine: 1,
       endLine: actualEndLine,
       content: formattedContent,
-      rawContent: truncated ? undefined : result.content,
+      rawContent: truncated ? undefined : content,
       truncated,
       truncatedAtLine,
       message
@@ -172,10 +173,15 @@ Reading entire files is often wasteful and slow, especially for large files (i.e
    * 读取指定行范围
    */
   private async readLineRange(
+    targetFile: string,
+    docId: string,
     startLine: number,
-    endLine: number,
-    fileInfo: FileInfo
+    endLine: number
   ): Promise<ReadFileResult> {
+    // 先获取整个文件以得到总行数
+    const fullContent = await overleafEditor.document.getDocContent(docId);
+    const totalLines = fullContent.split('\n').length;
+
     // 限制单次读取行数
     const requestedLines = endLine - startLine + 1;
     if (requestedLines > this.MAX_LINES_PER_READ) {
@@ -184,40 +190,49 @@ Reading entire files is often wasteful and slow, especially for large files (i.e
     }
 
     this.log(`读取行范围: ${startLine} - ${endLine}`);
+
+    const rangeContent = await overleafEditor.document.getDocContent(docId, startLine, endLine);
+    const rangeLines = rangeContent.split('\n').map((text, index) => ({
+      lineNumber: startLine + index,
+      text
+    }));
     
-    const result = await overleafEditor.document.readLines(startLine, endLine);
+    const { lines: truncatedLines, truncated, truncatedAtLine } = this.truncateByCharacters(rangeLines);
     
-    // 检查是否需要截断
-    const { lines: truncatedLines, truncated, truncatedAtLine } = this.truncateByCharacters(result.lines);
-    
-    // 格式化输出
     const formattedContent = this.formatLinesWithNumbers(truncatedLines);
     
-    // 计算当前读取内容的字符数
-    const readCharacters = truncatedLines.reduce((sum, line) => sum + line.text.length + 1, 0); // +1 for newline
+    const readCharacters = truncatedLines.reduce((sum, line) => sum + line.text.length + 1, 0);
     
-    const actualEndLine = truncated ? truncatedAtLine! : result.endLine;
+    const actualEndLine = truncated
+      ? truncatedAtLine!
+      : (rangeLines.length > 0 ? rangeLines[rangeLines.length - 1].lineNumber : startLine - 1);
     
-    // 生成摘要信息（使用实际结束行）
-    const modifiedResult = { ...result, endLine: actualEndLine };
-    const summary = this.generateSummary(modifiedResult, fileInfo);
+    const resultForSummary: ReadLinesResult = {
+      lines: truncatedLines,
+      totalLines,
+      startLine,
+      endLine: actualEndLine,
+      hasMoreBefore: startLine > 1,
+      hasMoreAfter: actualEndLine < totalLines
+    };
+    const summary = this.generateSummaryFromResult(resultForSummary, totalLines);
     
-    let message = `Successfully read lines ${result.startLine}-${actualEndLine} of ${result.totalLines} (${readCharacters} characters)`;
+    let message = `Successfully read lines ${startLine}-${actualEndLine} of ${totalLines} (${readCharacters} characters)`;
     if (truncated) {
       message += ` [TRUNCATED at line ${truncatedAtLine} due to ${this.MAX_CHARACTERS} character limit]`;
     }
     
     return {
-      file: fileInfo.fileName || 'current file',
-      totalLines: result.totalLines,
-      readLines: actualEndLine - result.startLine + 1,
+      file: targetFile,
+      totalLines,
+      readLines: actualEndLine - startLine + 1,
       readCharacters,
-      startLine: result.startLine,
+      startLine,
       endLine: actualEndLine,
       content: formattedContent,
       summary,
-      hasMoreBefore: result.hasMoreBefore,
-      hasMoreAfter: truncated ? true : result.hasMoreAfter,
+      hasMoreBefore: resultForSummary.hasMoreBefore,
+      hasMoreAfter: truncated ? true : resultForSummary.hasMoreAfter,
       truncated,
       truncatedAtLine,
       message
@@ -253,6 +268,79 @@ Reading entire files is often wasteful and slow, especially for large files (i.e
     return { lines: truncatedLines, truncated: false };
   }
 
+  private getDomFileIdMap(): Map<string, string> {
+    const map = new Map<string, string>();
+
+    try {
+      const fileItems = document.querySelectorAll('[data-file-id]');
+
+      fileItems.forEach((item) => {
+        const el = item as HTMLElement;
+        const id = el.getAttribute('data-file-id');
+        if (!id) return;
+
+        const nameSpan = el.querySelector('.item-name-button span') as HTMLElement | null;
+        const name = nameSpan?.textContent?.trim();
+        if (!name) return;
+
+        map.set(name, id);
+      });
+    } catch (error) {
+      console.error('[ReadFileTool] 获取 DOM 文件 ID 映射失败:', error);
+    }
+
+    return map;
+  }
+
+  /**
+   * 根据文件路径查找对应的 docId
+   * 优先从文件树 API 获取，fallback 到 DOM
+   */
+  private async getDocIdByPath(targetFile: string): Promise<string | null> {
+    // 规范化路径
+    const normalizedPath = targetFile.startsWith('/') ? targetFile : `/${targetFile}`;
+    const baseName = targetFile.split('/').pop() || targetFile;
+
+    try {
+      // 优先从文件树 API 获取
+      const fileTree = await overleafEditor.project.getFileTree();
+      for (const entity of fileTree.entities) {
+        // 完整路径匹配
+        if (entity.path === normalizedPath) {
+          const id = entity.id ?? entity._id;
+          if (id) return id;
+        }
+        // 文件名匹配（fallback）
+        const entityBaseName = entity.path.split('/').pop();
+        if (entityBaseName === baseName) {
+          const id = entity.id ?? entity._id;
+          if (id) return id;
+        }
+      }
+    } catch (error) {
+      this.log(`从文件树获取 docId 失败: ${error}`);
+    }
+
+    // Fallback: 从 DOM 获取
+    const domMap = this.getDomFileIdMap();
+    return domMap.get(baseName) ?? null;
+  }
+
+  private generateSummaryFromResult(result: ReadLinesResult, totalLines: number): string {
+    const parts: string[] = [];
+    
+    if (result.hasMoreBefore) {
+      parts.push(`Lines 1-${result.startLine - 1} not shown (${result.startLine - 1} lines before)`);
+    }
+    
+    if (result.hasMoreAfter) {
+      const linesAfter = totalLines - result.endLine;
+      parts.push(`Lines ${result.endLine + 1}-${totalLines} not shown (${linesAfter} lines after)`);
+    }
+    
+    return parts.join('\n');
+  }
+
   /**
    * 格式化行内容（带行号）
    */
@@ -269,23 +357,6 @@ Reading entire files is often wasteful and slow, especially for large files (i.e
       .join('\n');
   }
 
-  /**
-   * 生成范围外内容的摘要
-   */
-  private generateSummary(result: ReadLinesResult, fileInfo: FileInfo): string {
-    const parts: string[] = [];
-    
-    if (result.hasMoreBefore) {
-      parts.push(`Lines 1-${result.startLine - 1} not shown (${result.startLine - 1} lines before)`);
-    }
-    
-    if (result.hasMoreAfter) {
-      const linesAfter = result.totalLines - result.endLine;
-      parts.push(`Lines ${result.endLine + 1}-${result.totalLines} not shown (${linesAfter} lines after)`);
-    }
-    
-    return parts.join('\n');
-  }
 
   /**
    * 生成摘要
