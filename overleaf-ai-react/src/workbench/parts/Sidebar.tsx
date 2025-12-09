@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ELEMENTS } from '../../base/common/constants';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { useSidebarResize } from '../hooks/useSidebarResize';
+import { useUIStreamUpdates } from '../hooks/useUIStreamUpdates';
 import { ChatMessage } from '../types/chat';
 import { useService } from '../hooks/useService';
 import { IConfigurationServiceId } from '../../platform/configuration/configuration';
@@ -44,6 +45,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const configService = useService<IConfigurationService>(IConfigurationServiceId);
   const chatService = useService<IChatService>(IChatServiceId);
   const uiStreamService = useService<IUIStreamService>(IUIStreamServiceId);
+  const { streamingBuffers } = useUIStreamUpdates();
   
   const [availableModels, setAvailableModels] = useState<AIModelConfig[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
@@ -482,6 +484,34 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                     <span className="ai-error-text">Error: {msg.content}</span>
                   </div>
                 )}
+
+                {/* 显示正在执行的工具调用（仅显示 running 状态） */}
+                {(() => {
+                  const buffer = streamingBuffers.get(msg.id);
+                  if (!buffer || buffer.toolCalls.size === 0) return null;
+                  
+                  // 只显示正在执行的工具，完成后由消息列表显示
+                  const runningTools = Array.from(buffer.toolCalls.entries())
+                    .filter(([_, tc]) => tc.status === 'running');
+                  
+                  if (runningTools.length === 0) return null;
+                  
+                  return runningTools.map(([toolCallId, toolCall]) => (
+                    <div key={toolCallId} className="ai-tool-status-block">
+                      <div className="ai-tool-status-header">
+                        <span className="ai-tool-status-indicator running">
+                          <span className="ai-tool-spinner"></span>
+                        </span>
+                        <span className="ai-tool-status-name">
+                          {toolCall.name || 'Tool'}
+                        </span>
+                        <span className="ai-tool-status-label">
+                          执行中...
+                        </span>
+                      </div>
+                    </div>
+                  ));
+                })()}
               </div>
             );
           })}

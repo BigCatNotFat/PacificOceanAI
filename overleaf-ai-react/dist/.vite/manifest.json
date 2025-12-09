@@ -21,11 +21,11 @@
     "name": "modulepreload-polyfill"
   },
   "main.tsx-loader.js": {
-    "file": "assets/main.tsx-loader-DndVRIC_.js",
+    "file": "assets/main.tsx-loader-CuGU5GO_.js",
     "src": "main.tsx-loader.js"
   },
   "src/extension/content/main.tsx": {
-    "file": "assets/main.tsx-DBGoxUux.js",
+    "file": "assets/main.tsx-tEUPq8eH.js",
     "name": "main.tsx",
     "src": "src/extension/content/main.tsx",
     "isEntry": true,
@@ -34,7 +34,7 @@
       "_StorageService-DSiMnXGx.js"
     ],
     "css": [
-      "assets/main-DbrKFK2W.css"
+      "assets/main-Ddsimwso.css"
     ]
   },
   "src/extension/options/index.html": {

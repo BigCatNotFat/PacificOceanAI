@@ -4,13 +4,29 @@ import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
 import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
 
 /**
+ * Tool call status
+ */
+export type ToolCallStatus = 'pending' | 'running' | 'completed' | 'error';
+
+/**
+ * Tool call info for UI display
+ */
+export interface ToolCallInfo {
+  name: string;
+  args: string;
+  result?: string;
+  status: ToolCallStatus;
+  error?: string;
+}
+
+/**
  * Streaming buffer for a single message
  */
-interface StreamingBuffer {
+export interface StreamingBuffer {
   messageId: string;
   thinking: string;
   content: string;
-  toolCalls: Map<string, { name: string; args: string; result?: string }>;
+  toolCalls: Map<string, ToolCallInfo>;
 }
 
 /**
@@ -117,17 +133,25 @@ export function useUIStreamUpdates() {
     const toolCallDisposable = uiStreamService.onDidToolCallUpdate((event) => {
       setStreamingBuffers((prev) => {
         const next = new Map(prev);
-        const existing = next.get(event.messageId);
+        let existing = next.get(event.messageId);
         
+        // 如果没有现有的 buffer，为工具调用创建一个
         if (!existing) {
-          return prev; // Don't create buffer for tool calls alone
+          existing = {
+            messageId: event.messageId,
+            thinking: '',
+            content: '',
+            toolCalls: new Map()
+          };
+          next.set(event.messageId, existing);
         }
         
         const existingToolCall = existing.toolCalls.get(event.toolCallId);
-        const toolCall = existingToolCall ? { ...existingToolCall } : {
+        const toolCall: ToolCallInfo = existingToolCall ? { ...existingToolCall } : {
           name: event.name || '',
           args: '',
-          result: undefined
+          result: undefined,
+          status: 'pending'
         };
         
         if (event.name) {
@@ -141,6 +165,25 @@ export function useUIStreamUpdates() {
         if (event.fullResult) {
           toolCall.result = event.fullResult;
         }
+
+        // 更新状态
+        switch (event.phase) {
+          case 'start':
+            toolCall.status = 'running';
+            break;
+          case 'args':
+          case 'log':
+          case 'result':
+            toolCall.status = 'running';
+            break;
+          case 'end':
+            toolCall.status = 'completed';
+            break;
+          case 'error':
+            toolCall.status = 'error';
+            toolCall.error = event.error;
+            break;
+        }
         
         // ✅ 创建新的 Map 和新的对象
         const newToolCalls = new Map(existing.toolCalls);
@@ -150,11 +193,6 @@ export function useUIStreamUpdates() {
           ...existing,
           toolCalls: newToolCalls
         });
-        
-        // Clean up on end
-        if (event.phase === 'end' || event.phase === 'error') {
-          // Keep tool call data for final render
-        }
         
         return next;
       });

@@ -202,20 +202,20 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
                 // 使用 index 作为稳定的 key（流式传输中 id 可能只在第一个 chunk 出现）
                 const index = tcDelta.index ?? 0;
                 const stableKey = `tool_call_${index}`;
-                const id = tcDelta.id || stableKey;
+                const apiId = tcDelta.id;
                 const name = tcDelta.function?.name;
                 const argsText = tcDelta.function?.arguments || '';
 
                 // 优先使用 stableKey 查找，因为后续 chunk 可能没有 id
                 let existing = toolCallsMap.get(stableKey);
                 if (!existing) {
-                  existing = { id, name: name || '', args: '' };
+                  existing = { id: apiId || stableKey, name: name || '', args: '' };
                   toolCallsMap.set(stableKey, existing);
                   // console.log('[OpenAICompatibleProvider] 新建工具调用:', { stableKey, id, name });
                 }
 
                 // 更新 id（第一个 chunk 通常包含真实 id）
-                if (tcDelta.id) existing.id = tcDelta.id;
+                if (apiId) existing.id = apiId;
                 if (name) existing.name = name;
                 existing.args += argsText;
                 
@@ -230,7 +230,7 @@ export class OpenAICompatibleProvider extends BaseLLMProvider {
                   this.uiStreamService.pushToolCall({
                     conversationId,
                     messageId,
-                    toolCallId: id,
+                    toolCallId: stableKey,
                     phase: 'args',
                     name: existing.name,
                     argsDelta: argsText

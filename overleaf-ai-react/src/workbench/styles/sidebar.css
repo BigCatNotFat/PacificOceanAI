@@ -679,3 +679,75 @@
 .ai-send-btn-new .material-symbols {
   font-size: 16px;
 }
+
+/* ==================== Tool Call Status Block ==================== */
+.ai-tool-status-block {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background-color: var(--bg-secondary);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent-primary);
+}
+
+.ai-tool-status-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-tool-status-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.ai-tool-status-indicator.running {
+  color: var(--accent-primary);
+}
+
+.ai-tool-status-indicator.completed {
+  color: var(--success);
+}
+
+.ai-tool-status-indicator.error {
+  color: var(--error);
+}
+
+.ai-tool-status-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.ai-tool-status-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-left: auto;
+}
+
+.ai-tool-status-error {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background-color: rgba(239, 68, 68, 0.1);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--error);
+}
+
+/* Spinner animation for running tools */
+.ai-tool-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-primary);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: ai-tool-spin 0.8s linear infinite;
+}
+
+@keyframes ai-tool-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

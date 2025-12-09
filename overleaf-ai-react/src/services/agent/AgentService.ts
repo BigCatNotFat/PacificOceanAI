@@ -36,6 +36,8 @@ import type { IToolService, ITool } from '../../platform/agent/IToolService';
 import { IToolServiceId } from '../../platform/agent/IToolService';
 import type { IModelRegistryService } from '../../platform/llm/IModelRegistryService';
 import { IModelRegistryServiceId } from '../../platform/llm/IModelRegistryService';
+import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
+import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
 
 /**
  * 待审批的工具调用
@@ -52,7 +54,7 @@ interface PendingToolCall {
 /**
  * AgentService 实现
  */
-@injectable(ILLMServiceId, IPromptServiceId, IToolServiceId, IModelRegistryServiceId)
+@injectable(ILLMServiceId, IPromptServiceId, IToolServiceId, IModelRegistryServiceId, IUIStreamServiceId)
 export class AgentService implements IAgentService {
   // ==================== 内部事件发射器（不对外暴露） ====================
   private readonly _onDidToolCallPending = new Emitter<ToolCallPendingEvent>();
@@ -69,7 +71,8 @@ export class AgentService implements IAgentService {
     private readonly llmService: ILLMService,
     private readonly promptService: IPromptService,
     private readonly toolService: IToolService,
-    private readonly modelRegistry: IModelRegistryService
+    private readonly modelRegistry: IModelRegistryService,
+    private readonly uiStreamService: IUIStreamService
   ) {
     // console.log('[AgentService] 依赖注入成功');
   }
@@ -411,11 +414,21 @@ export class AgentService implements IAgentService {
         return false;
       } else {
         // 不需要审批，直接执行
-        // console.log(`[AgentService] 工具 ${toolName} 不需要审批，直接执行`);
+        // 注意：LLM Provider 已经在解析响应时发送了 'start' 阶段，这里不需要重复发送
+        const messageId = context.messages[context.messages.length - 1]?.id || '';
 
         try {
           const result = await this.toolService.executeTool(toolName, toolArgs);
           
+          // 通知 UI：工具执行完成
+          this.uiStreamService.pushToolCall({
+            messageId,
+            toolCallId,
+            phase: 'end',
+            name: toolName,
+            resultDelta: JSON.stringify(result.data || result)
+          });
+
           const toolMessage = this.createMessage('tool', JSON.stringify(result.data || result));
           toolMessage.toolCalls = [{
             id: toolCallId,
@@ -428,6 +441,15 @@ export class AgentService implements IAgentService {
           context.workingMemory.push(toolMessage); // 加入工作记忆
           context.onUpdateEmitter.fire([...context.messages]);
         } catch (error) {
+          // 通知 UI：工具执行出错
+          this.uiStreamService.pushToolCall({
+            messageId,
+            toolCallId,
+            phase: 'error',
+            name: toolName,
+            error: String(error)
+          });
+
           // 添加错误消息（必须包含 toolCalls 以提供 tool_call_id）
           const errorMessage = this.createMessage('tool', `工具执行失败: ${error}`);
           errorMessage.status = 'error';
