@@ -23,7 +23,9 @@ export type {
   ReadLinesResult,
   ReadEntireFileResult,
   FileInfo,
-  CursorPosition
+  CursorPosition,
+  LineRange,
+  ReplaceFirstMatchResult
 } from './bridge';
 
 /**
@@ -96,6 +98,18 @@ class OverleafBridgeClientCompat {
 
   async getFileInfo() {
     return this.editor.file.getInfo();
+  }
+
+  async getPositionAtOffset(offset: number) {
+    return this.editor.document.getPositionAtOffset(offset);
+  }
+
+  async getLineRange(lineNumber: number) {
+    return this.editor.document.getLineRange(lineNumber);
+  }
+
+  async replaceFirstMatch(searchText: string, replaceText: string) {
+    return this.editor.editor.replaceFirstMatch(searchText, replaceText);
   }
 }
 

@@ -37,6 +37,24 @@ export interface CursorPosition {
   offset: number;
 }
 
+/** 指定行的范围信息 */
+export interface LineRange {
+  lineNumber: number;
+  from: number;
+  to: number;
+  text: string;
+}
+
+/** replaceFirstMatch 返回结果 */
+export interface ReplaceFirstMatchResult {
+  found: boolean;
+  from: number;
+  to: number;
+  searchText: string;
+  replaceText: string;
+  matchesCount: number;
+}
+
 /** 行数据 */
 export interface LineData {
   lineNumber: number;

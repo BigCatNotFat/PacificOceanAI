@@ -5,15 +5,15 @@
     "src": "../../../../../../../../../@crx/manifest",
     "isEntry": true
   },
-  "_StorageService-DSiMnXGx.js": {
-    "file": "assets/StorageService-DSiMnXGx.js",
+  "_StorageService-lb5uyr0I.js": {
+    "file": "assets/StorageService-lb5uyr0I.js",
     "name": "StorageService",
     "imports": [
-      "_client-BaofO1uk.js"
+      "_client-pkrm3IsY.js"
     ]
   },
-  "_client-BaofO1uk.js": {
-    "file": "assets/client-BaofO1uk.js",
+  "_client-pkrm3IsY.js": {
+    "file": "assets/client-pkrm3IsY.js",
     "name": "client"
   },
   "_modulepreload-polyfill-B5Qt9EMX.js": {
@@ -21,41 +21,41 @@
     "name": "modulepreload-polyfill"
   },
   "main.tsx-loader.js": {
-    "file": "assets/main.tsx-loader-DzEv19hP.js",
+    "file": "assets/main.tsx-loader-B3dP85dU.js",
     "src": "main.tsx-loader.js"
   },
   "src/extension/content/main.tsx": {
-    "file": "assets/main.tsx-BvocFGWO.js",
+    "file": "assets/main.tsx-DT7S7OQN.js",
     "name": "main.tsx",
     "src": "src/extension/content/main.tsx",
     "isEntry": true,
     "imports": [
-      "_client-BaofO1uk.js",
-      "_StorageService-DSiMnXGx.js"
+      "_client-pkrm3IsY.js",
+      "_StorageService-lb5uyr0I.js"
     ],
     "css": [
       "assets/main-Ddsimwso.css"
     ]
   },
   "src/extension/options/index.html": {
-    "file": "assets/index.html-DSAyXyci.js",
+    "file": "assets/index.html-CnnStJGU.js",
     "name": "index.html",
     "src": "src/extension/options/index.html",
     "isEntry": true,
     "imports": [
       "_modulepreload-polyfill-B5Qt9EMX.js",
-      "_client-BaofO1uk.js",
-      "_StorageService-DSiMnXGx.js"
+      "_client-pkrm3IsY.js",
+      "_StorageService-lb5uyr0I.js"
     ]
   },
   "src/extension/popup/index.html": {
-    "file": "assets/index.html-DCxppSY0.js",
+    "file": "assets/index.html-C2ByO6EL.js",
     "name": "index.html",
     "src": "src/extension/popup/index.html",
     "isEntry": true,
     "imports": [
       "_modulepreload-polyfill-B5Qt9EMX.js",
-      "_client-BaofO1uk.js"
+      "_client-pkrm3IsY.js"
     ],
     "css": [
       "assets/index-8cEiGnCv.css"

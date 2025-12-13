@@ -255,6 +255,31 @@ export class AgentService implements IAgentService {
         const finalResult = await this.llmService.chat(llmMessages, llmConfig);
         context.abortController = undefined;
         
+        // 输出大模型返回的内容到控制台
+        console.log('='.repeat(80));
+        console.log(`[AgentService] 🤖 大模型响应 - 第 ${context.iteration + 1} 轮迭代`);
+        console.log('='.repeat(80));
+        if (finalResult.thinking) {
+          console.log('💭 思考过程:');
+          console.log(finalResult.thinking);
+          console.log('-'.repeat(80));
+        }
+        if (finalResult.content) {
+          console.log('💬 回复内容:');
+          console.log(finalResult.content);
+          console.log('-'.repeat(80));
+        }
+        if (finalResult.toolCalls && finalResult.toolCalls.length > 0) {
+          console.log('🛠️  工具调用:');
+          finalResult.toolCalls.forEach((tc: any, index: number) => {
+            console.log(`  [${index + 1}] ${tc.name}`);
+            console.log(`      参数:`, JSON.stringify(tc.arguments, null, 2));
+          });
+          console.log('-'.repeat(80));
+        }
+        console.log('='.repeat(80));
+        console.log('');
+        
         // 检查是否已被中断
         if (context.aborted) {
           // console.log(`[AgentService] Loop ${context.loopId} 已中断，停止处理 LLM 响应`);
@@ -388,6 +413,19 @@ export class AgentService implements IAgentService {
           });
         }).then(
           (result) => {
+            // 输出审批通过的工具执行结果到控制台
+            console.log('┌' + '─'.repeat(78) + '┐');
+            console.log(`│ ✅ 工具执行成功 (需审批): ${toolName}`.padEnd(79) + '│');
+            console.log('├' + '─'.repeat(78) + '┤');
+            console.log('│ 📥 执行结果:'.padEnd(79) + '│');
+            const resultStr = JSON.stringify(result.data || result, null, 2);
+            resultStr.split('\n').forEach(line => {
+              const truncated = line.length > 76 ? line.substring(0, 73) + '...' : line;
+              console.log(`│ ${truncated}`.padEnd(79) + '│');
+            });
+            console.log('└' + '─'.repeat(78) + '┘');
+            console.log('');
+            
             // 工具执行成功
             const toolMessage = this.createMessage('tool', JSON.stringify(result.data || result));
             toolMessage.toolCalls = [{
@@ -402,6 +440,19 @@ export class AgentService implements IAgentService {
             context.onUpdateEmitter.fire([...context.messages]);
           },
           (error) => {
+            // 输出工具被拒绝的信息到控制台
+            console.log('┌' + '─'.repeat(78) + '┐');
+            console.log(`│ 🚫 工具调用被拒绝: ${toolName}`.padEnd(79) + '│');
+            console.log('├' + '─'.repeat(78) + '┤');
+            console.log('│ ⚠️  拒绝原因:'.padEnd(79) + '│');
+            const errorStr = String(error);
+            errorStr.split('\n').forEach(line => {
+              const truncated = line.length > 76 ? line.substring(0, 73) + '...' : line;
+              console.log(`│ ${truncated}`.padEnd(79) + '│');
+            });
+            console.log('└' + '─'.repeat(78) + '┘');
+            console.log('');
+            
             // 用户拒绝或执行失败
             const errorMessage = this.createMessage('assistant', `用户拒绝了工具调用: ${toolName}`);
             errorMessage.status = 'completed';
@@ -419,6 +470,19 @@ export class AgentService implements IAgentService {
 
         try {
           const result = await this.toolService.executeTool(toolName, toolArgs);
+          
+          // 输出工具执行结果到控制台
+          console.log('┌' + '─'.repeat(78) + '┐');
+          console.log(`│ ✅ 工具执行成功: ${toolName}`.padEnd(79) + '│');
+          console.log('├' + '─'.repeat(78) + '┤');
+          console.log('│ 📥 执行结果:'.padEnd(79) + '│');
+          const resultStr = JSON.stringify(result.data || result, null, 2);
+          resultStr.split('\n').forEach(line => {
+            const truncated = line.length > 76 ? line.substring(0, 73) + '...' : line;
+            console.log(`│ ${truncated}`.padEnd(79) + '│');
+          });
+          console.log('└' + '─'.repeat(78) + '┘');
+          console.log('');
           
           // 通知 UI：工具执行完成
           this.uiStreamService.pushToolCall({
@@ -441,6 +505,19 @@ export class AgentService implements IAgentService {
           context.workingMemory.push(toolMessage); // 加入工作记忆
           context.onUpdateEmitter.fire([...context.messages]);
         } catch (error) {
+          // 输出工具执行错误到控制台
+          console.log('┌' + '─'.repeat(78) + '┐');
+          console.log(`│ ❌ 工具执行失败: ${toolName}`.padEnd(79) + '│');
+          console.log('├' + '─'.repeat(78) + '┤');
+          console.log('│ ⚠️  错误信息:'.padEnd(79) + '│');
+          const errorStr = String(error);
+          errorStr.split('\n').forEach(line => {
+            const truncated = line.length > 76 ? line.substring(0, 73) + '...' : line;
+            console.log(`│ ${truncated}`.padEnd(79) + '│');
+          });
+          console.log('└' + '─'.repeat(78) + '┘');
+          console.log('');
+          
           // 通知 UI：工具执行出错
           this.uiStreamService.pushToolCall({
             messageId,

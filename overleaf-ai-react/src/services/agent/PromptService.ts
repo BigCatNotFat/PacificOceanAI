@@ -239,11 +239,6 @@ You have tools to search the paperbase and read files. Follow these rules regard
       prompt += '\n\n' + this.formatToolsAsXML(tools);
     }
     prompt += `
-You MUST use the following format when citing latex regions or blocks:
-\`\`\`startLine:endLine:filepath
-// ... existing latex ...
-\`\`\`
-This is the ONLY acceptable format for latex citations. The format is \`\`\`startLine:endLine:filepath where startLine and endLine are line numbers.
 
 <user_info>
 The user's OS version is win32 10.0.26100. The absolute path of the user's workspace is /. 

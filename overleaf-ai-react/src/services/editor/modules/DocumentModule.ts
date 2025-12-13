@@ -4,7 +4,7 @@
  */
 
 import { BaseModule } from './BaseModule';
-import type { ReadLinesResult, ReadEntireFileResult } from '../bridge';
+import type { CursorPosition, LineRange, ReadLinesResult, ReadEntireFileResult } from '../bridge';
 import { ProjectModule } from './ProjectModule';
 
 export class DocumentModule extends BaseModule {
@@ -27,6 +27,20 @@ export class DocumentModule extends BaseModule {
    */
   async getLineContent(lineNumber: number): Promise<string> {
     return this.call<string>('getLineContent', lineNumber);
+  }
+
+  /**
+   * 根据 offset 获取位置信息（line/column/offset）
+   */
+  async getPositionAtOffset(offset: number): Promise<CursorPosition> {
+    return this.call<CursorPosition>('getPositionAtOffset', offset);
+  }
+
+  /**
+   * 获取指定行的范围信息（from/to 以及文本内容）
+   */
+  async getLineRange(lineNumber: number): Promise<LineRange> {
+    return this.call<LineRange>('getLineRange', lineNumber);
   }
 
   /**
