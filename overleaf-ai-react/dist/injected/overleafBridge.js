@@ -17,6 +17,272 @@ function getEditorView() {
   }
 }
 
+// --- Search Helper Functions ---
+
+// 获取项目 ID
+function getProjectId() {
+  const match = window.location.pathname.match(/\/project\/([a-f0-9]+)/);
+  if (match) {
+    return match[1];
+  }
+  // 尝试从 meta 标签获取
+  const metaTag = document.querySelector('meta[name="ol-project_id"]');
+  if (metaTag) {
+    return metaTag.getAttribute('content');
+  }
+  throw new Error('无法获取项目 ID');
+}
+
+// 通过 entities API 获取文件列表
+async function fetchEntities(projectId) {
+  try {
+    const response = await fetch(`/project/${projectId}/entities`);
+    if (!response.ok) {
+      throw new Error(`获取 entities 失败: ${response.status}`);
+    }
+    const data = await response.json();
+    return data.entities || [];
+  } catch (error) {
+    console.error('[OverleafBridge] 获取 entities 失败:', error);
+    return [];
+  }
+}
+
+// 通过 history API 获取文件 hash 映射
+async function fetchFileHashes(projectId) {
+  try {
+    const response = await fetch(`/project/${projectId}/latest/history`);
+    if (!response.ok) {
+      throw new Error(`获取 history 失败: ${response.status}`);
+    }
+    const data = await response.json();
+    
+    const fileHashes = {};
+    
+    // 从 changes 中提取文件 hash
+    if (data.chunk && data.chunk.history && data.chunk.history.changes) {
+      data.chunk.history.changes.forEach(change => {
+        if (change.operations) {
+          change.operations.forEach(op => {
+            if (op.pathname && op.file && op.file.hash) {
+              // 保存最新的 hash（后面的 change 会覆盖前面的）
+              fileHashes[op.pathname] = op.file.hash;
+            }
+          });
+        }
+      });
+    }
+    
+    // 也检查 snapshot（如果有的话）
+    if (data.chunk && data.chunk.history && data.chunk.history.snapshot && data.chunk.history.snapshot.files) {
+      const snapshotFiles = data.chunk.history.snapshot.files;
+      for (const [pathname, fileData] of Object.entries(snapshotFiles)) {
+        if (fileData && fileData.hash) {
+          fileHashes[pathname] = fileData.hash;
+        }
+      }
+    }
+    
+    return fileHashes;
+  } catch (error) {
+    console.error('[OverleafBridge] 获取 history 失败:', error);
+    return {};
+  }
+}
+
+// 通过 blob API 获取文件内容
+async function fetchBlobContent(projectId, hash) {
+  try {
+    const response = await fetch(`/project/${projectId}/blob/${hash}`);
+    if (!response.ok) {
+      throw new Error(`获取 blob 失败: ${response.status}`);
+    }
+    return await response.text();
+  } catch (error) {
+    console.error(`[OverleafBridge] 获取 blob 失败 (hash: ${hash}):`, error);
+    return null;
+  }
+}
+
+// 获取所有文档及其内容
+async function getAllDocsWithContent(projectId) {
+  const files = [];
+  
+  console.log('[OverleafBridge] 使用 entities + history API 获取文件');
+  
+  // 1. 获取文件列表
+  const entities = await fetchEntities(projectId);
+  console.log(`[OverleafBridge] 找到 ${entities.length} 个实体`);
+  
+  // 2. 获取文件 hash 映射
+  const fileHashes = await fetchFileHashes(projectId);
+  console.log(`[OverleafBridge] 找到 ${Object.keys(fileHashes).length} 个文件 hash`);
+  
+  // 3. 过滤出可编辑的文档（type === 'doc'）
+  const docs = entities.filter(e => e.type === 'doc');
+  console.log(`[OverleafBridge] 找到 ${docs.length} 个可编辑文档`);
+  
+  // 4. 获取每个文档的内容
+  const batchSize = 5;
+  for (let i = 0; i < docs.length; i += batchSize) {
+    const batch = docs.slice(i, i + batchSize);
+    
+    const contents = await Promise.all(
+      batch.map(async (doc) => {
+        // 路径格式: "/main.tex" -> "main.tex"
+        const pathname = doc.path.startsWith('/') ? doc.path.substring(1) : doc.path;
+        const hash = fileHashes[pathname];
+        
+        if (hash) {
+          return await fetchBlobContent(projectId, hash);
+        } else {
+          console.warn(`[OverleafBridge] 未找到文件 hash: ${pathname}`);
+          return null;
+        }
+      })
+    );
+    
+    for (let j = 0; j < batch.length; j++) {
+      if (contents[j] !== null) {
+        // 移除开头的 /
+        const path = batch[j].path.startsWith('/') ? batch[j].path.substring(1) : batch[j].path;
+        files.push({
+          path: path,
+          content: contents[j],
+        });
+      }
+    }
+  }
+  
+  console.log(`[OverleafBridge] 成功加载 ${files.length} 个文档内容`);
+  return files;
+}
+
+// 创建正则表达式
+function createSearchRegex(pattern, options = {}) {
+  const { caseSensitive = false, wholeWord = false, regexp = false } = options;
+  
+  let regexPattern;
+  
+  if (regexp) {
+    // 使用用户提供的正则表达式
+    regexPattern = pattern;
+  } else {
+    // 转义特殊字符
+    regexPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  // 如果是全字匹配，添加单词边界
+  if (wholeWord) {
+    regexPattern = `\\b${regexPattern}\\b`;
+  }
+
+  const flags = caseSensitive ? 'g' : 'gi';
+  
+  try {
+    return new RegExp(regexPattern, flags);
+  } catch (error) {
+    throw new Error(`无效的正则表达式: ${error.message}`);
+  }
+}
+
+// 搜索单个文件
+function searchInFile(file, regex) {
+  const lines = file.content.split('\n');
+  const matches = [];
+
+  lines.forEach((line, lineIndex) => {
+    let match;
+    // 重置 lastIndex
+    regex.lastIndex = 0;
+    
+    const matchesInLine = [];
+    while ((match = regex.exec(line)) !== null) {
+      matchesInLine.push({
+        lineNumber: lineIndex + 1,
+        columnStart: match.index + 1,
+        columnEnd: match.index + match[0].length + 1,
+        matchedText: match[0],
+        lineContent: line,
+      });
+      
+      // 防止无限循环（空匹配）
+      if (match.index === regex.lastIndex) {
+        regex.lastIndex++;
+      }
+    }
+    
+    matches.push(...matchesInLine);
+  });
+
+  return matches;
+}
+
+// 主搜索函数
+async function searchInternal(pattern, options = {}) {
+  const startTime = Date.now();
+  
+  console.log(`[OverleafBridge] 🔍 正在搜索: "${pattern}"`);
+  console.log('[OverleafBridge] 搜索选项:', options);
+  
+  try {
+    const projectId = getProjectId();
+    console.log(`[OverleafBridge] 📂 项目 ID: ${projectId}`);
+    
+    // 获取所有文档及其内容
+    console.log('[OverleafBridge] 📥 正在获取项目文档...');
+    const files = await getAllDocsWithContent(projectId);
+    console.log(`[OverleafBridge] ✅ 已加载 ${files.length} 个文档`);
+    
+    if (files.length === 0) {
+      console.warn('[OverleafBridge] ⚠️ 未找到任何文档，搜索将返回空结果');
+      return {
+        results: [],
+        totalMatches: 0,
+        fileCount: 0,
+        duration: ((Date.now() - startTime) / 1000).toFixed(2),
+        error: '未找到任何文档'
+      };
+    }
+    
+    // 创建搜索正则表达式
+    const regex = createSearchRegex(pattern, options);
+    
+    // 搜索所有文件
+    console.log('[OverleafBridge] 🔎 正在搜索...');
+    const results = [];
+    let totalMatches = 0;
+    
+    for (const file of files) {
+      const matches = searchInFile(file, regex);
+      if (matches.length > 0) {
+        results.push({
+          path: file.path,
+          matchCount: matches.length,
+          matches: matches,
+        });
+        totalMatches += matches.length;
+      }
+    }
+    
+    const endTime = Date.now();
+    const duration = ((endTime - startTime) / 1000).toFixed(2);
+    
+    console.log(`[OverleafBridge] ✨ 搜索完成！用时: ${duration}秒, 找到 ${totalMatches} 个匹配项`);
+    
+    return {
+      results,
+      totalMatches,
+      fileCount: results.length,
+      duration
+    };
+    
+  } catch (error) {
+    console.error('[OverleafBridge] ❌ 搜索失败:', error);
+    throw error;
+  }
+}
+
 // 处理请求的方法映射
 const methodHandlers = {
   // 获取文档行数
@@ -369,6 +635,11 @@ const methodHandlers = {
       success: true,
       appliedCount: edits.length
     };
+  },
+
+  // 全局搜索
+  searchProject: async function(pattern, options) {
+    return await searchInternal(pattern, options);
   }
 };
 
@@ -398,6 +669,21 @@ window.addEventListener('message', function(event) {
     }
 
     var result = handler.apply(null, args);
+    
+    // 处理 Promise 结果 (for async methods like searchProject)
+    if (result && typeof result.then === 'function') {
+      result.then(function(res) {
+        response.success = true;
+        response.result = res;
+        window.postMessage(response, '*');
+      }).catch(function(err) {
+        response.success = false;
+        response.error = err instanceof Error ? err.message : String(err);
+        window.postMessage(response, '*');
+      });
+      return;
+    }
+
     response.success = true;
     response.result = result;
   } catch (error) {
@@ -405,7 +691,7 @@ window.addEventListener('message', function(event) {
     response.error = error instanceof Error ? error.message : String(error);
   }
 
-  // 发送响应
+  // 发送响应 (同步结果)
   window.postMessage(response, '*');
 });
 

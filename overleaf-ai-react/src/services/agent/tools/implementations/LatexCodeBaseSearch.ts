@@ -14,7 +14,7 @@ import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 export class LatexCodebaseSearchTool extends BaseTool {
   protected metadata: ToolMetadata = {
     name: 'latex_codebase_search',
-    description: `Find snippets of latex from the paperbase most relevant to the search query.\nThis is a semantic search tool, so the query should ask for something semantically matching what is needed.\nIf it makes sense to only search in particular directories, please specify them in the target_directories field.\nUnless there is a clear reason to use your own search query, please just reuse the user's exact query with their wording.\nTheir exact wording/phrasing can often be helpful for the semantic search query. Keeping the same exact question format can also be helpful.`,
+    description: `Find snippets of latex code from the paperbase most relevant to the search query.\nThis is a semantic search tool, so the query should ask for something semantically matching what is needed.\nIf it makes sense to only search in particular directories, please specify them in the target_directories field.\nUnless there is a clear reason to use your own search query, please just reuse the user's exact query with their wording.\nTheir exact wording/phrasing can often be helpful for the semantic search query. Keeping the same exact question format can also be helpful.`,
     parameters: {
       type: 'object',
       properties: {

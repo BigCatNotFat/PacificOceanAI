@@ -17,7 +17,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/main.tsx-loader-DXkcHa42.js"
+        "assets/main.tsx-loader-MI5fKbtz.js"
       ],
       "matches": [
         "https://www.overleaf.com/*"
@@ -38,7 +38,7 @@
         "injected/overleafBridge.js",
         "assets/client-pkrm3IsY.js",
         "assets/StorageService-lb5uyr0I.js",
-        "assets/main.tsx-aMCIe_lS.js"
+        "assets/main.tsx-6jhXBj6Z.js"
       ],
       "use_dynamic_url": false
     }
