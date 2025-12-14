@@ -40,9 +40,9 @@ export class ToolRegistry {
     // 读取类工具
     new ReadFileTool(),
     new ListDirTool(),
-    new GrepSearchTool(),
-    new LatexCodebaseSearchTool(),
-    new WebSearchTool(),
+    // new GrepSearchTool(),
+    // new LatexCodebaseSearchTool(),
+    // new WebSearchTool(),
     // new DiffHistoryTool(),
     // 写入类工具
     new EditFileTool(),

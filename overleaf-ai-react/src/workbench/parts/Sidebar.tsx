@@ -50,7 +50,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const [availableModels, setAvailableModels] = useState<AIModelConfig[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [thinkingStates, setThinkingStates] = useState<Record<string, boolean>>({});
-  const [chatMode, setChatMode] = useState<'agent' | 'chat' | 'normal'>('chat');
+  const [chatMode, setChatMode] = useState<'agent' | 'chat' | 'normal'>('agent');
   const [hasApiKey, setHasApiKey] = useState<boolean>(false);
   const [isCheckingApiKey, setIsCheckingApiKey] = useState<boolean>(true);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -73,8 +73,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
         const models = await configService.getModels();
         const enabledModels = models.filter(m => m.enabled);
         setAvailableModels(enabledModels);
-        if (enabledModels.length > 0 && !selectedModel) {
-          setSelectedModel(enabledModels[0].id);
+        if (!selectedModel) {
+          const preferred = enabledModels.find(m => m.id === 'deepseek-reasoner');
+          setSelectedModel(preferred ? preferred.id : (enabledModels[0]?.id ?? ''));
         }
       } catch (error) {
         console.error('Failed to load models:', error);
