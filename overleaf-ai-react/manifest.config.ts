@@ -6,7 +6,11 @@ export default defineManifest({
   version: '1.0',
   description: '测试 Overleaf 插件开发',
   permissions: ['storage'],
-  host_permissions: ['https://www.overleaf.com/*'],
+  host_permissions: [
+    'https://www.overleaf.com/*',
+    'https://latex.sysu.edu.cn/*',
+    'http://192.168.124.22:3000/*'
+  ],
   options_page: 'src/extension/options/index.html',
   action: {
     default_popup: 'src/extension/popup/index.html',
@@ -26,7 +30,11 @@ export default defineManifest({
   // },
   content_scripts: [
     {
-      matches: ['https://www.overleaf.com/*'],
+      matches: [
+        'https://www.overleaf.com/*',
+        'https://latex.sysu.edu.cn/*',
+        'http://192.168.124.22:3000/*'
+      ],
       js: ['src/extension/content/main.tsx'],
       run_at: 'document_idle'
     }
@@ -37,7 +45,11 @@ export default defineManifest({
         'src/workbench/styles/sidebar.css',
         'injected/overleafBridge.js'
       ],
-      matches: ['https://www.overleaf.com/*']
+      matches: [
+        'https://www.overleaf.com/*',
+        'https://latex.sysu.edu.cn/*',
+        'http://192.168.124.22:3000/*'
+      ]
     }
   ]
 });

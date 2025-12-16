@@ -7,7 +7,9 @@
     "storage"
   ],
   "host_permissions": [
-    "https://www.overleaf.com/*"
+    "https://www.overleaf.com/*",
+    "https://latex.sysu.edu.cn/*",
+    "http://192.168.124.22:3000/*"
   ],
   "options_page": "src/extension/options/index.html",
   "action": {
@@ -17,10 +19,12 @@
   "content_scripts": [
     {
       "js": [
-        "assets/main.tsx-loader-MI5fKbtz.js"
+        "assets/main.tsx-loader-5kPvXTJW.js"
       ],
       "matches": [
-        "https://www.overleaf.com/*"
+        "https://www.overleaf.com/*",
+        "https://latex.sysu.edu.cn/*",
+        "http://192.168.124.22:3000/*"
       ],
       "run_at": "document_idle",
       "css": [
@@ -31,6 +35,8 @@
   "web_accessible_resources": [
     {
       "matches": [
+        "http://192.168.124.22:3000/*",
+        "https://latex.sysu.edu.cn/*",
         "https://www.overleaf.com/*"
       ],
       "resources": [
@@ -38,7 +44,7 @@
         "injected/overleafBridge.js",
         "assets/client-pkrm3IsY.js",
         "assets/StorageService-lb5uyr0I.js",
-        "assets/main.tsx-6jhXBj6Z.js"
+        "assets/main.tsx-BbL2ncY0.js"
       ],
       "use_dynamic_url": false
     }

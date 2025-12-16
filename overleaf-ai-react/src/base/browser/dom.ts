@@ -1,11 +1,40 @@
-import { SELECTORS } from '../common/constants';
+import { SELECTORS, detectSiteType } from '../common/constants';
 
+/**
+ * 获取主内容容器
+ * 不同版本的 Overleaf 可能有不同的 DOM 结构
+ */
 export function getMainContainer(): HTMLElement {
-  return (
-    (document.querySelector(SELECTORS.MAIN_CONTAINER) as HTMLElement | null) ||
-    (document.querySelector(SELECTORS.LAYOUT_ROOT) as HTMLElement | null) ||
-    document.body
-  );
+  const siteType = detectSiteType();
+  
+  // 官方 Overleaf 的选择器
+  const officialSelectors = [
+    SELECTORS.MAIN_CONTAINER,
+    SELECTORS.LAYOUT_ROOT,
+  ];
+  
+  // 自建/高校版 Overleaf 的选择器
+  const customSelectors = [
+    '.ide-react-main',
+    '.editor-container',
+    '.ide-body',
+    '#ide-body',
+    '.full-size',
+    SELECTORS.MAIN_CONTAINER,
+    SELECTORS.LAYOUT_ROOT,
+  ];
+  
+  const selectors = siteType === 'official' ? officialSelectors : customSelectors;
+  
+  for (const selector of selectors) {
+    const element = document.querySelector(selector) as HTMLElement | null;
+    if (element) {
+      return element;
+    }
+  }
+  
+  // 最后的备用方案
+  return document.body;
 }
 
 export function disableIframes(disable: boolean): void {
