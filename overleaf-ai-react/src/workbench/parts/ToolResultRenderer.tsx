@@ -50,6 +50,15 @@ function getFileIcon(fileName: string, type: string): string {
 }
 
 /**
+ * 格式化文件大小（字符数）为可读形式
+ */
+function formatCharCount(chars: number): string {
+  if (chars < 1000) return `${chars}`;
+  if (chars < 10000) return `${(chars / 1000).toFixed(1)}k`;
+  return `${Math.round(chars / 1000)}k`;
+}
+
+/**
  * 列出目录结果渲染
  */
 const ListDirResult: React.FC<{ data: any }> = ({ data }) => {
@@ -60,6 +69,15 @@ const ListDirResult: React.FC<{ data: any }> = ({ data }) => {
   const folders = data.items.filter((item: any) => item.type === 'directory');
   const files = data.items.filter((item: any) => item.type === 'file');
 
+  // 计算总行数和总字符数
+  const totalStats = files.reduce((acc: { lines: number; chars: number }, file: any) => {
+    if (file.stats) {
+      acc.lines += file.stats.lines || 0;
+      acc.chars += file.stats.characters || 0;
+    }
+    return acc;
+  }, { lines: 0, chars: 0 });
+
   return (
     <div className="tool-result-list-dir">
       <div className="tool-result-header">
@@ -67,6 +85,24 @@ const ListDirResult: React.FC<{ data: any }> = ({ data }) => {
         <span className="tool-result-path">{data.path || '/'}</span>
         <span className="tool-result-count">{data.total_items} 项</span>
       </div>
+
+      {/* 显示总体统计 */}
+      {totalStats.lines > 0 && (
+        <div className="tool-result-total-stats">
+          <span className="stat-item">
+            <span className="material-symbols">description</span>
+            {files.length} 个文件
+          </span>
+          <span className="stat-item">
+            <span className="material-symbols">format_list_numbered</span>
+            {totalStats.lines} 行
+          </span>
+          <span className="stat-item">
+            <span className="material-symbols">text_fields</span>
+            {formatCharCount(totalStats.chars)} 字符
+          </span>
+        </div>
+      )}
       
       <div className="tool-result-items">
         {folders.map((item: any, index: number) => (
@@ -79,6 +115,12 @@ const ListDirResult: React.FC<{ data: any }> = ({ data }) => {
           <div key={`file-${index}`} className="tool-result-item file">
             <span className="material-symbols item-icon">{getFileIcon(item.name, item.type)}</span>
             <span className="item-name">{item.name}</span>
+            {item.stats && (
+              <span className="item-stats">
+                <span className="stat-lines">{item.stats.lines} 行</span>
+                <span className="stat-chars">{formatCharCount(item.stats.characters)} 字符</span>
+              </span>
+            )}
           </div>
         ))}
       </div>

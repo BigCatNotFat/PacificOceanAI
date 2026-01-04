@@ -252,6 +252,53 @@
 .ai-bot {
   background-color: transparent;
   padding: 0;
+  position: relative;
+}
+
+.ai-bot-content {
+  line-height: 1.6;
+}
+
+/* AI 回复操作按钮区域 */
+.ai-bot-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 4px;
+}
+
+/* 复制按钮 */
+.ai-copy-btn {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.15s ease;
+}
+
+.ai-copy-btn:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.ai-copy-btn.copied {
+  color: var(--success);
+}
+
+.ai-copy-btn .material-symbols {
+  font-size: 12px;
+}
+
+/* 复制成功提示 */
+.ai-copy-tooltip {
+  font-size: 10px;
+  font-weight: 500;
 }
 
 /* 内联代码 */
@@ -637,6 +684,46 @@
   white-space: nowrap;
   color: var(--text-primary);
   font-family: var(--font-monospace);
+}
+
+.tool-result-item .item-stats {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-family: var(--font-monospace);
+  flex-shrink: 0;
+}
+
+.tool-result-item .item-stats .stat-lines {
+  color: var(--text-secondary);
+}
+
+.tool-result-item .item-stats .stat-chars {
+  color: var(--text-tertiary);
+}
+
+/* 目录总体统计样式 */
+.tool-result-total-stats {
+  display: flex;
+  gap: 12px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.tool-result-total-stats .stat-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+
+.tool-result-total-stats .stat-item .material-symbols {
+  font-size: 14px;
+  color: var(--text-tertiary);
 }
 
 /* 读取文件结果样式 */

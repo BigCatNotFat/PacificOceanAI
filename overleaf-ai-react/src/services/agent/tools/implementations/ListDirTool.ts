@@ -10,13 +10,25 @@ import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import type { FileTreeEntity } from '../../../editor/modules/ProjectModule';
 
+/** 文件项信息（带可选统计） */
+interface FileItem {
+  name: string;
+  type: string;
+  path: string;
+  id?: string;
+  stats?: {
+    lines: number;
+    characters: number;
+  };
+}
+
 /**
  * 列出目录工具
  */
 export class ListDirTool extends BaseTool {
   protected metadata: ToolMetadata = {
     name: 'list_dir',
-    description: `List the contents of a directory. The quick tool to use for discovery, before using more targeted tools like semantic search or file reading. Useful to try to understand the file structure before diving deeper into specific files. Can be used to explore the paperbase.`,
+    description: `List the contents of a directory. Returns file names, types, paths, and statistics (line count, character count) for each file. The quick tool to use for discovery, before using more targeted tools like semantic search or file reading. Useful to try to understand the file structure before diving deeper into specific files. Can be used to explore the paperbase.`,
     parameters: {
       type: 'object',
       properties: {
@@ -71,6 +83,9 @@ export class ListDirTool extends BaseTool {
       // 过滤出指定目录下的文件
       const result = this.filterByDirectory(fileTree.entities, normalizedPath);
 
+      // 默认获取文件统计信息
+      await this.enrichWithStats(result.items, fileTree.project_id);
+
       return {
         success: true,
         data: {
@@ -107,8 +122,8 @@ export class ListDirTool extends BaseTool {
   private filterByDirectory(
     entities: FileTreeEntity[],
     dirPath: string
-  ): { items: Array<{ name: string; type: string; path: string; id?: string }> } {
-    const items: Array<{ name: string; type: string; path: string; id?: string }> = [];
+  ): { items: FileItem[] } {
+    const items: FileItem[] = [];
     const seenDirs = new Set<string>();
 
     // 规范化目录路径
@@ -176,6 +191,47 @@ export class ListDirTool extends BaseTool {
     }
 
     return { items };
+  }
+
+  /**
+   * 为文件项添加统计信息（行数、字符数）
+   * @param items 文件项列表
+   * @param projectId 项目 ID
+   */
+  private async enrichWithStats(items: FileItem[], projectId: string): Promise<void> {
+    const fileItems = items.filter(item => item.type === 'file' && item.id);
+    
+    // 并行获取所有文件的内容
+    const statsPromises = fileItems.map(async (item) => {
+      try {
+        const content = await this.fetchFileContent(projectId, item.id!);
+        const lines = content.split('\n').length;
+        const characters = content.length;
+        item.stats = { lines, characters };
+      } catch (error) {
+        // 如果获取失败，不添加统计信息
+        console.warn(`[ListDirTool] 无法获取文件 ${item.path} 的统计信息:`, error);
+      }
+    });
+
+    await Promise.all(statsPromises);
+  }
+
+  /**
+   * 获取文件内容
+   * @param projectId 项目 ID
+   * @param docId 文档 ID
+   */
+  private async fetchFileContent(projectId: string, docId: string): Promise<string> {
+    const response = await fetch(`/project/${projectId}/doc/${docId}/download`, {
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error(`获取文件内容失败: ${response.status}`);
+    }
+
+    return response.text();
   }
 
   private getDomFileIdMap(): Map<string, string> {

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { ELEMENTS } from '../../base/common/constants';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { useSidebarResize } from '../hooks/useSidebarResize';
@@ -60,6 +60,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [isConversationMenuOpen, setIsConversationMenuOpen] = useState(false);
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   
   // 使用对话管理 Hook
   const {
@@ -259,6 +260,20 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
       ...prev,
       [messageId]: !prev[messageId]
     }));
+  }, []);
+
+  // 复制消息内容到剪贴板
+  const copyMessageToClipboard = useCallback(async (messageId: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMessageId(messageId);
+      // 2秒后重置复制状态
+      setTimeout(() => {
+        setCopiedMessageId(prev => prev === messageId ? null : prev);
+      }, 2000);
+    } catch (error) {
+      console.error('[Sidebar] 复制失败:', error);
+    }
   }, []);
 
   // 测试按钮：获取文档行数和内容
@@ -712,15 +727,40 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                   </div>
                 )}
                 
-                {msgType === 'normal' && (
-                  <div className="ai-message ai-bot">
-                    {msg.isHtml ? (
-                      <div dangerouslySetInnerHTML={{ __html: msg.content }} />
-                    ) : (
-                      renderInlineCode(msg.content)
-                    )}
-                  </div>
-                )}
+                {msgType === 'normal' && (() => {
+                  // 判断是否是临时状态消息（不应显示复制按钮）
+                  const isTemporaryMessage = msg.content === '正在发送...' || msg.content === '正在思考...';
+                  // 只有在不是临时状态且不在生成中时才显示复制按钮
+                  const shouldShowCopyButton = !isTemporaryMessage && !isGenerating;
+                  
+                  return (
+                    <div className="ai-message ai-bot">
+                      <div className="ai-bot-content">
+                        {msg.isHtml ? (
+                          <div dangerouslySetInnerHTML={{ __html: msg.content }} />
+                        ) : (
+                          renderInlineCode(msg.content)
+                        )}
+                      </div>
+                      {shouldShowCopyButton && (
+                        <div className="ai-bot-actions">
+                          <button
+                            className={`ai-copy-btn ${copiedMessageId === msg.id ? 'copied' : ''}`}
+                            onClick={() => copyMessageToClipboard(msg.id, msg.content)}
+                            title={copiedMessageId === msg.id ? '已复制' : '复制回答'}
+                          >
+                            <span className="material-symbols">
+                              {copiedMessageId === msg.id ? 'check' : 'content_copy'}
+                            </span>
+                            {copiedMessageId === msg.id && (
+                              <span className="ai-copy-tooltip">已复制</span>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 
                 {msgType === 'action' && (
                   <div className="ai-action-item">
