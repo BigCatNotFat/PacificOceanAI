@@ -1,7 +1,7 @@
 /**
  * 文本操作 Provider 组件
  * 
- * 负责初始化文本操作服务，并注册默认的操作处理器
+ * 负责初始化文本操作服务，并注册 AI 操作处理器
  * 
  * 设计原则：
  * - 低耦合：操作处理器可以在这里统一注册，也可以在其他组件中单独注册
@@ -12,46 +12,24 @@
  * - 操作结果先显示预览（删除线原文 + 新文本）
  * - 用户确认后才真正替换
  * - 用户拒绝则保持原样
+ * 
+ * AI 集成：
+ * - 使用 TextActionAIService 进行真实的 AI 调用
+ * - 支持流式输出
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useTextAction } from '../hooks/useTextAction';
+import { useService } from '../hooks/useService';
 import type { TextActionType } from '../../services/editor/bridge';
+import type { ITextActionAIService } from '../../platform/agent/ITextActionAIService';
+import { ITextActionAIServiceId } from '../../services/agent/TextActionAIService';
 
 interface TextActionProviderProps {
   children: React.ReactNode;
   /** 是否显示操作状态提示 */
   showStatusToast?: boolean;
 }
-
-/**
- * 默认的操作处理器（测试实现）
- * 返回固定文本用于测试预览功能
- * 后续可以在这里接入 AI 服务
- */
-const defaultHandlers: Record<TextActionType, (text: string) => Promise<string>> = {
-  expand: async (text: string) => {
-    console.log('[TextActionProvider] 扩写 - 原文:', text.substring(0, 50));
-    // 测试用：返回扩展后的文本
-    return `${text}\n\n这是扩写后新增的内容。扩写功能会在原文基础上添加更多细节和解释，使文章更加丰富完整。这段话是测试用的固定文本，后续将接入 AI 服务生成真正的扩写内容。`;
-  },
-  
-  condense: async (text: string) => {
-    console.log('[TextActionProvider] 缩写 - 原文:', text.substring(0, 50));
-    // 测试用：返回缩写后的文本（简单截取前半部分作为演示）
-    const words = text.split(/\s+/);
-    const condensed = words.slice(0, Math.max(Math.ceil(words.length / 2), 5)).join(' ');
-    return `${condensed}（已缩写）`;
-  },
-  
-  polish: async (text: string) => {
-    console.log('[TextActionProvider] 润色 - 原文:', text.substring(0, 50));
-    // 测试用：返回润色后的固定文本
-    return `【润色后】${text}
-
-这是经过润色优化后的文本。润色功能会改进文章的表达方式、语法结构和用词，使其更加流畅自然。此为测试文本，实际效果将由 AI 服务提供。`;
-  }
-};
 
 export const TextActionProvider: React.FC<TextActionProviderProps> = ({ 
   children,
@@ -60,27 +38,152 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
   const { registerHandler, isProcessing, lastResult, lastRequest, previewDecision } = useTextAction();
   const [showDecisionToast, setShowDecisionToast] = useState(false);
   const [decisionAccepted, setDecisionAccepted] = useState<boolean | null>(null);
+  const [streamingText, setStreamingText] = useState<string>('');
+  const [streamingThinking, setStreamingThinking] = useState<string>('');
   
-  // 注册默认处理器
+  // 获取 TextActionAI 服务
+  const textActionAIService = useService<ITextActionAIService>(ITextActionAIServiceId);
+  
+  // 使用 ref 保存服务实例，避免在 useEffect 中引起重新注册
+  const serviceRef = useRef(textActionAIService);
+  serviceRef.current = textActionAIService;
+
+  // 用于中断请求的 AbortController
+  const abortControllerRef = useRef<AbortController | null>(null);
+  
+  // 创建 AI 调用处理器
+  const createAIHandler = useCallback((action: TextActionType) => {
+    return async (_action: TextActionType, text: string, from: number, to: number, modelId?: string): Promise<string | null> => {
+      console.log(`[TextActionProvider] AI ${action} - 原文长度:`, text.length, '模型:', modelId);
+      
+      // 重置流式文本
+      setStreamingText('');
+      setStreamingThinking('');
+
+      // 创建新的 AbortController（中断之前的请求如果存在）
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      abortControllerRef.current = new AbortController();
+      
+      // 1. 立即发送开始流式预览消息，弹出预览窗口
+      window.postMessage({
+        type: 'OVERLEAF_STREAM_PREVIEW_START',
+        data: {
+          action,
+          originalText: text,
+          from,
+          to
+        }
+      }, '*');
+      
+      // 2. 流式输出回调 - 发送增量更新到预览窗口
+      const onStream = (delta: string) => {
+        setStreamingText(prev => prev + delta);
+        // 发送增量更新到预览窗口
+        window.postMessage({
+          type: 'OVERLEAF_STREAM_PREVIEW_UPDATE',
+          data: { delta }
+        }, '*');
+      };
+
+      // 3. 思考过程流式输出回调
+      const onThinkingStream = (delta: string) => {
+        setStreamingThinking(prev => prev + delta);
+        // 发送思考过程增量更新到预览窗口
+        window.postMessage({
+          type: 'OVERLEAF_STREAM_THINKING_UPDATE',
+          data: { delta }
+        }, '*');
+      };
+      
+      try {
+        const result = await serviceRef.current.execute({
+          action,
+          text,
+          modelId,
+          onStream,
+          onThinkingStream,
+          abortSignal: abortControllerRef.current.signal
+        });
+        
+        if (result.success && result.resultText) {
+          console.log(`[TextActionProvider] AI ${action} 成功 - 结果长度:`, result.resultText.length);
+          
+          // 3. 发送流式预览完成消息
+          window.postMessage({
+            type: 'OVERLEAF_STREAM_PREVIEW_COMPLETE',
+            data: { newText: result.resultText }
+          }, '*');
+          
+          return result.resultText;
+        } else {
+          console.error(`[TextActionProvider] AI ${action} 失败:`, result.error);
+          // 发送完成消息（即使失败也要关闭加载状态）
+          window.postMessage({
+            type: 'OVERLEAF_STREAM_PREVIEW_COMPLETE',
+            data: { newText: result.error || '生成失败' }
+          }, '*');
+          return null;
+        }
+      } catch (error) {
+        console.error(`[TextActionProvider] AI ${action} 异常:`, error);
+        // 发送完成消息
+        window.postMessage({
+          type: 'OVERLEAF_STREAM_PREVIEW_COMPLETE',
+          data: { newText: '发生错误: ' + String(error) }
+        }, '*');
+        return null;
+      }
+    };
+  }, []);
+  
+  // 注册 AI 处理器
   useEffect(() => {
-    const disposables = Object.entries(defaultHandlers).map(([action, handler]) => {
-      return registerHandler(action as TextActionType, async (_action, text, _from, _to) => {
-        return await handler(text);
-      });
+    const actions: TextActionType[] = ['polish', 'expand', 'condense', 'translate'];
+    const disposables = actions.map(action => {
+      return registerHandler(action, createAIHandler(action));
     });
     
-    console.log('[TextActionProvider] 已注册默认操作处理器（预览模式）:', Object.keys(defaultHandlers));
+    console.log('[TextActionProvider] 已注册 AI 操作处理器:', actions);
     
     return () => {
       disposables.forEach(d => d.dispose());
     };
-  }, [registerHandler]);
+  }, [registerHandler, createAIHandler]);
   
+  // 监听取消消息（直接监听，不依赖 React 状态传递）
+  useEffect(() => {
+    const handleCancelMessage = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      if (event.data?.type === 'OVERLEAF_STREAM_CANCEL') {
+        console.log('[TextActionProvider] 收到取消信号，中断请求');
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          abortControllerRef.current = null;
+        }
+        // 重置流式状态
+        setStreamingText('');
+        setStreamingThinking('');
+      }
+    };
+    
+    window.addEventListener('message', handleCancelMessage);
+    return () => window.removeEventListener('message', handleCancelMessage);
+  }, []);
+
   // 监听预览决策结果
   useEffect(() => {
     if (previewDecision) {
       setDecisionAccepted(previewDecision.accepted);
       setShowDecisionToast(true);
+      
+      // 如果用户拒绝（点击叉号），中断正在进行的请求
+      if (!previewDecision.accepted && abortControllerRef.current) {
+        console.log('[TextActionProvider] 用户拒绝，中断请求');
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
       
       // 2秒后隐藏提示
       const timer = setTimeout(() => {
@@ -121,25 +224,70 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
             boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
             zIndex: 10000,
             display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            fontSize: '14px'
+            flexDirection: 'column',
+            gap: '8px',
+            fontSize: '14px',
+            maxWidth: '400px'
           }}
         >
-          <span
-            style={{
-              width: '16px',
-              height: '16px',
-              border: '2px solid #3b82f6',
-              borderTopColor: 'transparent',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite'
-            }}
-          />
-          <span>
-            正在{lastRequest.action === 'expand' ? '扩写' : 
-                  lastRequest.action === 'condense' ? '缩写' : '润色'}...
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span
+              style={{
+                width: '16px',
+                height: '16px',
+                border: '2px solid #3b82f6',
+                borderTopColor: 'transparent',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                flexShrink: 0
+              }}
+            />
+            <span>
+              正在{lastRequest.action === 'expand' ? '扩写' : 
+                    lastRequest.action === 'condense' ? '缩写' : 
+                    lastRequest.action === 'translate' ? '翻译' : '润色'}...
+            </span>
+          </div>
+          {/* 思考过程预览 - 只显示最新 150 个字符 */}
+          {streamingThinking && (
+            <div
+              style={{
+                fontSize: '11px',
+                color: '#a78bfa',
+                maxHeight: '60px',
+                overflow: 'hidden',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                borderTop: '1px solid rgba(167, 139, 250, 0.2)',
+                paddingTop: '8px',
+                marginTop: '4px',
+                fontStyle: 'italic'
+              }}
+            >
+              <span style={{ color: '#c4b5fd', fontWeight: 500 }}>思考中：</span>
+              {streamingThinking.length > 150 
+                ? '...' + streamingThinking.slice(-150) 
+                : streamingThinking}
+            </div>
+          )}
+          {/* 流式文本预览 */}
+          {streamingText && (
+            <div
+              style={{
+                fontSize: '12px',
+                color: '#9ca3af',
+                maxHeight: '100px',
+                overflow: 'auto',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                borderTop: '1px solid rgba(255,255,255,0.1)',
+                paddingTop: '8px',
+                marginTop: '4px'
+              }}
+            >
+              {streamingText}
+            </div>
+          )}
         </div>
       )}
       
@@ -163,9 +311,6 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
             animation: 'fadeInOut 2s ease-in-out'
           }}
         >
-          <span style={{ fontSize: '18px' }}>
-            {decisionAccepted ? '✅' : '❌'}
-          </span>
           <span>
             {decisionAccepted ? '已接受更改' : '已拒绝更改'}
           </span>

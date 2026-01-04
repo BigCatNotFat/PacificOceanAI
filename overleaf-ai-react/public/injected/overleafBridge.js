@@ -721,14 +721,160 @@ window.addEventListener('message', function(event) {
  * 扩展新按钮只需在此数组中添加配置即可
  */
 var SELECTION_ACTION_BUTTONS = [
-  { id: 'expand',   label: '扩写', icon: '✨', bgColor: '#10b981', hoverColor: '#059669' },
-  { id: 'condense', label: '缩写', icon: '📝', bgColor: '#f59e0b', hoverColor: '#d97706' },
-  { id: 'polish',   label: '润色', icon: '💎', bgColor: '#3b82f6', hoverColor: '#2563eb' }
+  { id: 'expand',    label: '扩写', icon: '', bgColor: '#10b981', hoverColor: '#059669' },
+  { id: 'condense',  label: '缩写', icon: '', bgColor: '#f59e0b', hoverColor: '#d97706' },
+  { id: 'polish',    label: '润色', icon: '', bgColor: '#3b82f6', hoverColor: '#2563eb' },
+  { id: 'translate', label: '翻译', icon: '', bgColor: '#8b5cf6', hoverColor: '#7c3aed' }
 ];
+
+// 动态模型列表（从 ModelRegistryService 获取）
+var availableModels = [];
+
+// 默认备用模型列表（在模型列表加载前使用）
+var FALLBACK_MODELS = [
+  { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'openai' }
+];
+
+/**
+ * 获取当前可用的模型列表
+ * 优先使用从 React 应用推送的模型列表，否则使用备用列表
+ */
+function getAvailableModels() {
+  return availableModels.length > 0 ? availableModels : FALLBACK_MODELS;
+}
+
+/**
+ * 更新模型选择器的选项
+ */
+function updateModelSelectorOptions() {
+  var select = document.getElementById('ol-ai-model-select');
+  if (!select) return;
+  
+  var currentModel = getSelectedTextActionModel();
+  var models = getAvailableModels();
+  
+  // 清空现有选项
+  select.innerHTML = '';
+  
+  // 添加新选项
+  models.forEach(function(model) {
+    var option = document.createElement('option');
+    option.value = model.id;
+    option.textContent = model.name;
+    if (model.id === currentModel) {
+      option.selected = true;
+    }
+    select.appendChild(option);
+  });
+  
+  // 如果当前选择的模型不在列表中，选择第一个
+  if (!models.find(function(m) { return m.id === currentModel; })) {
+    select.value = models[0]?.id || '';
+  }
+  
+  console.log('[OverleafBridge] Model selector updated with', models.length, 'models');
+}
+
+// 文本操作选择的模型 Storage Key
+var TEXT_ACTION_MODEL_KEY = 'ol-ai-text-action-model';
 
 var selectionTooltipEl = null;
 var buttonContainerEl = null;
+var modelSelectorEl = null;
 var currentSelection = null; // 保存当前选区信息
+
+/**
+ * 获取当前选择的文本操作模型
+ */
+function getSelectedTextActionModel() {
+  try {
+    var models = getAvailableModels();
+    return localStorage.getItem(TEXT_ACTION_MODEL_KEY) || models[0].id;
+  } catch (e) {
+    var models = getAvailableModels();
+    return models[0].id;
+  }
+}
+
+/**
+ * 保存选择的文本操作模型
+ */
+function setSelectedTextActionModel(modelId) {
+  try {
+    localStorage.setItem(TEXT_ACTION_MODEL_KEY, modelId);
+    // 通知 React 应用模型变更
+    window.postMessage({
+      type: 'OVERLEAF_TEXT_ACTION_MODEL_CHANGED',
+      data: { modelId: modelId }
+    }, '*');
+    console.log('[OverleafBridge] Text action model changed to:', modelId);
+  } catch (e) {
+    console.error('[OverleafBridge] Failed to save model selection:', e);
+  }
+}
+
+/**
+ * 创建模型选择器
+ */
+function createModelSelector() {
+  const container = document.createElement('div');
+  container.id = 'ol-ai-model-selector';
+  container.style.display = 'flex';
+  container.style.alignItems = 'center';
+  container.style.gap = '6px';
+  container.style.marginTop = '8px';
+  container.style.paddingTop = '8px';
+  container.style.borderTop = '1px solid rgba(255,255,255,0.1)';
+  
+  // 标签
+  const label = document.createElement('span');
+  label.textContent = '🤖 模型:';
+  label.style.fontSize = '11px';
+  label.style.color = '#9ca3af';
+  label.style.flexShrink = '0';
+  container.appendChild(label);
+  
+  // 下拉选择框
+  const select = document.createElement('select');
+  select.id = 'ol-ai-model-select';
+  select.style.flex = '1';
+  select.style.padding = '4px 8px';
+  select.style.fontSize = '11px';
+  select.style.borderRadius = '4px';
+  select.style.border = '1px solid rgba(255,255,255,0.2)';
+  select.style.background = 'rgba(15, 23, 42, 0.8)';
+  select.style.color = '#e5e7eb';
+  select.style.cursor = 'pointer';
+  select.style.outline = 'none';
+  select.style.minWidth = '120px';
+  
+  // 添加选项
+  var currentModel = getSelectedTextActionModel();
+  var models = getAvailableModels();
+  models.forEach(function(model) {
+    const option = document.createElement('option');
+    option.value = model.id;
+    option.textContent = model.name;
+    if (model.id === currentModel) {
+      option.selected = true;
+    }
+    select.appendChild(option);
+  });
+  
+  // 监听变化
+  select.onchange = function() {
+    setSelectedTextActionModel(this.value);
+  };
+  
+  // 阻止事件冒泡，防止选择模型时隐藏菜单
+  select.onclick = function(e) {
+    e.stopPropagation();
+  };
+  
+  container.appendChild(select);
+  
+  return container;
+}
 
 /**
  * 隐藏选区提示框
@@ -798,8 +944,8 @@ function createSelectionTooltip() {
   tooltip.style.fontSize = '12px';
   tooltip.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255,255,255,0.1)';
   tooltip.style.display = 'none';
-  tooltip.style.flexDirection = 'row';
-  tooltip.style.gap = '8px';
+  tooltip.style.flexDirection = 'column';  // 改为垂直布局
+  tooltip.style.gap = '0';
   tooltip.style.backdropFilter = 'blur(8px)';
   tooltip.style.transition = 'left 0.1s ease-out, top 0.1s ease-out, opacity 0.15s ease';
   tooltip.style.opacity = '1';
@@ -819,6 +965,11 @@ function createSelectionTooltip() {
   });
   
   tooltip.appendChild(buttonContainerEl);
+  
+  // 创建模型选择器
+  modelSelectorEl = createModelSelector();
+  tooltip.appendChild(modelSelectorEl);
+  
   document.body.appendChild(tooltip);
   
   return tooltip;
@@ -936,7 +1087,8 @@ function handleTextActionRequest(actionType) {
   const preview = currentSelection.text.length > 50 
     ? currentSelection.text.substring(0, 50) + '...' 
     : currentSelection.text;
-  console.log('[OverleafBridge] Text action requested:', actionType, 'text:', preview);
+  const selectedModel = getSelectedTextActionModel();
+  console.log('[OverleafBridge] Text action requested:', actionType, 'model:', selectedModel, 'text:', preview);
   
   // 发送操作请求到 content script
   window.postMessage({
@@ -945,7 +1097,8 @@ function handleTextActionRequest(actionType) {
       action: actionType,
       text: currentSelection.text,
       from: currentSelection.from,
-      to: currentSelection.to
+      to: currentSelection.to,
+      modelId: selectedModel  // 添加选中的模型 ID
     }
   }, '*');
   
@@ -1289,6 +1442,11 @@ function createPreviewOverlay() {
   };
   closeBtn.onclick = function(e) {
     e.stopPropagation();
+    // 发送取消信号（立即中断正在进行的请求）
+    window.postMessage({
+      type: 'OVERLEAF_STREAM_CANCEL',
+      data: { reason: 'user_closed' }
+    }, '*');
     // 点击关闭相当于拒绝更改
     handlePreviewDecision(false);
   };
@@ -1313,7 +1471,7 @@ function createPreviewOverlay() {
   arrow.style.textAlign = 'center';
   arrow.style.color = '#6b7280';
   arrow.style.margin = '4px 0';
-  arrow.textContent = '⬇️';
+  arrow.textContent = '↓';
   overlay.appendChild(arrow);
   
   // 新文本容器
@@ -1325,6 +1483,23 @@ function createPreviewOverlay() {
   newContainer.style.borderRadius = '4px';
   newContainer.style.borderLeft = '3px solid #059669';
   overlay.appendChild(newContainer);
+  
+  // 添加 CSS 动画样式（如果还没添加）
+  if (!document.getElementById('ol-ai-preview-styles')) {
+    var style = document.createElement('style');
+    style.id = 'ol-ai-preview-styles';
+    style.textContent = `
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+      @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
   
   document.body.appendChild(overlay);
   return overlay;
@@ -1358,7 +1533,7 @@ function createPreviewConfirmMenu() {
   
   // 接受按钮
   const acceptBtn = document.createElement('button');
-  acceptBtn.textContent = '✅ 接受';
+  acceptBtn.textContent = '接受';
   acceptBtn.style.background = '#10b981';
   acceptBtn.style.color = 'white';
   acceptBtn.style.border = 'none';
@@ -1386,7 +1561,7 @@ function createPreviewConfirmMenu() {
   
   // 拒绝按钮
   const rejectBtn = document.createElement('button');
-  rejectBtn.textContent = '❌ 拒绝';
+  rejectBtn.textContent = '拒绝';
   rejectBtn.style.background = '#ef4444';
   rejectBtn.style.color = 'white';
   rejectBtn.style.border = 'none';
@@ -1408,12 +1583,170 @@ function createPreviewConfirmMenu() {
   };
   rejectBtn.onclick = function(e) {
     e.stopPropagation();
+    // 发送取消信号
+    window.postMessage({
+      type: 'OVERLEAF_STREAM_CANCEL',
+      data: { reason: 'user_rejected' }
+    }, '*');
     handlePreviewDecision(false);
   };
   menu.appendChild(rejectBtn);
   
   document.body.appendChild(menu);
   return menu;
+}
+
+// 流式预览状态
+var streamPreviewText = '';
+var isStreamingPreview = false;
+
+/**
+ * 开始流式预览
+ * @param {Object} data 包含 action, originalText, from, to
+ */
+function startStreamPreview(data) {
+  try {
+    // 先隐藏选区菜单
+    hideSelectionTooltip();
+    
+    const view = getEditorView();
+    if (!view) {
+      console.error('[OverleafBridge] EditorView not available for stream preview');
+      return;
+    }
+    
+    // 重置流式文本
+    streamPreviewText = '';
+    isStreamingPreview = true;
+    
+    // 保存当前预览信息
+    currentPreview = {
+      id: generatePreviewId(),
+      action: data.action,
+      originalText: data.originalText,
+      newText: '',  // 初始为空
+      from: data.from,
+      to: data.to
+    };
+    
+    // 获取选区位置坐标
+    const coords = view.coordsAtPos(data.from);
+    if (!coords) {
+      console.error('[OverleafBridge] Could not get coords for stream preview');
+      return;
+    }
+    
+    // 懒创建覆盖层
+    if (!previewOverlayEl) {
+      previewOverlayEl = createPreviewOverlay();
+    }
+    if (!previewConfirmEl) {
+      previewConfirmEl = createPreviewConfirmMenu();
+    }
+    
+    // 更新覆盖层内容
+    const originalContainer = document.getElementById('ol-ai-preview-original');
+    const newContainer = document.getElementById('ol-ai-preview-new');
+    
+    if (originalContainer) {
+      originalContainer.textContent = data.originalText;
+    }
+    if (newContainer) {
+      // 显示加载指示器
+      newContainer.innerHTML = '<span style="color: #60a5fa; animation: pulse 1.5s ease-in-out infinite;">AI 正在生成...</span>';
+    }
+    
+    // 计算位置
+    const scrollX = window.scrollX || window.pageXOffset;
+    const scrollY = window.scrollY || window.pageYOffset;
+    
+    let overlayLeft = coords.left + scrollX;
+    let overlayTop = coords.bottom + scrollY + 10;
+    
+    const overlayWidth = 500;
+    if (overlayLeft + overlayWidth > window.innerWidth + scrollX - 20) {
+      overlayLeft = window.innerWidth + scrollX - overlayWidth - 20;
+    }
+    if (overlayLeft < scrollX + 10) {
+      overlayLeft = scrollX + 10;
+    }
+    
+    previewOverlayEl.style.left = overlayLeft + 'px';
+    previewOverlayEl.style.top = overlayTop + 'px';
+    previewOverlayEl.style.display = 'block';
+    
+    // 隐藏确认菜单（等生成完成后显示）
+    previewConfirmEl.style.display = 'none';
+    
+    console.log('[OverleafBridge] Stream preview started:', currentPreview.id);
+    
+  } catch (e) {
+    console.error('[OverleafBridge] Failed to start stream preview:', e);
+  }
+}
+
+/**
+ * 更新流式预览内容
+ * @param {string} delta 增量文本
+ */
+function updateStreamPreview(delta) {
+  if (!isStreamingPreview || !currentPreview) return;
+  
+  streamPreviewText += delta;
+  currentPreview.newText = streamPreviewText;
+  
+  const newContainer = document.getElementById('ol-ai-preview-new');
+  if (newContainer) {
+    // 显示流式文本 + 光标动画
+    newContainer.innerHTML = escapeHtml(streamPreviewText) + '<span style="animation: blink 0.7s step-end infinite; color: #60a5fa;">▌</span>';
+  }
+}
+
+/**
+ * 完成流式预览
+ * @param {Object} data 包含最终的 newText
+ */
+function completeStreamPreview(data) {
+  if (!currentPreview) return;
+  
+  isStreamingPreview = false;
+  
+  // 更新最终文本
+  if (data && data.newText) {
+    currentPreview.newText = data.newText;
+  } else {
+    currentPreview.newText = streamPreviewText;
+  }
+  
+  const newContainer = document.getElementById('ol-ai-preview-new');
+  if (newContainer) {
+    // 移除光标，显示最终文本
+    newContainer.textContent = currentPreview.newText;
+  }
+  
+  // 显示确认菜单
+  if (previewConfirmEl && previewOverlayEl) {
+    setTimeout(function() {
+      const overlayRect = previewOverlayEl.getBoundingClientRect();
+      const scrollY = window.scrollY || window.pageYOffset;
+      const confirmTop = overlayRect.bottom + scrollY + 10;
+      
+      previewConfirmEl.style.left = previewOverlayEl.style.left;
+      previewConfirmEl.style.top = confirmTop + 'px';
+      previewConfirmEl.style.display = 'flex';
+    }, 10);
+  }
+  
+  console.log('[OverleafBridge] Stream preview completed');
+}
+
+/**
+ * 转义 HTML 特殊字符
+ */
+function escapeHtml(text) {
+  var div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 /**
@@ -1576,9 +1909,46 @@ window.addEventListener('message', function(event) {
   showPreviewOverlay(data.data);
 });
 
+// 监听流式预览开始的消息
+window.addEventListener('message', function(event) {
+  if (event.source !== window) return;
+  
+  var data = event.data;
+  if (!data || data.type !== 'OVERLEAF_STREAM_PREVIEW_START') return;
+  
+  console.log('[OverleafBridge] Starting stream preview');
+  startStreamPreview(data.data);
+});
+
+// 监听流式预览更新的消息
+window.addEventListener('message', function(event) {
+  if (event.source !== window) return;
+  
+  var data = event.data;
+  if (!data || data.type !== 'OVERLEAF_STREAM_PREVIEW_UPDATE') return;
+  
+  updateStreamPreview(data.data.delta);
+});
+
+// 监听流式预览完成的消息
+window.addEventListener('message', function(event) {
+  if (event.source !== window) return;
+  
+  var data = event.data;
+  if (!data || data.type !== 'OVERLEAF_STREAM_PREVIEW_COMPLETE') return;
+  
+  console.log('[OverleafBridge] Stream preview complete');
+  completeStreamPreview(data.data);
+});
+
 // 监听 ESC 键关闭预览
 window.addEventListener('keyup', function(event) {
   if (event.key === 'Escape' && currentPreview) {
+    // 发送取消信号
+    window.postMessage({
+      type: 'OVERLEAF_STREAM_CANCEL',
+      data: { reason: 'user_escape' }
+    }, '*');
     // ESC 相当于拒绝更改
     handlePreviewDecision(false);
   }
@@ -1595,6 +1965,53 @@ methodHandlers.handlePreviewDecision = function(accepted) {
   handlePreviewDecision(accepted);
   return { success: true };
 };
+
+// ============ 模型列表同步 ============
+
+/**
+ * 监听模型列表更新消息
+ * React 应用会在初始化时推送模型列表
+ */
+window.addEventListener('message', function(event) {
+  if (event.source !== window) return;
+  
+  var data = event.data;
+  if (!data || data.type !== 'OVERLEAF_UPDATE_MODEL_LIST') return;
+  
+  var models = data.data?.models;
+  if (!Array.isArray(models)) {
+    console.warn('[OverleafBridge] Invalid model list received');
+    return;
+  }
+  
+  // 更新模型列表
+  availableModels = models.map(function(model) {
+    return {
+      id: model.id,
+      name: model.name,
+      provider: model.provider
+    };
+  });
+  
+  console.log('[OverleafBridge] Model list updated:', availableModels.length, 'models');
+  
+  // 更新模型选择器
+  updateModelSelectorOptions();
+});
+
+/**
+ * 请求模型列表（在脚本加载时发送）
+ */
+function requestModelList() {
+  window.postMessage({
+    type: 'OVERLEAF_REQUEST_MODEL_LIST',
+    data: {}
+  }, '*');
+  console.log('[OverleafBridge] Requesting model list from React app');
+}
+
+// 在脚本加载后请求模型列表
+setTimeout(requestModelList, 100);
 
 // 标记脚本已加载
 console.log('[OverleafBridge] Injected script loaded with selection tooltip and preview feature');

@@ -18,6 +18,8 @@ import { PromptService, IPromptServiceId } from '../../services/agent/PromptServ
 import { ToolService, IToolServiceId } from '../../services/agent/ToolService';
 import { ModelRegistryService, IModelRegistryServiceId } from '../../services/llm/ModelRegistryService';
 import { UIStreamService, IUIStreamServiceId } from '../../services/agent/UIStreamService';
+import { TextActionAIService, ITextActionAIServiceId } from '../../services/agent/TextActionAIService';
+import { useModelListSync } from '../hooks/useModelListSync';
 
 const App: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -102,6 +104,15 @@ const App: React.FC = () => {
       )
     );
 
+    // 注册 TextActionAI 服务（依赖 LLMService, PromptService, ConfigurationService, ModelRegistryService, UIStreamService）
+    di.registerDescriptor(
+      new ServiceDescriptor(
+        ITextActionAIServiceId,
+        TextActionAIService,
+        getServiceDependencies(TextActionAIService)
+      )
+    );
+
     return di;
   });
 
@@ -128,6 +139,7 @@ const App: React.FC = () => {
 
   return (
     <DIProvider container={container}>
+      <ModelListSyncProvider />
       <TextActionProvider showStatusToast>
         <ToolbarButtonPortal onClick={toggleSidebar} />
         <Sidebar
@@ -140,6 +152,15 @@ const App: React.FC = () => {
       </TextActionProvider>
     </DIProvider>
   );
+};
+
+/**
+ * 模型列表同步组件
+ * 负责将 ModelRegistryService 中的模型列表推送到 OverleafBridge
+ */
+const ModelListSyncProvider: React.FC = () => {
+  useModelListSync();
+  return null;
 };
 
 export default App;

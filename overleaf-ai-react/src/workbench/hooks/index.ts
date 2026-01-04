@@ -12,3 +12,4 @@ export {
 } from './useServiceEvent';
 export { useUIStreamUpdates } from './useUIStreamUpdates';
 export { useTextAction } from './useTextAction';
+export { useModelListSync } from './useModelListSync';

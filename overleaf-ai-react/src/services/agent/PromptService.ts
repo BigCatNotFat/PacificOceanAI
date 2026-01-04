@@ -13,7 +13,8 @@ import type {
   IPromptService,
   LLMMessage,
   ToolDefinition,
-  PromptBuildOptions
+  PromptBuildOptions,
+  TextActionType
 } from '../../platform/agent/IPromptService';
 import { IPromptServiceId } from '../../platform/agent/IPromptService';
 import type { ChatMessage, ChatMode, ContextItem } from '../../platform/agent/IChatService';
@@ -197,7 +198,145 @@ Current time: ${timestamp}
     return result;
   }
 
+  /**
+   * 构建文本操作（润色/扩写/缩写）的消息列表
+   * 
+   * @param action - 操作类型 ('polish' | 'expand' | 'condense')
+   * @param text - 用户选中的原始文本
+   * @returns LLM 消息列表（包含 system 和 user 消息）
+   */
+  buildTextActionPrompt(action: TextActionType, text: string): LLMMessage[] {
+    const messages: LLMMessage[] = [];
+
+    // 获取对应操作的 System Prompt
+    const systemPrompt = this.getTextActionSystemPrompt(action);
+    messages.push({
+      role: 'system',
+      content: systemPrompt
+    });
+
+    // 构建 User 消息
+    const userPrompt = this.getTextActionUserPrompt(action, text);
+    messages.push({
+      role: 'user',
+      content: userPrompt
+    });
+
+    return messages;
+  }
+
   // ==================== 私有方法 ====================
+
+  // ==================== 文本操作提示词模板 ====================
+
+  /**
+   * 获取文本操作的 System Prompt
+   */
+  private getTextActionSystemPrompt(action: TextActionType): string {
+    const prompts: Record<TextActionType, string> = {
+      polish: `You are a professional academic writing assistant specializing in LaTeX document editing.
+
+Your task is to POLISH the given text to improve its quality while preserving the original meaning and intent.
+
+**Guidelines:**
+1. Improve grammar, syntax, and punctuation
+2. Enhance clarity and readability
+3. Use more precise and academic vocabulary where appropriate
+4. Maintain the original tone and style (formal academic writing)
+5. Preserve all LaTeX commands, environments, and formatting exactly as they are
+6. Do NOT add new content or change the meaning
+7. Do NOT add explanations or comments - only output the polished text
+8. If the text contains LaTeX code, ensure all commands remain syntactically correct
+
+**Important:**
+- Output ONLY the polished text, nothing else
+- Do NOT wrap the output in code blocks or quotes
+- Do NOT include phrases like "Here is the polished version" or similar`,
+
+      expand: `You are a professional academic writing assistant specializing in LaTeX document editing.
+
+Your task is to EXPAND the given text by adding more details, explanations, and supporting content while maintaining academic rigor.
+
+**Guidelines:**
+1. Add relevant details, examples, or explanations
+2. Elaborate on key concepts and arguments
+3. Maintain logical flow and coherence with the original text
+4. Use appropriate academic vocabulary and formal tone
+5. Preserve all existing LaTeX commands and formatting
+6. Add new LaTeX formatting (e.g., \\textit{}, \\textbf{}) where appropriate
+7. Ensure expanded content is factually consistent with the original
+8. Do NOT add explanations about what you did - only output the expanded text
+
+**Important:**
+- Output ONLY the expanded text, nothing else
+- Do NOT wrap the output in code blocks or quotes
+- Do NOT include phrases like "Here is the expanded version" or similar
+- The expanded text should be approximately 1.5-2x the original length`,
+
+      condense: `You are a professional academic writing assistant specializing in LaTeX document editing.
+
+Your task is to CONDENSE the given text by removing redundancy and keeping only the essential content while preserving the core meaning.
+
+**Guidelines:**
+1. Remove redundant phrases and unnecessary words
+2. Combine related sentences where appropriate
+3. Keep the most important information and key arguments
+4. Maintain clarity and academic tone
+5. Preserve all essential LaTeX commands and formatting
+6. Remove decorative or optional LaTeX formatting if it helps brevity
+7. Ensure the condensed version remains grammatically correct
+8. Do NOT add explanations about what you did - only output the condensed text
+
+**Important:**
+- Output ONLY the condensed text, nothing else
+- Do NOT wrap the output in code blocks or quotes
+- Do NOT include phrases like "Here is the condensed version" or similar
+- The condensed text should be approximately 50-70% of the original length`,
+
+      translate: `You are a professional academic translator specializing in LaTeX document translation.
+
+Your task is to TRANSLATE the given Chinese text into English while maintaining academic rigor and proper LaTeX formatting.
+
+**Guidelines:**
+1. Translate Chinese text into fluent, academic English
+2. Preserve the original meaning, tone, and intent accurately
+3. Use appropriate academic vocabulary and formal register
+4. Maintain proper grammar and sentence structure in English
+5. Preserve ALL LaTeX commands, environments, and formatting exactly as they are
+6. Keep mathematical expressions, citations, and references unchanged
+7. Ensure technical terms are translated accurately using standard academic terminology
+8. Do NOT add explanations or comments - only output the translated text
+9. If the text is already in English or contains mixed languages, translate only the Chinese portions
+
+**Important:**
+- Output ONLY the translated text, nothing else
+- Do NOT wrap the output in code blocks or quotes
+- Do NOT include phrases like "Here is the translation" or similar
+- Preserve the exact formatting and structure of the original text`
+    };
+
+    return prompts[action];
+  }
+
+  /**
+   * 获取文本操作的 User Prompt
+   */
+  private getTextActionUserPrompt(action: TextActionType, text: string): string {
+    const actionDescriptions: Record<TextActionType, string> = {
+      polish: 'Polish the following text to improve its quality:',
+      expand: 'Expand the following text with more details and explanations:',
+      condense: 'Condense the following text to be more concise:',
+      translate: 'Translate the following Chinese text into English:'
+    };
+
+    return `${actionDescriptions[action]}
+
+<text>
+${text}
+</text>`;
+  }
+
+  // ==================== 聊天模式提示词 ====================
 
   /**
    * Agent 模式的 System Prompt

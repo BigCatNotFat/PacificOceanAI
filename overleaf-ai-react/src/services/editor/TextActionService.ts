@@ -22,7 +22,8 @@ export type TextActionHandler = (
   action: TextActionType,
   text: string,
   from: number,
-  to: number
+  to: number,
+  modelId?: string
 ) => Promise<string | null>;
 
 /** 预览决策结果 */
@@ -130,10 +131,11 @@ export class TextActionService extends Disposable {
         action: data.data.action,
         text: data.data.text,
         from: data.data.from,
-        to: data.data.to
+        to: data.data.to,
+        modelId: data.data.modelId  // 传递模型 ID
       };
       
-      console.log('[TextActionService] 收到操作请求:', request.action);
+      console.log('[TextActionService] 收到操作请求:', request.action, '模型:', request.modelId);
       
       // 触发请求事件
       this._onActionRequest.fire(request);
@@ -222,15 +224,25 @@ export class TextActionService extends Disposable {
     
     try {
       // 调用处理器生成新文本
-      const resultText = await handler(request.action, request.text, request.from, request.to);
+      // 注意：处理器现在使用流式预览模式，会自己发送预览消息
+      const resultText = await handler(request.action, request.text, request.from, request.to, request.modelId);
       
       if (resultText === null) {
-        // 操作被取消
-        console.log('[TextActionService] 操作已取消');
+        // 操作被取消或失败
+        console.log('[TextActionService] 操作已取消或失败');
+        
+        // 触发完成事件，通知 UI 重置状态
+        const result: TextActionResult = {
+          success: false,
+          action: request.action,
+          originalText: request.text,
+          error: '操作已取消'
+        };
+        this._onActionComplete.fire(result);
         return;
       }
       
-      // 创建预览信息
+      // 创建预览信息（用于内部状态跟踪）
       const preview: TextActionPreview = {
         id: this.generatePreviewId(),
         action: request.action,
@@ -243,23 +255,13 @@ export class TextActionService extends Disposable {
       
       this.currentPreview = preview;
       
-      // 触发预览显示事件
+      // 触发预览显示事件（供内部使用）
       this._onPreviewShow.fire(preview);
       
-      // 发送消息给注入脚本显示预览
-      window.postMessage({
-        type: 'OVERLEAF_SHOW_PREVIEW_REQUEST',
-        data: {
-          id: preview.id,
-          action: preview.action,
-          originalText: preview.originalText,
-          newText: preview.newText,
-          from: preview.from,
-          to: preview.to
-        }
-      }, '*');
+      // 注意：不再发送 OVERLEAF_SHOW_PREVIEW_REQUEST 消息
+      // 因为现在使用流式预览模式，预览消息由 TextActionProvider 在流式过程中发送
       
-      console.log('[TextActionService] 预览已发送:', request.action);
+      console.log('[TextActionService] 流式预览已处理:', request.action);
       
     } catch (error) {
       console.error('[TextActionService] 操作失败:', error);

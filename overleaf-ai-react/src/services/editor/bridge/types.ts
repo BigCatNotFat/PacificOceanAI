@@ -100,7 +100,7 @@ export interface SelectionInfo {
 }
 
 /** 文本操作类型 */
-export type TextActionType = 'expand' | 'condense' | 'polish';
+export type TextActionType = 'expand' | 'condense' | 'polish' | 'translate';
 
 /** 文本操作请求 */
 export interface TextActionRequest {
@@ -112,6 +112,8 @@ export interface TextActionRequest {
   from: number;
   /** 选区结束位置 */
   to: number;
+  /** 选择的模型 ID（可选） */
+  modelId?: string;
 }
 
 /** 文本操作结果 */
