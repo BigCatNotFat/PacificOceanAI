@@ -11,3 +11,4 @@ export {
   useServiceEventArray
 } from './useServiceEvent';
 export { useUIStreamUpdates } from './useUIStreamUpdates';
+export { useTextAction } from './useTextAction';

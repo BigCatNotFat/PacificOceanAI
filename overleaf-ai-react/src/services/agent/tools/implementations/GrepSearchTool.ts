@@ -22,7 +22,7 @@ Use the include or exclude patterns to filter the search scope by file type or s
 
 This is best for finding exact text matches or regex patterns.
 More precise than semantic search for finding specific strings or patterns.
-This is preferred over semantic search when we know the exact symbol/function name/etc. to search in some set of directories/file types.`,
+This is preferred over semantic search when we know the exact symbol/name/variable/etc. to search in some set of directories/file types.`,
     parameters: {
       type: 'object',
       properties: {

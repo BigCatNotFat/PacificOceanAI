@@ -25,7 +25,12 @@ export type {
   FileInfo,
   CursorPosition,
   LineRange,
-  ReplaceFirstMatchResult
+  ReplaceFirstMatchResult,
+  SelectionInfo,
+  TextActionType,
+  TextActionRequest,
+  TextActionResult,
+  ReplaceSelectionResult
 } from './bridge';
 
 /**
@@ -110,6 +115,14 @@ class OverleafBridgeClientCompat {
 
   async replaceFirstMatch(searchText: string, replaceText: string) {
     return this.editor.editor.replaceFirstMatch(searchText, replaceText);
+  }
+
+  async getSelectionInfo() {
+    return this.editor.selection.getSelectionInfo();
+  }
+
+  async replaceSelection(from: number, to: number, text: string) {
+    return this.editor.selection.replaceSelection(from, to, text);
   }
 }
 

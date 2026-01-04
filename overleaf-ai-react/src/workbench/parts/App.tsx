@@ -3,6 +3,7 @@ import { SIDEBAR_CONFIG } from '../../base/common/constants';
 import { getMainContainer, setTransition, triggerResize } from '../../base/browser/dom';
 import Sidebar from './Sidebar';
 import ToolbarButtonPortal from './ToolbarButtonPortal';
+import TextActionProvider from './TextActionProvider';
 import { DIProvider } from '../context/DIContext';
 import { InstantiationService, ServiceDescriptor, getServiceDependencies } from '../../platform/instantiation';
 import { IConfigurationServiceId } from '../../platform/configuration/configuration';
@@ -127,14 +128,16 @@ const App: React.FC = () => {
 
   return (
     <DIProvider container={container}>
-      <ToolbarButtonPortal onClick={toggleSidebar} />
-      <Sidebar
-        isOpen={isOpen}
-        width={currentWidth}
-        onToggle={toggleSidebar}
-        onClose={closeSidebar}
-        onWidthChange={setCurrentWidth}
-      />
+      <TextActionProvider showStatusToast>
+        <ToolbarButtonPortal onClick={toggleSidebar} />
+        <Sidebar
+          isOpen={isOpen}
+          width={currentWidth}
+          onToggle={toggleSidebar}
+          onClose={closeSidebar}
+          onWidthChange={setCurrentWidth}
+        />
+      </TextActionProvider>
     </DIProvider>
   );
 };
