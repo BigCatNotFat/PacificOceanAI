@@ -234,6 +234,7 @@ You should specify the following arguments before the others: [target_file]`,
   /**
    * 清理编辑内容
    * 移除可能的代码块标记（```latex 或 ```）
+   * 修复反斜杠转义问题（AI 可能会在 JSON 中过度转义）
    */
   private cleanEditContent(editContent: string): string {
     let content = editContent.trim();
@@ -246,7 +247,29 @@ You should specify the following arguments before the others: [target_file]`,
     const codeBlockEnd = /\n?```\s*$/;
     content = content.replace(codeBlockEnd, '');
     
+    // 修复反斜杠转义问题
+    // AI 在 JSON 中可能会将 \command 写成 \\command
+    // 需要将 \\ 后面跟着字母的情况转换为单个 \
+    // 注意：保留 LaTeX 换行符 \\ (后面通常跟空格、换行或行尾)
+    content = this.normalizeLatexBackslashes(content);
+    
     return content;
+  }
+
+  /**
+   * 规范化 LaTeX 反斜杠
+   * 将过度转义的双反斜杠 (\\command) 转换为单反斜杠 (\command)
+   * 但保留 LaTeX 换行符 (\\)
+   */
+  private normalizeLatexBackslashes(content: string): string {
+    // 匹配 \\ 后面紧跟字母的情况（这是错误的转义）
+    // 例如：\\subsection -> \subsection
+    // 但不匹配：\\ (换行) 或 \\[ (显示数学环境)
+    
+    // 策略：将 \\ 后面紧跟 a-zA-Z 的情况替换为单个 \
+    // 这样 \\subsection 变成 \subsection
+    // 而 \\ 或 \\[ 保持不变
+    return content.replace(/\\\\([a-zA-Z])/g, '\\$1');
   }
 
   /**

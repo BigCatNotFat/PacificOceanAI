@@ -122,6 +122,29 @@ async function getAllDocsWithContent(projectId) {
   const docs = entities.filter(e => e.type === 'doc');
   console.log(`[OverleafBridge] 找到 ${docs.length} 个可编辑文档`);
   
+  // ========== 新增：获取当前编辑器文档的实时内容 ==========
+  // 优先使用编辑器内容，因为 blob API 可能返回旧版本（不包含最新修改）
+  let currentDocPath = null;
+  let currentDocContent = null;
+  
+  try {
+    const view = getEditorView();
+    if (view) {
+      currentDocContent = view.state.doc.toString();
+      // 从 Overleaf store 获取当前打开的文档名
+      const store = window.overleaf?.unstable?.store;
+      if (store) {
+        currentDocPath = store.get('editor.open_doc_name');
+      }
+      if (currentDocPath && currentDocContent) {
+        console.log(`[OverleafBridge] 当前编辑器文档: ${currentDocPath} (${currentDocContent.length} 字符，使用实时内容)`);
+      }
+    }
+  } catch (e) {
+    console.warn('[OverleafBridge] 无法获取当前编辑器内容:', e);
+  }
+  // ========== 新增结束 ==========
+  
   // 4. 获取每个文档的内容
   const batchSize = 5;
   for (let i = 0; i < docs.length; i += batchSize) {
@@ -131,6 +154,15 @@ async function getAllDocsWithContent(projectId) {
       batch.map(async (doc) => {
         // 路径格式: "/main.tex" -> "main.tex"
         const pathname = doc.path.startsWith('/') ? doc.path.substring(1) : doc.path;
+        
+        // ========== 新增：当前文档优先使用编辑器实时内容 ==========
+        // 这样可以确保搜索到最新的内容（包括中文等最近添加的内容）
+        if (currentDocPath && currentDocContent && pathname === currentDocPath) {
+          console.log(`[OverleafBridge] ${pathname}: 使用编辑器实时内容`);
+          return currentDocContent;
+        }
+        // ========== 新增结束 ==========
+        
         const hash = fileHashes[pathname];
         
         if (hash) {
