@@ -66,6 +66,12 @@ export class ConversationService extends Disposable implements IConversationServ
   /** 是否已初始化 */
   private _initialized = false;
 
+  /** 
+   * 临时对话缓存（未持久化的对话）
+   * 只有当用户发送第一条消息时才会被持久化到存储
+   */
+  private _pendingConversations: Map<string, Conversation> = new Map();
+
   constructor(
     private readonly storageService: IStorageService
   ) {
@@ -136,6 +142,10 @@ export class ConversationService extends Disposable implements IConversationServ
 
   /**
    * 创建新对话
+   * 
+   * 注意：新对话不会立即持久化到存储中，只在内存中创建。
+   * 只有当用户发送第一条消息时（通过 saveMessages），对话才会被真正保存。
+   * 这样可以避免产生大量空对话。
    */
   async createConversation(name?: string): Promise<string> {
     const id = this.generateId();
@@ -150,53 +160,38 @@ export class ConversationService extends Disposable implements IConversationServ
       messages: []
     };
 
-    try {
-      // 保存对话数据
-      await this.storageService.set(
-        `${STORAGE_KEYS.CONVERSATION_PREFIX}${id}`,
-        conversation
-      );
+    // 将对话存储到临时缓存中（不持久化）
+    this._pendingConversations.set(id, conversation);
 
-      // 更新索引
-      const list = await this.getConversationList();
-      const meta: ConversationMeta = {
-        id: conversation.id,
-        name: conversation.name,
-        createdAt: conversation.createdAt,
-        updatedAt: conversation.updatedAt,
-        messageCount: conversation.messageCount
-      };
-      
-      list.unshift(meta);
-      
-      // 清理旧对话（保留最近 MAX_CONVERSATIONS 条）
-      await this.cleanupOldConversations(list);
-      
-      // 保存更新后的索引
-      await this.storageService.set(STORAGE_KEYS.INDEX, list);
-      this._conversationsCache = list;
+    // 更新内存中的对话列表缓存
+    const list = await this.getConversationList();
+    const meta: ConversationMeta = {
+      id: conversation.id,
+      name: conversation.name,
+      createdAt: conversation.createdAt,
+      updatedAt: conversation.updatedAt,
+      messageCount: conversation.messageCount
+    };
+    
+    list.unshift(meta);
+    this._conversationsCache = list;
 
-      // 设置为当前对话
-      this._currentConversationId = id;
-      await this.storageService.set(STORAGE_KEYS.CURRENT, id);
+    // 设置为当前对话（只更新内存状态，不保存到存储）
+    this._currentConversationId = id;
 
-      // 触发事件
-      this._onDidConversationListChange.fire({
-        conversations: list,
-        currentId: id
-      });
+    // 触发事件（UI 需要更新）
+    this._onDidConversationListChange.fire({
+      conversations: list,
+      currentId: id
+    });
 
-      this._onDidCurrentConversationChange.fire({
-        conversationId: id,
-        messages: []
-      });
+    this._onDidCurrentConversationChange.fire({
+      conversationId: id,
+      messages: []
+    });
 
-      console.log('[ConversationService] 创建新对话:', id);
-      return id;
-    } catch (error) {
-      console.error('[ConversationService] 创建对话失败:', error);
-      throw error;
-    }
+    console.log('[ConversationService] 创建新对话（临时）:', id);
+    return id;
   }
 
   /**
@@ -213,7 +208,13 @@ export class ConversationService extends Disposable implements IConversationServ
 
       // 更新当前对话 ID
       this._currentConversationId = conversationId;
-      await this.storageService.set(STORAGE_KEYS.CURRENT, conversationId);
+      
+      // 只有非临时对话才保存当前对话 ID 到存储
+      // 临时对话在刷新后会消失，所以不应该保存
+      const isPending = this._pendingConversations.has(conversationId);
+      if (!isPending) {
+        await this.storageService.set(STORAGE_KEYS.CURRENT, conversationId);
+      }
 
       // 触发事件
       this._onDidCurrentConversationChange.fire({
@@ -221,7 +222,7 @@ export class ConversationService extends Disposable implements IConversationServ
         messages: conversation.messages
       });
 
-      console.log('[ConversationService] 切换到对话:', conversationId);
+      console.log('[ConversationService] 切换到对话:', conversationId, isPending ? '(临时)' : '');
       return conversation.messages;
     } catch (error) {
       console.error('[ConversationService] 切换对话失败:', error);
@@ -233,6 +234,13 @@ export class ConversationService extends Disposable implements IConversationServ
    * 加载指定对话的完整数据
    */
   async loadConversation(conversationId: string): Promise<Conversation | null> {
+    // 优先从临时缓存中查找（未持久化的对话）
+    const pendingConv = this._pendingConversations.get(conversationId);
+    if (pendingConv) {
+      return pendingConv;
+    }
+
+    // 从存储中加载
     try {
       const conversation = await this.storageService.get<Conversation>(
         `${STORAGE_KEYS.CONVERSATION_PREFIX}${conversationId}`
@@ -246,6 +254,8 @@ export class ConversationService extends Disposable implements IConversationServ
 
   /**
    * 保存消息到当前对话
+   * 
+   * 如果当前对话是临时的（未持久化），会在保存消息时一并持久化对话。
    */
   async saveMessages(messages: ChatMessage[]): Promise<void> {
     if (!this._currentConversationId) {
@@ -276,6 +286,14 @@ export class ConversationService extends Disposable implements IConversationServ
         conversation.previewText = this.truncateText(lastUserMessage.content, 50);
       }
 
+      // 检查是否是临时对话（需要首次持久化）
+      const isPending = this._pendingConversations.has(conversationId);
+      if (isPending) {
+        // 从临时缓存中移除
+        this._pendingConversations.delete(conversationId);
+        console.log('[ConversationService] 持久化临时对话:', conversationId);
+      }
+
       // 保存对话数据
       await this.storageService.set(
         `${STORAGE_KEYS.CONVERSATION_PREFIX}${conversationId}`,
@@ -300,7 +318,14 @@ export class ConversationService extends Disposable implements IConversationServ
         const updated = list.splice(index, 1)[0];
         list.unshift(updated);
         
+        // 如果是首次持久化，也需要保存索引
         await this.storageService.set(STORAGE_KEYS.INDEX, list);
+        
+        // 同时保存当前对话 ID（如果之前是临时对话，这个也没保存）
+        if (isPending) {
+          await this.storageService.set(STORAGE_KEYS.CURRENT, conversationId);
+        }
+        
         this._conversationsCache = list;
 
         // 触发列表更新事件
@@ -329,10 +354,19 @@ export class ConversationService extends Disposable implements IConversationServ
       conversation.name = name;
       conversation.updatedAt = Date.now();
 
-      await this.storageService.set(
-        `${STORAGE_KEYS.CONVERSATION_PREFIX}${conversationId}`,
-        conversation
-      );
+      // 检查是否是临时对话
+      const isPending = this._pendingConversations.has(conversationId);
+      
+      if (isPending) {
+        // 临时对话只更新内存
+        this._pendingConversations.set(conversationId, conversation);
+      } else {
+        // 持久化对话需要更新存储
+        await this.storageService.set(
+          `${STORAGE_KEYS.CONVERSATION_PREFIX}${conversationId}`,
+          conversation
+        );
+      }
 
       // 更新索引
       const list = await this.getConversationList();
@@ -342,7 +376,10 @@ export class ConversationService extends Disposable implements IConversationServ
         list[index].name = name;
         list[index].updatedAt = conversation.updatedAt;
         
-        await this.storageService.set(STORAGE_KEYS.INDEX, list);
+        // 只有非临时对话才更新存储中的索引
+        if (!isPending) {
+          await this.storageService.set(STORAGE_KEYS.INDEX, list);
+        }
         this._conversationsCache = list;
 
         this._onDidConversationListChange.fire({
@@ -360,16 +397,28 @@ export class ConversationService extends Disposable implements IConversationServ
    */
   async deleteConversation(conversationId: string): Promise<void> {
     try {
-      // 删除对话数据
-      await this.storageService.remove(
-        `${STORAGE_KEYS.CONVERSATION_PREFIX}${conversationId}`
-      );
+      // 检查是否是临时对话
+      const isPending = this._pendingConversations.has(conversationId);
+      
+      if (isPending) {
+        // 临时对话只需从内存中删除
+        this._pendingConversations.delete(conversationId);
+        console.log('[ConversationService] 删除临时对话:', conversationId);
+      } else {
+        // 持久化的对话需要从存储中删除
+        await this.storageService.remove(
+          `${STORAGE_KEYS.CONVERSATION_PREFIX}${conversationId}`
+        );
+      }
 
       // 更新索引
       const list = await this.getConversationList();
       const newList = list.filter(c => c.id !== conversationId);
       
-      await this.storageService.set(STORAGE_KEYS.INDEX, newList);
+      // 只有非临时对话才需要更新存储中的索引
+      if (!isPending) {
+        await this.storageService.set(STORAGE_KEYS.INDEX, newList);
+      }
       this._conversationsCache = newList;
 
       // 如果删除的是当前对话，切换到最新的对话或创建新对话
@@ -406,12 +455,17 @@ export class ConversationService extends Disposable implements IConversationServ
       // 获取所有对话 ID
       const list = await this.getConversationList();
       
-      // 删除所有对话数据
+      // 删除所有持久化的对话数据（跳过临时对话）
       for (const conv of list) {
-        await this.storageService.remove(
-          `${STORAGE_KEYS.CONVERSATION_PREFIX}${conv.id}`
-        );
+        if (!this._pendingConversations.has(conv.id)) {
+          await this.storageService.remove(
+            `${STORAGE_KEYS.CONVERSATION_PREFIX}${conv.id}`
+          );
+        }
       }
+
+      // 清空临时对话缓存
+      this._pendingConversations.clear();
 
       // 清空索引
       await this.storageService.set(STORAGE_KEYS.INDEX, []);
@@ -500,6 +554,7 @@ export class ConversationService extends Disposable implements IConversationServ
     this._onDidConversationListChange.dispose();
     this._onDidCurrentConversationChange.dispose();
     this._conversationsCache = null;
+    this._pendingConversations.clear();
     super.dispose();
   }
 }

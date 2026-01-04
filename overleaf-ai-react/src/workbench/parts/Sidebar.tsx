@@ -13,6 +13,7 @@ import type { IChatService } from '../../platform/agent/IChatService';
 import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
 import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
 import { overleafEditor } from '../../services/editor/OverleafEditor';
+import { ToolResultRenderer } from './ToolResultRenderer';
 
 type SidebarProps = {
   isOpen: boolean;
@@ -312,9 +313,17 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
     conversations.find((c) => c.id === currentConversationId)?.name || '新对话';
 
   // 处理创建新对话
+  // 如果当前对话为空（没有消息），则复用当前对话，不创建新的
   const handleCreateConversation = useCallback(async () => {
+    // 检查当前对话是否有消息
+    const currentConv = conversations.find(c => c.id === currentConversationId);
+    if (currentConv && currentConv.messageCount === 0) {
+      // 当前对话为空，不需要创建新对话
+      console.log('[Sidebar] 当前对话为空，复用现有对话');
+      return;
+    }
     await createConversation();
-  }, [createConversation]);
+  }, [createConversation, conversations, currentConversationId]);
 
   // 处理切换对话
   const handleSwitchConversation = useCallback(async (conversationId: string) => {
@@ -733,16 +742,20 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                     ? thinkingStates[msg.id] 
                     : isGenerating;
                   
+                  // 检查是否还在思考中（用于动画效果）
+                  const buffer = streamingBuffers.get(msg.id.replace(':thinking', ''));
+                  const isThinking = buffer && !buffer.content;
+                  
                   return (
-                    <div className="ai-thinking-block">
+                    <div className={`ai-thinking-block ${!isExpanded ? 'collapsed' : ''}`}>
                       <div 
                         className="ai-thinking-header"
                         onClick={() => toggleThinking(msg.id)}
                       >
                         <span className="ai-thinking-label">
-                          Thinking
+                          {isThinking ? '思考中' : '思考过程'}
                           {extMsg.metadata?.thinkingTime && (
-                            <span className="ai-thinking-time"> for {extMsg.metadata.thinkingTime}s</span>
+                            <span className="ai-thinking-time">{extMsg.metadata.thinkingTime}s</span>
                           )}
                         </span>
                         <span className={`material-symbols ai-thinking-chevron ${isExpanded ? 'expanded' : ''}`}>
@@ -788,12 +801,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                   </div>
                 )}
 
-                {/* 显示正在执行的工具调用（仅显示 running 状态） */}
+                {/* 显示正在执行的工具调用 */}
                 {(() => {
                   const buffer = streamingBuffers.get(msg.id);
                   if (!buffer || buffer.toolCalls.size === 0) return null;
                   
-                  // 显示所有已触发的工具（running/completed/error），并使用可折叠的 Tool 样式块
+                  // 显示所有已触发的工具（running/completed/error）
                   const visibleTools = Array.from(buffer.toolCalls.entries())
                     .filter(([_, tc]) => tc.status === 'running' || tc.status === 'completed' || tc.status === 'error');
                   
@@ -804,58 +817,64 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                     const canExpand = toolCall.status === 'completed' || toolCall.status === 'error';
                     const isExpanded = canExpand && !!thinkingStates[toolMsgId];
 
+                    // 状态标签
                     let statusLabel = '';
                     switch (toolCall.status) {
                       case 'running':
                         statusLabel = '执行中...';
                         break;
                       case 'completed':
-                        statusLabel = '执行成功';
+                        statusLabel = '完成';
                         break;
                       case 'error':
-                        statusLabel = '执行失败';
+                        statusLabel = '失败';
                         break;
                     }
 
-                    // 结果内容：优先使用 result，其次使用 args，并尝试做 JSON 美化
-                    let detailText: string | undefined;
+                    // 状态类名
+                    const statusClass = toolCall.status === 'running' ? 'running' : 
+                                       toolCall.status === 'error' ? 'error' : '';
+
+                    // 结果内容：优先使用 result，其次使用 args
                     const rawDetail = toolCall.result || toolCall.args;
-                    if (rawDetail) {
-                      try {
-                        const parsed = JSON.parse(rawDetail);
-                        detailText = JSON.stringify(parsed, null, 2);
-                      } catch {
-                        detailText = rawDetail;
-                      }
-                    }
+
+                    // 友好的工具名称显示
+                    const friendlyToolName = toolCall.name
+                      ?.replace(/_/g, ' ')
+                      ?.replace(/([A-Z])/g, ' $1')
+                      ?.trim()
+                      ?.toLowerCase() || '工具';
 
                     return (
-                      <div key={toolCallId} className="ai-tool-block">
+                      <div key={toolCallId} className={`ai-tool-block ${statusClass}`}>
                         <div
                           className="ai-tool-header"
                           onClick={() => {
                             if (!canExpand) return;
                             toggleThinking(toolMsgId);
                           }}
+                          style={{ cursor: canExpand ? 'pointer' : 'default' }}
                         >
                           <span className="ai-tool-label">
-                            Tool
-                            {toolCall.name && (
-                              <span className="ai-tool-name"> ({toolCall.name})</span>
-                            )}
+                            {friendlyToolName}
                           </span>
                           {statusLabel && (
                             <span className="ai-tool-status-label">
                               {statusLabel}
                             </span>
                           )}
-                          <span className={`material-symbols ai-tool-chevron ${isExpanded ? 'expanded' : ''}`}>
-                            chevron_right
-                          </span>
+                          {canExpand && (
+                            <span className={`material-symbols ai-tool-chevron ${isExpanded ? 'expanded' : ''}`}>
+                              chevron_right
+                            </span>
+                          )}
                         </div>
-                        {canExpand && isExpanded && detailText && (
+                        {canExpand && isExpanded && rawDetail && (
                           <div className="ai-tool-content">
-                            <pre className="ai-tool-pre">{detailText}</pre>
+                            <ToolResultRenderer 
+                              toolName={toolCall.name} 
+                              result={toolCall.result} 
+                            />
                           </div>
                         )}
                       </div>

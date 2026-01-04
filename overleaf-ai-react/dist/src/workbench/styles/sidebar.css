@@ -312,10 +312,15 @@
 
 /* ==================== Thinking Block ==================== */
 .ai-thinking-block {
-  border-left: 2px solid var(--border-secondary);
+  border-left: 2px solid var(--accent-primary);
   padding-left: 12px;
   margin-left: 2px;
   margin-top: 8px;
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.03) 0%, transparent 100%);
+  border-radius: 0 6px 6px 0;
+  padding-right: 8px;
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 
 .ai-thinking-header {
@@ -334,19 +339,44 @@
 
 .ai-thinking-label {
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--accent-primary);
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-thinking-label::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: thinking-pulse 1.5s ease-in-out infinite;
+}
+
+.ai-thinking-block.collapsed .ai-thinking-label::before {
+  animation: none;
+  opacity: 0.5;
+}
+
+@keyframes thinking-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
 }
 
 .ai-thinking-time {
   color: var(--text-tertiary);
-  opacity: 0.8;
+  font-size: 11px;
+  font-weight: 400;
 }
 
 .ai-thinking-chevron {
   font-size: 14px;
   transition: transform 0.2s;
   color: var(--text-tertiary);
+  margin-left: auto;
 }
 
 .ai-thinking-chevron.expanded {
@@ -361,14 +391,30 @@
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-secondary);
+  border: 1px solid var(--border-secondary);
 }
 
 /* ==================== Tool Call Block ==================== */
 .ai-tool-block {
-  border-left: 2px dashed var(--border-secondary);
+  border-left: 2px solid var(--success);
   padding-left: 12px;
   margin-left: 2px;
   margin-top: 8px;
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.03) 0%, transparent 100%);
+  border-radius: 0 6px 6px 0;
+  padding-right: 8px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.ai-tool-block.running {
+  border-left-color: var(--accent-primary);
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.03) 0%, transparent 100%);
+}
+
+.ai-tool-block.error {
+  border-left-color: var(--error);
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.03) 0%, transparent 100%);
 }
 
 .ai-tool-header {
@@ -387,13 +433,55 @@
 
 .ai-tool-label {
   font-size: 12px;
-  color: var(--text-tertiary);
+  color: var(--success);
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-tool-block.running .ai-tool-label {
+  color: var(--accent-primary);
+}
+
+.ai-tool-block.error .ai-tool-label {
+  color: var(--error);
+}
+
+.ai-tool-label::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background-color: var(--success);
+  border-radius: 50%;
+}
+
+.ai-tool-block.running .ai-tool-label::before {
+  background-color: var(--accent-primary);
+  animation: tool-pulse 1s ease-in-out infinite;
+}
+
+.ai-tool-block.error .ai-tool-label::before {
+  background-color: var(--error);
+}
+
+@keyframes tool-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
 }
 
 .ai-tool-name {
+  color: var(--text-secondary);
+  font-weight: 400;
+  font-size: 11px;
+}
+
+.ai-tool-status-label {
+  font-size: 11px;
   color: var(--text-tertiary);
-  opacity: 0.9;
+  margin-left: auto;
+  padding-right: 4px;
 }
 
 .ai-tool-chevron {
@@ -414,12 +502,482 @@
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-secondary);
+  border: 1px solid var(--border-secondary);
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .ai-tool-pre {
   margin: 0;
   white-space: pre-wrap;
   font-family: var(--font-monospace, Menlo, Monaco, Consolas, "Courier New", monospace);
+  font-size: 12px;
+}
+
+/* ==================== 工具结果美化渲染 ==================== */
+
+/* 通用工具结果样式 */
+.tool-result-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.tool-result-header .material-symbols {
+  font-size: 16px;
+  color: var(--accent-primary);
+}
+
+.tool-result-path,
+.tool-result-filename,
+.tool-result-query {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-family: var(--font-monospace);
+}
+
+.tool-result-count {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+  color: var(--text-tertiary);
+}
+
+.tool-result-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+}
+
+.tool-result-status.success {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+
+.tool-result-status.error {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--error);
+}
+
+.tool-result-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.tool-result-message {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 0;
+  line-height: 1.5;
+}
+
+.tool-result-no-match {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.tool-result-no-match .material-symbols {
+  font-size: 18px;
+}
+
+/* 列出目录结果样式 */
+.tool-result-list-dir .tool-result-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tool-result-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  transition: background-color 0.15s;
+}
+
+.tool-result-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.tool-result-item .item-icon {
+  font-size: 16px;
+}
+
+.tool-result-item.folder .item-icon {
+  color: #f59e0b;
+}
+
+.tool-result-item.file .item-icon {
+  color: var(--text-tertiary);
+}
+
+.tool-result-item .item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-family: var(--font-monospace);
+}
+
+/* 读取文件结果样式 */
+.tool-result-file-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.tool-result-file-info .info-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.tool-result-file-info .info-item .material-symbols {
+  font-size: 14px;
+}
+
+.tool-result-file-info .info-item.warning {
+  color: #f59e0b;
+}
+
+.tool-result-code {
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  padding: 10px;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.tool-result-code pre {
+  margin: 0;
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.tool-result-summary {
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(59, 130, 246, 0.08);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+/* 搜索结果样式 */
+.tool-result-stats {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.tool-result-stats .stat-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.tool-result-stats .stat-item .material-symbols {
+  font-size: 14px;
+}
+
+.tool-result-matches {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.match-file {
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.match-file-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.1);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.match-file-header .material-symbols {
+  font-size: 14px;
+  color: var(--accent-primary);
+}
+
+.match-file-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-family: var(--font-monospace);
+}
+
+.match-count {
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.match-line {
+  display: flex;
+  gap: 8px;
+  padding: 4px 10px;
+  font-size: 11px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.match-line .line-number {
+  min-width: 28px;
+  text-align: right;
+  color: var(--text-tertiary);
+  font-family: var(--font-monospace);
+}
+
+.match-line .line-content {
+  flex: 1;
+  color: var(--text-secondary);
+  font-family: var(--font-monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match-more,
+.matches-more,
+.web-results-more {
+  padding: 6px 10px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-align: center;
+  font-style: italic;
+}
+
+.match-content {
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-monospace);
+  line-height: 1.5;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* 编辑文件结果样式 */
+.tool-result-edit-file .tool-result-instructions {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgba(59, 130, 246, 0.08);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+
+.tool-result-edit-file .tool-result-instructions .material-symbols {
+  font-size: 14px;
+  color: var(--accent-primary);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.tool-result-diff-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.diff-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.diff-stat .material-symbols {
+  font-size: 14px;
+}
+
+.diff-stat.added {
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--success);
+}
+
+.diff-stat.removed {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--error);
+}
+
+.diff-stat.changed {
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+}
+
+.diff-stat.edits {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--accent-primary);
+}
+
+/* 删除文件结果样式 */
+.tool-result-delete-file.success .tool-result-header .material-symbols {
+  color: var(--success);
+}
+
+.tool-result-delete-file.error .tool-result-header .material-symbols {
+  color: var(--error);
+}
+
+/* 网络搜索结果样式 */
+.tool-result-web-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.web-result-item {
+  padding: 10px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+}
+
+.web-result-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-primary);
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+.web-result-snippet {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+/* 错误结果样式 */
+.tool-result-error {
+  padding: 10px;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: 6px;
+  border-left: 3px solid var(--error);
+}
+
+.tool-result-error .tool-result-header .material-symbols {
+  color: var(--error);
+}
+
+.tool-result-error-message {
+  font-size: 12px;
+  color: var(--error);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* 默认结果样式 */
+.tool-result-default .tool-result-raw {
+  margin: 0;
+  padding: 10px;
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* ==================== 流式更新动画 ==================== */
+.ai-thinking-block,
+.ai-tool-block {
+  animation: fadeSlideIn 0.2s ease-out;
+}
+
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ai-thinking-content,
+.ai-tool-content {
+  animation: expandIn 0.15s ease-out;
+}
+
+@keyframes expandIn {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 300px;
+  }
+}
+
+/* 连续的工具调用块样式优化 */
+.ai-tool-block + .ai-tool-block {
+  margin-top: 4px;
+}
+
+/* 思考块后紧跟的工具调用块 */
+.ai-thinking-block + .ai-tool-block {
+  margin-top: 6px;
+}
+
+/* 工具块之间的分隔线（可选） */
+.ai-tool-block:not(:last-child)::after {
+  content: '';
+  display: block;
+  height: 1px;
+  background: transparent;
+  margin-top: 4px;
 }
 
 /* ==================== Error Item ==================== */
