@@ -2,6 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import { useService } from './useService';
 import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
 import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
+import type { IConversationService } from '../../platform/agent/IConversationService';
+import { IConversationServiceId } from '../../platform/agent/IConversationService';
 
 /**
  * Tool call status
@@ -37,11 +39,30 @@ export interface StreamingBuffer {
  */
 export function useUIStreamUpdates() {
   const uiStreamService = useService<IUIStreamService>(IUIStreamServiceId);
+  const conversationService = useService<IConversationService>(IConversationServiceId);
   const [streamingBuffers, setStreamingBuffers] = useState<Map<string, StreamingBuffer>>(new Map());
   
   // Use ref to avoid stale closures in event handlers
   const buffersRef = useRef(streamingBuffers);
   buffersRef.current = streamingBuffers;
+
+  // 🔧 监听对话切换事件，清空 streaming buffers
+  // 这是为了防止新对话的消息 ID 与旧对话相同时，错误地显示旧内容
+  useEffect(() => {
+    if (!conversationService) {
+      return;
+    }
+
+    const disposable = conversationService.onDidCurrentConversationChange(() => {
+      // 对话切换时清空所有 streaming buffers
+      console.log('[useUIStreamUpdates] 对话切换，清空 streaming buffers');
+      setStreamingBuffers(new Map());
+    });
+
+    return () => {
+      disposable.dispose();
+    };
+  }, [conversationService]);
 
   useEffect(() => {
     if (!uiStreamService) {

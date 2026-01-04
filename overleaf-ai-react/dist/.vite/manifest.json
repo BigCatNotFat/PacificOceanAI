@@ -5,8 +5,8 @@
     "src": "../../../../../../../../../@crx/manifest",
     "isEntry": true
   },
-  "_StorageService-DjIGCtee.js": {
-    "file": "assets/StorageService-DjIGCtee.js",
+  "_StorageService-AGBmheDT.js": {
+    "file": "assets/StorageService-AGBmheDT.js",
     "name": "StorageService",
     "imports": [
       "_client-pkrm3IsY.js"
@@ -21,31 +21,31 @@
     "name": "modulepreload-polyfill"
   },
   "main.tsx-loader.js": {
-    "file": "assets/main.tsx-loader-Ds4gUvUO.js",
+    "file": "assets/main.tsx-loader-_uKzMC3t.js",
     "src": "main.tsx-loader.js"
   },
   "src/extension/content/main.tsx": {
-    "file": "assets/main.tsx-CI3Ocb_t.js",
+    "file": "assets/main.tsx-BGeg_gP1.js",
     "name": "main.tsx",
     "src": "src/extension/content/main.tsx",
     "isEntry": true,
     "imports": [
       "_client-pkrm3IsY.js",
-      "_StorageService-DjIGCtee.js"
+      "_StorageService-AGBmheDT.js"
     ],
     "css": [
-      "assets/main-Ddsimwso.css"
+      "assets/main-32hbPPHP.css"
     ]
   },
   "src/extension/options/index.html": {
-    "file": "assets/index.html-DXNOZKJS.js",
+    "file": "assets/index.html-Bm9l1I48.js",
     "name": "index.html",
     "src": "src/extension/options/index.html",
     "isEntry": true,
     "imports": [
       "_modulepreload-polyfill-B5Qt9EMX.js",
       "_client-pkrm3IsY.js",
-      "_StorageService-DjIGCtee.js"
+      "_StorageService-AGBmheDT.js"
     ]
   },
   "src/extension/popup/index.html": {

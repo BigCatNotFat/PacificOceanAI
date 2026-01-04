@@ -13,7 +13,7 @@
  * 
  * - 会话状态管理
  * - 事件分发（消息更新、工具审批）
- * - 会话持久化
+ * - 会话持久化（通过 ConversationService）
  */
 
 import { injectable } from '../../platform/instantiation/descriptors';
@@ -28,11 +28,13 @@ import type {
 import { IChatServiceId } from '../../platform/agent/IChatService';
 import type { IAgentService, AgentLoopController } from '../../platform/agent/IAgentService';
 import { IAgentServiceId } from '../../platform/agent/IAgentService';
+import type { IConversationService } from '../../platform/agent/IConversationService';
+import { IConversationServiceId } from '../../platform/agent/IConversationService';
 
 /**
  * ChatService 实现
  */
-@injectable(IAgentServiceId)
+@injectable(IAgentServiceId, IConversationServiceId)
 export class ChatService implements IChatService {
   // ==================== 事件发射器 ====================
   private readonly _onDidMessageUpdate = new Emitter<ChatMessage[]>();
@@ -63,11 +65,24 @@ export class ChatService implements IChatService {
   /** 当前这一轮对话在列表一中的起始下标（用于中断时整体回滚） */
   private _currentTurnStartIndex: number | undefined;
 
+  /** 保存消息的防抖计时器 */
+  private _saveDebounceTimer?: ReturnType<typeof setTimeout>;
+
   constructor(
-    private readonly agentService: IAgentService
+    private readonly agentService: IAgentService,
+    private readonly conversationService: IConversationService
   ) {
     console.log('[ChatService] 依赖注入成功', {
-      hasAgentService: !!agentService
+      hasAgentService: !!agentService,
+      hasConversationService: !!conversationService
+    });
+
+    // 监听对话切换事件，加载对应对话的消息
+    this.conversationService.onDidCurrentConversationChange((event) => {
+      console.log('[ChatService] 对话切换:', event.conversationId);
+      this._messages = event.messages;
+      this._messageIdCounter = event.messages.length;
+      this._onDidMessageUpdate.fire([...this._messages]);
     });
 
     console.log('[ChatService] 初始化完成');
@@ -145,6 +160,8 @@ export class ChatService implements IChatService {
         }
         this._messages = updatedMessages;
         this._onDidMessageUpdate.fire([...this._messages]);
+        // 防抖保存消息
+        this.debouncedSaveMessages();
       });
 
       // 5. 监听 Loop 完成（更新列表一）
@@ -161,6 +178,9 @@ export class ChatService implements IChatService {
         
         // 注意：列表一保留所有细节（包括 thinking），给用户看
         // 列表二会在下次请求时动态生成，自动剔除 thinking
+        
+        // 立即保存消息（完成时不防抖）
+        this.saveMessagesNow();
         
         console.log('[ChatService] 对话完成');
       });
@@ -334,9 +354,59 @@ export class ChatService implements IChatService {
   }
 
   /**
+   * 防抖保存消息（流式更新时调用）
+   */
+  private debouncedSaveMessages(): void {
+    if (this._saveDebounceTimer) {
+      clearTimeout(this._saveDebounceTimer);
+    }
+    this._saveDebounceTimer = setTimeout(() => {
+      this.saveMessagesNow();
+    }, 1000); // 1 秒防抖
+  }
+
+  /**
+   * 立即保存消息
+   */
+  private async saveMessagesNow(): Promise<void> {
+    if (this._saveDebounceTimer) {
+      clearTimeout(this._saveDebounceTimer);
+      this._saveDebounceTimer = undefined;
+    }
+
+    try {
+      // 保存消息到当前对话
+      await this.conversationService.saveMessages(this._messages);
+
+      // 如果是第一条用户消息，自动生成对话名称
+      const firstUserMessage = this._messages.find(m => m.role === 'user');
+      if (firstUserMessage && this._messages.filter(m => m.role === 'user').length === 1) {
+        const conversationId = this.conversationService.getCurrentConversationId();
+        if (conversationId) {
+          await this.conversationService.autoGenerateName(conversationId, firstUserMessage.content);
+        }
+      }
+    } catch (error) {
+      console.error('[ChatService] 保存消息失败:', error);
+    }
+  }
+
+  /**
+   * 清空当前对话消息
+   */
+  clearMessages(): void {
+    this._messages = [];
+    this._messageIdCounter = 0;
+    this._onDidMessageUpdate.fire([]);
+  }
+
+  /**
    * 释放资源
    */
   dispose(): void {
+    if (this._saveDebounceTimer) {
+      clearTimeout(this._saveDebounceTimer);
+    }
     this._onDidMessageUpdate.dispose();
     this._onDidToolCallPending.dispose();
     this._messages = [];

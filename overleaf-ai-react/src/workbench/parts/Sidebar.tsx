@@ -3,6 +3,7 @@ import { ELEMENTS } from '../../base/common/constants';
 import { useChatMessages } from '../hooks/useChatMessages';
 import { useSidebarResize } from '../hooks/useSidebarResize';
 import { useUIStreamUpdates } from '../hooks/useUIStreamUpdates';
+import { useConversations } from '../hooks/useConversations';
 import { ChatMessage } from '../types/chat';
 import { useService } from '../hooks/useService';
 import { IConfigurationServiceId } from '../../platform/configuration/configuration';
@@ -54,15 +55,21 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const [hasApiKey, setHasApiKey] = useState<boolean>(false);
   const [isCheckingApiKey, setIsCheckingApiKey] = useState<boolean>(true);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
-  const [conversations] = useState([
-    { id: '1', name: '新对话' },
-    { id: '2', name: 'React组件优化' },
-    { id: '3', name: 'TypeScript类型问题' }
-  ]);
-  const [currentConversation, setCurrentConversation] = useState('1');
   const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [isConversationMenuOpen, setIsConversationMenuOpen] = useState(false);
+  const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
+  
+  // 使用对话管理 Hook
+  const {
+    conversations,
+    currentConversationId,
+    isLoading: isConversationsLoading,
+    createConversation,
+    switchConversation,
+    deleteConversation,
+    renameConversation
+  } = useConversations();
 
   useSidebarResize({ sidebarRef, handleRef, onWidthChange });
 
@@ -188,6 +195,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
       inputRef.current.value = '';
     }
 
+    // 🔧 确保在发送消息前有当前对话
+    // 如果没有当前对话，先创建一个
+    // 这样可以避免在 saveMessages 时创建对话导致消息被清空
+    let conversationId = currentConversationId;
+    if (!conversationId) {
+      console.log('[Sidebar] 没有当前对话，先创建一个');
+      conversationId = await createConversation();
+    }
+
     // TODO: 从 UI 收集上下文条目
     // - 用户选中的文件
     // - 用户选中的代码片段
@@ -201,13 +217,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
         mode: chatMode,
         modelId: selectedModel,
         contextItems,
-        conversationId: currentConversation
+        conversationId
       });
     } catch (error) {
       console.error('[Sidebar] 发送消息失败:', error);
       setIsGenerating(false);
     }
-  }, [chatService, chatMode, selectedModel, currentConversation, hasApiKey]);
+  }, [chatService, chatMode, selectedModel, currentConversationId, hasApiKey, createConversation]);
 
   const stopGeneration = useCallback(() => {
     chatService.abort();
@@ -293,7 +309,59 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
     : '暂无可用模型';
 
   const currentConversationName =
-    conversations.find((c) => c.id === currentConversation)?.name || '新对话';
+    conversations.find((c) => c.id === currentConversationId)?.name || '新对话';
+
+  // 处理创建新对话
+  const handleCreateConversation = useCallback(async () => {
+    await createConversation();
+  }, [createConversation]);
+
+  // 处理切换对话
+  const handleSwitchConversation = useCallback(async (conversationId: string) => {
+    await switchConversation(conversationId);
+    setIsConversationMenuOpen(false);
+    setIsHistoryPanelOpen(false);
+  }, [switchConversation]);
+
+  // 处理删除对话
+  const handleDeleteConversation = useCallback(async (conversationId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('确定要删除这个对话吗？')) {
+      await deleteConversation(conversationId);
+    }
+  }, [deleteConversation]);
+
+  // 格式化时间
+  const formatTime = useCallback((timestamp: number) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    
+    if (diff < 60000) return '刚刚';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
+    if (diff < 604800000) return `${Math.floor(diff / 86400000)} 天前`;
+    return date.toLocaleDateString();
+  }, []);
+
+  // 点击外部关闭下拉菜单
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.ai-header-left') && !target.closest('.ai-conversation-dropdown')) {
+        setIsConversationMenuOpen(false);
+      }
+      if (!target.closest('.ai-mode-selector-inline')) {
+        setIsModeMenuOpen(false);
+      }
+      if (!target.closest('.ai-model-selector-inline')) {
+        setIsModelMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
 
   return (
     <div
@@ -331,44 +399,104 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
             <button
               type="button"
               className="ai-conversation-trigger"
-              onClick={() => setIsConversationMenuOpen(!isConversationMenuOpen)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsConversationMenuOpen(!isConversationMenuOpen);
+              }}
+              disabled={isConversationsLoading}
             >
-              {currentConversationName}
+              <span className="material-symbols ai-conversation-icon">chat</span>
+              <span className="ai-conversation-title">
+                {isConversationsLoading ? '加载中...' : currentConversationName}
+              </span>
+              <span className={`material-symbols ai-header-dropdown ${isConversationMenuOpen ? 'open' : ''}`}>
+                expand_more
+              </span>
             </button>
-            <span className="material-symbols ai-header-dropdown">expand_more</span>
             {isConversationMenuOpen && (
-              <div className="ai-inline-dropdown ai-conversation-dropdown">
-                {conversations.map((conv) => (
-                  <button
-                    type="button"
-                    key={conv.id}
-                    className={`ai-inline-dropdown-item ${currentConversation === conv.id ? 'active' : ''}`}
-                    onClick={() => {
-                      setCurrentConversation(conv.id);
+              <div className="ai-conversation-dropdown">
+                <div className="ai-conversation-dropdown-header">
+                  <span>对话列表</span>
+                  <button 
+                    className="ai-new-chat-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCreateConversation();
                       setIsConversationMenuOpen(false);
                     }}
+                    title="新建对话"
                   >
-                    {conv.name}
+                    <span className="material-symbols">add</span>
+                    新建
                   </button>
-                ))}
+                </div>
+                <div className="ai-conversation-dropdown-list">
+                  {conversations.length === 0 ? (
+                    <div className="ai-conversation-dropdown-empty">
+                      <span className="material-symbols">chat_bubble_outline</span>
+                      <p>暂无对话记录</p>
+                    </div>
+                  ) : (
+                    conversations.slice(0, 8).map((conv) => (
+                      <button
+                        type="button"
+                        key={conv.id}
+                        className={`ai-conversation-dropdown-item ${currentConversationId === conv.id ? 'active' : ''}`}
+                        onClick={() => handleSwitchConversation(conv.id)}
+                      >
+                        <span className="material-symbols ai-conv-item-icon">
+                          {currentConversationId === conv.id ? 'chat' : 'chat_bubble_outline'}
+                        </span>
+                        <div className="ai-conv-item-content">
+                          <span className="ai-conv-item-name">{conv.name}</span>
+                          <span className="ai-conv-item-meta">
+                            {formatTime(conv.updatedAt)} · {conv.messageCount} 条消息
+                          </span>
+                        </div>
+                        <button
+                          className="ai-conv-item-delete"
+                          onClick={(e) => handleDeleteConversation(conv.id, e)}
+                          title="删除"
+                        >
+                          <span className="material-symbols">close</span>
+                        </button>
+                      </button>
+                    ))
+                  )}
+                </div>
+                {conversations.length > 8 && (
+                  <button
+                    type="button"
+                    className="ai-conversation-dropdown-footer"
+                    onClick={() => {
+                      setIsConversationMenuOpen(false);
+                      setIsHistoryPanelOpen(true);
+                    }}
+                  >
+                    <span className="material-symbols">history</span>
+                    查看全部历史 ({conversations.length})
+                  </button>
+                )}
               </div>
             )}
           </div>
           <div className="ai-header-actions">
-            <button className="ai-icon-btn" onClick={testGetDocLines} title="测试: 获取文档行数">
-              <span className="material-symbols">bug_report</span>
+            <button 
+              className="ai-header-new-btn" 
+              onClick={handleCreateConversation} 
+              title="新建对话 (Ctrl+Shift+N)"
+            >
+              <span className="material-symbols">edit_square</span>
             </button>
-            <button className="ai-icon-btn" title="新对话">
-              <span className="material-symbols">add</span>
-            </button>
-            <button className="ai-icon-btn" title="历史记录">
-              <span className="material-symbols">list_alt</span>
+            <button 
+              className={`ai-icon-btn ${isHistoryPanelOpen ? 'active' : ''}`} 
+              onClick={() => setIsHistoryPanelOpen(!isHistoryPanelOpen)} 
+              title="历史记录"
+            >
+              <span className="material-symbols">history</span>
             </button>
             <button className="ai-icon-btn" onClick={openSettings} title="设置">
               <span className="material-symbols">settings</span>
-            </button>
-            <button className="ai-icon-btn" title="更多">
-              <span className="material-symbols">more_horiz</span>
             </button>
             <button className="ai-icon-btn ai-close-btn" onClick={onClose} title="关闭">
               <span className="material-symbols">close</span>
@@ -376,7 +504,181 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
           </div>
         </div>
 
+        {/* 历史记录面板 */}
+        {isHistoryPanelOpen && (
+          <div className="ai-history-panel">
+            <div className="ai-history-panel-header">
+              <div className="ai-history-panel-title">
+                <span className="material-symbols">history</span>
+                <span>对话历史</span>
+                <span className="ai-history-count">{conversations.length}</span>
+              </div>
+              <div className="ai-history-panel-actions">
+                <button 
+                  className="ai-history-new-btn" 
+                  onClick={() => {
+                    handleCreateConversation();
+                    setIsHistoryPanelOpen(false);
+                  }}
+                  title="新建对话"
+                >
+                  <span className="material-symbols">add</span>
+                  新建对话
+                </button>
+                <button 
+                  className="ai-icon-btn" 
+                  onClick={() => setIsHistoryPanelOpen(false)}
+                  title="关闭"
+                >
+                  <span className="material-symbols">close</span>
+                </button>
+              </div>
+            </div>
+            <div className="ai-history-panel-list">
+              {conversations.length === 0 ? (
+                <div className="ai-history-empty">
+                  <div className="ai-history-empty-icon">
+                    <span className="material-symbols">forum</span>
+                  </div>
+                  <h3>还没有对话记录</h3>
+                  <p>开始一个新对话，与 AI 助手交流</p>
+                  <button className="ai-btn-primary" onClick={() => {
+                    handleCreateConversation();
+                    setIsHistoryPanelOpen(false);
+                  }}>
+                    <span className="material-symbols">add</span>
+                    开始新对话
+                  </button>
+                </div>
+              ) : (
+                conversations.map((conv) => (
+                  <div
+                    key={conv.id}
+                    className={`ai-history-item ${currentConversationId === conv.id ? 'active' : ''}`}
+                    onClick={() => handleSwitchConversation(conv.id)}
+                  >
+                    <div className="ai-history-item-icon">
+                      <span className="material-symbols">
+                        {currentConversationId === conv.id ? 'chat' : 'chat_bubble_outline'}
+                      </span>
+                    </div>
+                    <div className="ai-history-item-content">
+                      <div className="ai-history-item-name">{conv.name}</div>
+                      {conv.previewText && (
+                        <div className="ai-history-item-preview">{conv.previewText}</div>
+                      )}
+                      <div className="ai-history-item-meta">
+                        <span className="ai-history-item-time">
+                          <span className="material-symbols">schedule</span>
+                          {formatTime(conv.updatedAt)}
+                        </span>
+                        <span className="ai-history-item-count">
+                          <span className="material-symbols">chat_bubble</span>
+                          {conv.messageCount}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      className="ai-history-item-delete"
+                      onClick={(e) => handleDeleteConversation(conv.id, e)}
+                      title="删除对话"
+                    >
+                      <span className="material-symbols">delete_outline</span>
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="ai-chat-history" ref={chatHistoryRef}>
+          {/* 欢迎界面 - 没有消息时显示 */}
+          {messages.length === 0 && !isHistoryPanelOpen && (
+            <div className="ai-welcome">
+              <div className="ai-welcome-header">
+                <div className="ai-welcome-logo">
+                  <span className="material-symbols">smart_toy</span>
+                </div>
+                <h2>Overleaf AI 助手</h2>
+                <p>我可以帮助你编写、编辑和优化 LaTeX 文档</p>
+              </div>
+              
+              <div className="ai-welcome-actions">
+                <button 
+                  className="ai-welcome-action"
+                  onClick={() => {
+                    if (inputRef.current) {
+                      inputRef.current.value = '帮我优化这段文字的学术表达';
+                      inputRef.current.focus();
+                    }
+                  }}
+                >
+                  <span className="material-symbols">edit_note</span>
+                  <span>优化学术表达</span>
+                </button>
+                <button 
+                  className="ai-welcome-action"
+                  onClick={() => {
+                    if (inputRef.current) {
+                      inputRef.current.value = '检查并修正 LaTeX 语法错误';
+                      inputRef.current.focus();
+                    }
+                  }}
+                >
+                  <span className="material-symbols">spellcheck</span>
+                  <span>检查语法错误</span>
+                </button>
+                <button 
+                  className="ai-welcome-action"
+                  onClick={() => {
+                    if (inputRef.current) {
+                      inputRef.current.value = '帮我写一个数学公式';
+                      inputRef.current.focus();
+                    }
+                  }}
+                >
+                  <span className="material-symbols">function</span>
+                  <span>生成数学公式</span>
+                </button>
+                <button 
+                  className="ai-welcome-action"
+                  onClick={() => {
+                    if (inputRef.current) {
+                      inputRef.current.value = '为这个表格添加标题和注释';
+                      inputRef.current.focus();
+                    }
+                  }}
+                >
+                  <span className="material-symbols">table_chart</span>
+                  <span>处理表格</span>
+                </button>
+              </div>
+
+              {conversations.length > 0 && (
+                <div className="ai-welcome-history">
+                  <div className="ai-welcome-history-header">
+                    <span className="material-symbols">history</span>
+                    <span>最近对话</span>
+                  </div>
+                  <div className="ai-welcome-history-list">
+                    {conversations.slice(0, 3).map((conv) => (
+                      <button
+                        key={conv.id}
+                        className="ai-welcome-history-item"
+                        onClick={() => handleSwitchConversation(conv.id)}
+                      >
+                        <span className="material-symbols">chat_bubble_outline</span>
+                        <span className="ai-welcome-history-name">{conv.name}</span>
+                        <span className="ai-welcome-history-time">{formatTime(conv.updatedAt)}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {messages.map((msg) => {
             const extMsg = msg as ExtendedChatMessage;
             const msgType = extMsg.type || 'normal';

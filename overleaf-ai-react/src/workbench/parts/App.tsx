@@ -13,6 +13,7 @@ import { StorageService } from '../../services/storage/StorageService';
 import { StorageScope } from '../../base/browser/storage';
 import { ChatService, IChatServiceId } from '../../services/agent/ChatService';
 import { AgentService, IAgentServiceId } from '../../services/agent/AgentService';
+import { ConversationService, IConversationServiceId } from '../../services/agent/ConversationService';
 import { LLMService, ILLMServiceId } from '../../services/llm/LLMService';
 import { PromptService, IPromptServiceId } from '../../services/agent/PromptService';
 import { ToolService, IToolServiceId } from '../../services/agent/ToolService';
@@ -95,7 +96,16 @@ const App: React.FC = () => {
       )
     );
 
-    // 注册 Chat 服务（依赖 AgentService）
+    // 注册对话历史管理服务（依赖 StorageService）
+    di.registerDescriptor(
+      new ServiceDescriptor(
+        IConversationServiceId,
+        ConversationService,
+        getServiceDependencies(ConversationService)
+      )
+    );
+
+    // 注册 Chat 服务（依赖 AgentService, ConversationService）
     di.registerDescriptor(
       new ServiceDescriptor(
         IChatServiceId,
