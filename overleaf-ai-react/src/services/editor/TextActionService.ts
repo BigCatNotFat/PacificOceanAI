@@ -23,7 +23,8 @@ export type TextActionHandler = (
   text: string,
   from: number,
   to: number,
-  modelId?: string
+  modelId?: string,
+  customPrompt?: string
 ) => Promise<string | null>;
 
 /** 预览决策结果 */
@@ -132,10 +133,12 @@ export class TextActionService extends Disposable {
         text: data.data.text,
         from: data.data.from,
         to: data.data.to,
-        modelId: data.data.modelId  // 传递模型 ID
+        modelId: data.data.modelId,  // 传递模型 ID
+        customPrompt: data.data.customPrompt  // 传递自定义提示词
       };
       
-      console.log('[TextActionService] 收到操作请求:', request.action, '模型:', request.modelId);
+      console.log('[TextActionService] 收到操作请求:', request.action, '模型:', request.modelId, 
+        request.customPrompt ? '自定义:' + request.customPrompt.substring(0, 30) + '...' : '');
       
       // 触发请求事件
       this._onActionRequest.fire(request);
@@ -225,7 +228,7 @@ export class TextActionService extends Disposable {
     try {
       // 调用处理器生成新文本
       // 注意：处理器现在使用流式预览模式，会自己发送预览消息
-      const resultText = await handler(request.action, request.text, request.from, request.to, request.modelId);
+      const resultText = await handler(request.action, request.text, request.from, request.to, request.modelId, request.customPrompt);
       
       if (resultText === null) {
         // 操作被取消或失败

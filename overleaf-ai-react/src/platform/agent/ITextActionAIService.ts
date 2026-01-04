@@ -24,6 +24,8 @@ export interface TextActionAIOptions {
   text: string;
   /** 指定使用的模型 ID（可选，不指定则使用默认模型） */
   modelId?: string;
+  /** 自定义提示词（仅当 action 为 'custom' 时使用） */
+  customPrompt?: string;
   /** 流式输出回调（可选，如果提供则启用流式模式） */
   onStream?: TextActionStreamCallback;
   /** 思考过程流式输出回调（可选，用于 DeepSeek 等推理模型） */

@@ -199,24 +199,25 @@ Current time: ${timestamp}
   }
 
   /**
-   * 构建文本操作（润色/扩写/缩写）的消息列表
+   * 构建文本操作（润色/扩写/缩写/自定义）的消息列表
    * 
-   * @param action - 操作类型 ('polish' | 'expand' | 'condense')
+   * @param action - 操作类型 ('polish' | 'expand' | 'condense' | 'translate' | 'custom')
    * @param text - 用户选中的原始文本
+   * @param customPrompt - 自定义提示词（仅当 action 为 'custom' 时使用）
    * @returns LLM 消息列表（包含 system 和 user 消息）
    */
-  buildTextActionPrompt(action: TextActionType, text: string): LLMMessage[] {
+  buildTextActionPrompt(action: TextActionType, text: string, customPrompt?: string): LLMMessage[] {
     const messages: LLMMessage[] = [];
 
     // 获取对应操作的 System Prompt
-    const systemPrompt = this.getTextActionSystemPrompt(action);
+    const systemPrompt = this.getTextActionSystemPrompt(action, customPrompt);
     messages.push({
       role: 'system',
       content: systemPrompt
     });
 
     // 构建 User 消息
-    const userPrompt = this.getTextActionUserPrompt(action, text);
+    const userPrompt = this.getTextActionUserPrompt(action, text, customPrompt);
     messages.push({
       role: 'user',
       content: userPrompt
@@ -232,8 +233,32 @@ Current time: ${timestamp}
   /**
    * 获取文本操作的 System Prompt
    */
-  private getTextActionSystemPrompt(action: TextActionType): string {
-    const prompts: Record<TextActionType, string> = {
+  private getTextActionSystemPrompt(action: TextActionType, customPrompt?: string): string {
+    // 自定义操作使用通用的 system prompt
+    if (action === 'custom') {
+      return `You are a professional academic writing assistant specializing in LaTeX document editing.
+
+Your task is to follow the user's specific instructions. You may be asked to:
+- Process/modify existing text
+- Generate new content (formulas, paragraphs, etc.)
+- Insert specific LaTeX elements
+
+**Guidelines:**
+1. Follow the user's instructions precisely
+2. Use proper LaTeX syntax for mathematical expressions, formulas, and special formatting
+3. Maintain academic writing style when generating text
+4. Ensure all LaTeX commands are syntactically correct
+5. Do NOT add explanations or comments about what you did - only output the content
+6. Ensure the output is ready to be used directly in a LaTeX document
+
+**Important:**
+- Output ONLY the requested content, nothing else
+- Do NOT wrap the output in markdown code blocks or quotes
+- Do NOT include phrases like "Here is the result" or similar
+- For math formulas, use appropriate LaTeX math environments ($ $, $$ $$, \\begin{equation}, etc.)`;
+    }
+
+    const prompts: Record<Exclude<TextActionType, 'custom'>, string> = {
       polish: `You are a professional academic writing assistant specializing in LaTeX document editing.
 
 Your task is to POLISH the given text to improve its quality while preserving the original meaning and intent.
@@ -315,21 +340,37 @@ Your task is to TRANSLATE the given Chinese text into English while maintaining 
 - Preserve the exact formatting and structure of the original text`
     };
 
-    return prompts[action];
+    return prompts[action as Exclude<TextActionType, 'custom'>];
   }
 
   /**
    * 获取文本操作的 User Prompt
    */
-  private getTextActionUserPrompt(action: TextActionType, text: string): string {
-    const actionDescriptions: Record<TextActionType, string> = {
+  private getTextActionUserPrompt(action: TextActionType, text: string, customPrompt?: string): string {
+    // 自定义操作使用用户的自定义提示词
+    if (action === 'custom' && customPrompt) {
+      // 如果没有选中文本（插入模式），不需要包含 <text> 标签
+      if (!text || text.trim().length === 0) {
+        return `${customPrompt}
+
+Please generate the content directly. Output ONLY the generated content, nothing else.`;
+      }
+      
+      return `${customPrompt}
+
+<text>
+${text}
+</text>`;
+    }
+
+    const actionDescriptions: Record<Exclude<TextActionType, 'custom'>, string> = {
       polish: 'Polish the following text to improve its quality:',
       expand: 'Expand the following text with more details and explanations:',
       condense: 'Condense the following text to be more concise:',
       translate: 'Translate the following Chinese text into English:'
     };
 
-    return `${actionDescriptions[action]}
+    return `${actionDescriptions[action as Exclude<TextActionType, 'custom'>]}
 
 <text>
 ${text}

@@ -18,7 +18,7 @@
  * - 支持流式输出
  */
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react';
 import { useTextAction } from '../hooks/useTextAction';
 import { useService } from '../hooks/useService';
 import type { TextActionType } from '../../services/editor/bridge';
@@ -51,10 +51,21 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
   // 用于中断请求的 AbortController
   const abortControllerRef = useRef<AbortController | null>(null);
   
+  // 思考内容滚动区域的 ref - 用于实现从底部向上滚动的效果
+  const thinkingScrollRef = useRef<HTMLDivElement>(null);
+  
+  // 当思考内容更新时，自动滚动到底部
+  useLayoutEffect(() => {
+    if (thinkingScrollRef.current && streamingThinking) {
+      thinkingScrollRef.current.scrollTop = thinkingScrollRef.current.scrollHeight;
+    }
+  }, [streamingThinking]);
+  
   // 创建 AI 调用处理器
   const createAIHandler = useCallback((action: TextActionType) => {
-    return async (_action: TextActionType, text: string, from: number, to: number, modelId?: string): Promise<string | null> => {
-      console.log(`[TextActionProvider] AI ${action} - 原文长度:`, text.length, '模型:', modelId);
+    return async (_action: TextActionType, text: string, from: number, to: number, modelId?: string, customPrompt?: string): Promise<string | null> => {
+      console.log(`[TextActionProvider] AI ${action} - 原文长度:`, text.length, '模型:', modelId, 
+        customPrompt ? '自定义:' + customPrompt.substring(0, 30) + '...' : '');
       
       // 重置流式文本
       setStreamingText('');
@@ -102,6 +113,7 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
           action,
           text,
           modelId,
+          customPrompt,  // 传递自定义提示词
           onStream,
           onThinkingStream,
           abortSignal: abortControllerRef.current.signal
@@ -140,7 +152,7 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
   
   // 注册 AI 处理器
   useEffect(() => {
-    const actions: TextActionType[] = ['polish', 'expand', 'condense', 'translate'];
+    const actions: TextActionType[] = ['polish', 'expand', 'condense', 'translate', 'custom'];
     const disposables = actions.map(action => {
       return registerHandler(action, createAIHandler(action));
     });
@@ -245,29 +257,52 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
             <span>
               正在{lastRequest.action === 'expand' ? '扩写' : 
                     lastRequest.action === 'condense' ? '缩写' : 
-                    lastRequest.action === 'translate' ? '翻译' : '润色'}...
+                    lastRequest.action === 'translate' ? '翻译' : 
+                    lastRequest.action === 'custom' ? '处理' : '润色'}...
             </span>
           </div>
-          {/* 思考过程预览 - 只显示最新 150 个字符 */}
+          {/* 思考过程预览 - 从底部向上滚动效果 */}
           {streamingThinking && (
             <div
               style={{
                 fontSize: '11px',
                 color: '#a78bfa',
-                maxHeight: '60px',
-                overflow: 'hidden',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
+                maxHeight: '80px',
                 borderTop: '1px solid rgba(167, 139, 250, 0.2)',
                 paddingTop: '8px',
                 marginTop: '4px',
-                fontStyle: 'italic'
+                fontStyle: 'italic',
+                display: 'flex',
+                flexDirection: 'column'
               }}
             >
-              <span style={{ color: '#c4b5fd', fontWeight: 500 }}>思考中：</span>
-              {streamingThinking.length > 150 
-                ? '...' + streamingThinking.slice(-150) 
-                : streamingThinking}
+              <span style={{ color: '#c4b5fd', fontWeight: 500, marginBottom: '4px' }}>思考中：</span>
+              {/* 滚动容器 - 内容从底部向上填充 */}
+              <div
+                ref={thinkingScrollRef}
+                className="thinking-scroll-container"
+                style={{
+                  flex: 1,
+                  maxHeight: '60px',
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'flex-end',
+                  // 隐藏滚动条但保持功能 (Firefox + IE)
+                  scrollbarWidth: 'none',
+                  msOverflowStyle: 'none'
+                }}
+              >
+                <div
+                  style={{
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    lineHeight: '1.4'
+                  }}
+                >
+                  {streamingThinking}
+                </div>
+              </div>
             </div>
           )}
           {/* 流式文本预览 */}
@@ -327,6 +362,10 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
           15% { opacity: 1; transform: translateY(0); }
           85% { opacity: 1; transform: translateY(0); }
           100% { opacity: 0; transform: translateY(-10px); }
+        }
+        /* 隐藏 webkit 滚动条 */
+        .thinking-scroll-container::-webkit-scrollbar {
+          display: none;
         }
       `}</style>
     </>

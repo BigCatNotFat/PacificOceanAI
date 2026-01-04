@@ -939,16 +939,143 @@ function createSelectionTooltip() {
   tooltip.style.zIndex = '9999';
   tooltip.style.background = 'linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%)';
   tooltip.style.color = '#e5e7eb';
-  tooltip.style.padding = '8px 12px';
-  tooltip.style.borderRadius = '8px';
+  tooltip.style.padding = '10px';
+  tooltip.style.borderRadius = '10px';
   tooltip.style.fontSize = '12px';
-  tooltip.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255,255,255,0.1)';
+  tooltip.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.1)';
   tooltip.style.display = 'none';
   tooltip.style.flexDirection = 'column';  // 改为垂直布局
-  tooltip.style.gap = '0';
-  tooltip.style.backdropFilter = 'blur(8px)';
+  tooltip.style.gap = '8px';
+  tooltip.style.backdropFilter = 'blur(10px)';
   tooltip.style.transition = 'left 0.1s ease-out, top 0.1s ease-out, opacity 0.15s ease';
   tooltip.style.opacity = '1';
+  tooltip.style.minWidth = '300px';
+  tooltip.style.maxWidth = '420px';
+  
+  // 创建自定义输入区域
+  const customInputContainer = document.createElement('div');
+  customInputContainer.id = 'ol-ai-custom-input-container';
+  customInputContainer.style.display = 'flex';
+  customInputContainer.style.gap = '8px';
+  customInputContainer.style.alignItems = 'stretch';
+  
+  // 自定义输入框
+  const customInput = document.createElement('textarea');
+  customInput.id = 'ol-ai-custom-input';
+  customInput.placeholder = '输入要求，如：插入积分公式、润色文本...';
+  customInput.style.flex = '1';
+  customInput.style.padding = '6px 10px';
+  customInput.style.fontSize = '12px';
+  customInput.style.borderRadius = '6px';
+  customInput.style.border = '1px solid rgba(255,255,255,0.15)';
+  customInput.style.background = 'rgba(15, 23, 42, 0.6)';
+  customInput.style.color = '#e5e7eb';
+  customInput.style.outline = 'none';
+  customInput.style.resize = 'none';
+  customInput.style.height = '28px';
+  customInput.style.minHeight = '28px';
+  customInput.style.maxHeight = '60px';
+  customInput.style.lineHeight = '1.3';
+  customInput.style.fontFamily = 'inherit';
+  
+  // 输入框聚焦效果
+  customInput.onfocus = function() {
+    this.style.border = '1px solid rgba(59, 130, 246, 0.5)';
+    this.style.boxShadow = '0 0 0 2px rgba(59, 130, 246, 0.2)';
+  };
+  customInput.onblur = function() {
+    this.style.border = '1px solid rgba(255,255,255,0.15)';
+    this.style.boxShadow = 'none';
+  };
+  
+  // 阻止输入框的键盘事件冒泡
+  customInput.onkeydown = function(e) {
+    e.stopPropagation();
+    // Ctrl+Enter 或 Enter（非 Shift）发送
+    if ((e.ctrlKey && e.key === 'Enter') || (e.key === 'Enter' && !e.shiftKey)) {
+      e.preventDefault();
+      handleCustomRequest();
+    }
+    // ESC 关闭菜单
+    if (e.key === 'Escape') {
+      hideSelectionTooltip();
+    }
+  };
+  
+  // 自动调整高度
+  customInput.oninput = function() {
+    this.style.height = '28px';
+    this.style.height = Math.min(this.scrollHeight, 60) + 'px';
+  };
+  
+  customInputContainer.appendChild(customInput);
+  
+  // 发送按钮
+  const sendBtn = document.createElement('button');
+  sendBtn.id = 'ol-ai-send-btn';
+  sendBtn.innerHTML = '➤';
+  sendBtn.title = '发送 (Enter)';
+  sendBtn.style.padding = '0 12px';
+  sendBtn.style.fontSize = '14px';
+  sendBtn.style.borderRadius = '6px';
+  sendBtn.style.border = 'none';
+  sendBtn.style.background = 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)';
+  sendBtn.style.color = 'white';
+  sendBtn.style.cursor = 'pointer';
+  sendBtn.style.transition = 'all 0.2s ease';
+  sendBtn.style.boxShadow = '0 2px 6px rgba(59, 130, 246, 0.3)';
+  sendBtn.style.display = 'flex';
+  sendBtn.style.alignItems = 'center';
+  sendBtn.style.justifyContent = 'center';
+  sendBtn.style.height = '28px';
+  
+  sendBtn.onmouseenter = function() {
+    this.style.background = 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)';
+    this.style.transform = 'translateY(-1px)';
+    this.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.4)';
+  };
+  sendBtn.onmouseleave = function() {
+    this.style.background = 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)';
+    this.style.transform = 'translateY(0)';
+    this.style.boxShadow = '0 2px 6px rgba(59, 130, 246, 0.3)';
+  };
+  sendBtn.onclick = function(e) {
+    e.stopPropagation();
+    handleCustomRequest();
+  };
+  
+  customInputContainer.appendChild(sendBtn);
+  tooltip.appendChild(customInputContainer);
+  
+  // 分隔线和快捷操作标签
+  const quickActionsLabel = document.createElement('div');
+  quickActionsLabel.id = 'ol-ai-quick-actions-label';
+  quickActionsLabel.style.display = 'flex';
+  quickActionsLabel.style.alignItems = 'center';
+  quickActionsLabel.style.gap = '8px';
+  quickActionsLabel.style.marginTop = '2px';
+  
+  const labelLine1 = document.createElement('div');
+  labelLine1.style.flex = '1';
+  labelLine1.style.height = '1px';
+  labelLine1.style.background = 'rgba(255,255,255,0.1)';
+  
+  const labelText = document.createElement('span');
+  labelText.textContent = '快捷操作';
+  labelText.style.fontSize = '10px';
+  labelText.style.color = '#9ca3af';
+  labelText.style.textTransform = 'uppercase';
+  labelText.style.letterSpacing = '0.5px';
+  
+  const labelLine2 = document.createElement('div');
+  labelLine2.style.flex = '1';
+  labelLine2.style.height = '1px';
+  labelLine2.style.background = 'rgba(255,255,255,0.1)';
+  
+  quickActionsLabel.appendChild(labelLine1);
+  quickActionsLabel.appendChild(labelText);
+  quickActionsLabel.appendChild(labelLine2);
+  tooltip.appendChild(quickActionsLabel);
   
   // 创建按钮容器
   buttonContainerEl = document.createElement('div');
@@ -956,6 +1083,7 @@ function createSelectionTooltip() {
   buttonContainerEl.style.display = 'flex';
   buttonContainerEl.style.gap = '8px';
   buttonContainerEl.style.justifyContent = 'center';
+  buttonContainerEl.style.flexWrap = 'wrap';
   buttonContainerEl.style.pointerEvents = 'auto';
   
   // 根据配置创建按钮
@@ -973,6 +1101,81 @@ function createSelectionTooltip() {
   document.body.appendChild(tooltip);
   
   return tooltip;
+}
+
+/**
+ * 处理自定义请求
+ */
+function handleCustomRequest() {
+  const inputEl = document.getElementById('ol-ai-custom-input');
+  if (!inputEl) return;
+  
+  const customPrompt = inputEl.value.trim();
+  if (!customPrompt) {
+    // 输入框为空，显示提示
+    inputEl.style.border = '1px solid rgba(245, 158, 11, 0.5)';
+    inputEl.placeholder = '请输入您的要求...';
+    setTimeout(function() {
+      inputEl.style.border = '1px solid rgba(255,255,255,0.15)';
+      inputEl.placeholder = '输入要求，如：插入积分公式、润色文本...';
+    }, 1500);
+    return;
+  }
+  
+  // 获取当前选区或光标位置
+  let selectionData = currentSelection;
+  
+  // 如果没有 currentSelection，尝试从编辑器获取光标位置
+  if (!selectionData) {
+    try {
+      const view = getEditorView();
+      if (view) {
+        const selection = view.state.selection.main;
+        const cursorPos = selection.head;
+        selectionData = {
+          from: cursorPos,
+          to: cursorPos,
+          text: '',
+          isEmpty: true
+        };
+      }
+    } catch (e) {
+      console.error('[OverleafBridge] Failed to get cursor position:', e);
+    }
+  }
+  
+  if (!selectionData) {
+    console.warn('[OverleafBridge] No cursor position available');
+    return;
+  }
+  
+  const selectedModel = getSelectedTextActionModel();
+  const hasSelection = selectionData.text && selectionData.text.trim().length > 0;
+  
+  console.log('[OverleafBridge] Custom request:', customPrompt, 'model:', selectedModel, 
+    hasSelection ? '(有选中文本)' : '(无选中文本，将在光标处插入)');
+  
+  // 发送自定义操作请求到 content script
+  // 如果没有选中文本，text 为空，from 和 to 相同（光标位置）
+  window.postMessage({
+    type: 'OVERLEAF_TEXT_ACTION_REQUEST',
+    data: {
+      action: 'custom',  // 自定义操作类型
+      customPrompt: customPrompt,  // 用户输入的自定义要求
+      text: selectionData.text || '',  // 可以为空
+      from: selectionData.from,
+      to: selectionData.to,
+      modelId: selectedModel,
+      insertMode: !hasSelection  // 标记是否为插入模式（无选中文本）
+    }
+  }, '*');
+  
+  // 清空输入框
+  inputEl.value = '';
+  inputEl.style.height = 'auto';
+  
+  // 隐藏提示框
+  hideSelectionTooltip();
 }
 
 /**
@@ -1048,7 +1251,8 @@ function showSelectionTooltipForCurrentSelection() {
     currentSelection = {
       from: from,
       to: to,
-      text: text
+      text: text,
+      isEmpty: false
     };
 
     // 懒创建提示框
@@ -1061,6 +1265,9 @@ function showSelectionTooltipForCurrentSelection() {
     selectionTooltipEl.style.left = String(pos.left) + 'px';
     selectionTooltipEl.style.top = String(pos.top) + 'px';
     selectionTooltipEl.style.display = 'flex';
+    
+    // 隐藏未选择文本的提示（因为通过 mouseup 触发时已有选中文本）
+    hideNoSelectionHint();
   } catch (e) {
     console.error('[OverleafBridge] Failed to show selection tooltip:', e);
   }
@@ -1079,8 +1286,17 @@ function getCurrentSelection() {
  * @param {string} actionType 操作类型
  */
 function handleTextActionRequest(actionType) {
+  // 检查是否有选区
   if (!currentSelection) {
     console.warn('[OverleafBridge] No selection for text action');
+    showNoSelectionHint();
+    return;
+  }
+  
+  // 检查是否选中了文本
+  if (currentSelection.isEmpty || !currentSelection.text || currentSelection.text.trim().length === 0) {
+    console.warn('[OverleafBridge] Empty selection for text action');
+    showNoSelectionHint();
     return;
   }
   
@@ -1215,7 +1431,12 @@ function updateTooltipPosition() {
 }
 
 // 监听鼠标松开事件
-window.addEventListener('mouseup', function() {
+window.addEventListener('mouseup', function(event) {
+  // 如果点击发生在菜单内部，不触发选区检查
+  if (selectionTooltipEl && selectionTooltipEl.contains(event.target)) {
+    return;
+  }
+  
   // 延迟一点以确保选区已更新
   setTimeout(function() {
     showSelectionTooltipForCurrentSelection();
@@ -1260,6 +1481,186 @@ window.addEventListener('keyup', function(event) {
     hideSelectionTooltip();
   }
 });
+
+// ============ 快捷键 Ctrl+Alt+/ 唤出文本操作菜单 ============
+
+/**
+ * 在光标位置显示文本操作菜单
+ * 即使没有选中文本也可以显示菜单（但操作时需要选中文本）
+ */
+function showTextActionMenuAtCursor() {
+  try {
+    const view = getEditorView();
+    if (!view) {
+      console.warn('[OverleafBridge] EditorView not available for shortcut menu');
+      return;
+    }
+
+    const doc = view.state.doc;
+    const selection = view.state.selection.main;
+    const cursorPos = selection.head; // 当前光标位置
+    
+    // 获取光标位置的坐标
+    const coords = view.coordsAtPos(cursorPos);
+    if (!coords) {
+      console.warn('[OverleafBridge] Cannot get cursor coordinates');
+      return;
+    }
+
+    // 检查是否有选中的文本
+    const hasSelection = !selection.empty;
+    const from = selection.from;
+    const to = selection.to;
+    const text = hasSelection ? doc.sliceString(from, to) : '';
+
+    // 保存当前选区信息（即使为空也保存光标位置）
+    currentSelection = {
+      from: from,
+      to: to,
+      text: text,
+      isEmpty: !hasSelection
+    };
+
+    // 懒创建提示框
+    if (!selectionTooltipEl) {
+      selectionTooltipEl = createSelectionTooltip();
+    }
+
+    // 计算并设置位置（使用光标坐标）
+    const pos = calculateTooltipPosition(coords);
+    selectionTooltipEl.style.left = String(pos.left) + 'px';
+    selectionTooltipEl.style.top = String(pos.top) + 'px';
+    selectionTooltipEl.style.display = 'flex';
+
+    // 根据是否有选中文本，切换菜单模式
+    if (!hasSelection) {
+      // 无选中文本：只显示输入框（插入模式）
+      showInsertOnlyMode();
+    } else {
+      // 有选中文本：显示完整菜单
+      showFullMenuMode();
+    }
+
+    console.log('[OverleafBridge] Text action menu shown via shortcut (Ctrl+Alt+/)', {
+      hasSelection: hasSelection,
+      cursorPos: cursorPos,
+      textLength: text.length,
+      mode: hasSelection ? 'full' : 'insert-only'
+    });
+  } catch (e) {
+    console.error('[OverleafBridge] Failed to show text action menu via shortcut:', e);
+  }
+}
+
+/**
+ * 显示插入模式菜单（只有输入框，无快捷操作按钮）
+ * 用于快捷键唤出且没有选中文本时
+ */
+function showInsertOnlyMode() {
+  if (!selectionTooltipEl) return;
+  
+  // 隐藏快捷操作标签
+  var quickActionsLabel = selectionTooltipEl.querySelector('#ol-ai-quick-actions-label');
+  if (quickActionsLabel) {
+    quickActionsLabel.style.display = 'none';
+  }
+  
+  // 隐藏快捷操作按钮
+  var buttonsContainer = selectionTooltipEl.querySelector('#ol-ai-selection-buttons');
+  if (buttonsContainer) {
+    buttonsContainer.style.display = 'none';
+  }
+  
+  // 隐藏模型选择器（简化界面）
+  var modelSelector = selectionTooltipEl.querySelector('#ol-ai-model-selector');
+  if (modelSelector) {
+    modelSelector.style.display = 'none';
+  }
+  
+  // 更新输入框 placeholder
+  var inputEl = document.getElementById('ol-ai-custom-input');
+  if (inputEl) {
+    inputEl.placeholder = '输入要生成的内容，如：插入积分公式...';
+  }
+  
+  console.log('[OverleafBridge] Switched to insert-only mode');
+}
+
+/**
+ * 显示完整菜单模式（输入框 + 快捷操作按钮）
+ * 用于有选中文本时
+ */
+function showFullMenuMode() {
+  if (!selectionTooltipEl) return;
+  
+  // 显示快捷操作标签
+  var quickActionsLabel = selectionTooltipEl.querySelector('#ol-ai-quick-actions-label');
+  if (quickActionsLabel) {
+    quickActionsLabel.style.display = 'flex';
+  }
+  
+  // 显示快捷操作按钮
+  var buttonsContainer = selectionTooltipEl.querySelector('#ol-ai-selection-buttons');
+  if (buttonsContainer) {
+    buttonsContainer.style.display = 'flex';
+  }
+  
+  // 显示模型选择器
+  var modelSelector = selectionTooltipEl.querySelector('#ol-ai-model-selector');
+  if (modelSelector) {
+    modelSelector.style.display = 'flex';
+  }
+  
+  // 启用操作按钮
+  var buttons = selectionTooltipEl.querySelectorAll('#ol-ai-selection-buttons button');
+  buttons.forEach(function(btn) {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.style.cursor = 'pointer';
+  });
+  
+  // 更新输入框 placeholder
+  var inputEl = document.getElementById('ol-ai-custom-input');
+  if (inputEl) {
+    inputEl.placeholder = '输入要求，如：翻译成英文、润色...';
+  }
+  
+  console.log('[OverleafBridge] Switched to full menu mode');
+}
+
+// 兼容旧函数（供其他地方调用）
+function showNoSelectionHint() {
+  showInsertOnlyMode();
+}
+
+function hideNoSelectionHint() {
+  showFullMenuMode();
+}
+
+/**
+ * 监听 Ctrl+Alt+/ 快捷键
+ */
+window.addEventListener('keydown', function(event) {
+  // 检测 Ctrl+Alt+/ 组合键
+  // 注意：在不同键盘布局下，'/' 可能需要不同的检测方式
+  const isSlashKey = event.key === '/' || event.code === 'Slash' || event.keyCode === 191;
+  
+  if (event.ctrlKey && event.altKey && isSlashKey) {
+    event.preventDefault(); // 阻止默认行为
+    event.stopPropagation(); // 阻止事件冒泡
+    
+    console.log('[OverleafBridge] Shortcut Ctrl+Alt+/ detected');
+    
+    // 如果菜单已显示，则隐藏；否则显示
+    if (selectionTooltipEl && selectionTooltipEl.style.display === 'flex') {
+      hideSelectionTooltip();
+    } else {
+      showTextActionMenuAtCursor();
+    }
+    
+    return false;
+  }
+}, true); // 使用捕获阶段确保优先处理
 
 // 点击其他地方时隐藏提示框
 document.addEventListener('mousedown', function(event) {
@@ -1307,6 +1708,11 @@ function hidePreviewOverlay() {
   }
   if (previewConfirmEl) {
     previewConfirmEl.style.display = 'none';
+  }
+  // 隐藏内置确认按钮
+  const inlineConfirm = document.getElementById('ol-ai-inline-confirm');
+  if (inlineConfirm) {
+    inlineConfirm.style.display = 'none';
   }
   currentPreview = null;
 }
@@ -1410,6 +1816,7 @@ function createPreviewOverlay() {
   
   // 标题
   const title = document.createElement('div');
+  title.id = 'ol-ai-preview-title';
   title.style.fontWeight = '600';
   title.style.color = '#1e3a5f';
   title.style.fontSize = '12px';
@@ -1468,6 +1875,7 @@ function createPreviewOverlay() {
   
   // 箭头指示
   const arrow = document.createElement('div');
+  arrow.id = 'ol-ai-preview-arrow';
   arrow.style.textAlign = 'center';
   arrow.style.color = '#6b7280';
   arrow.style.margin = '4px 0';
@@ -1477,12 +1885,91 @@ function createPreviewOverlay() {
   // 新文本容器
   const newContainer = document.createElement('div');
   newContainer.id = 'ol-ai-preview-new';
-  newContainer.style.color = '#059669';
+  newContainer.style.color = '#166534';
   newContainer.style.background = 'rgba(167, 243, 208, 0.3)';
   newContainer.style.padding = '8px';
   newContainer.style.borderRadius = '4px';
   newContainer.style.borderLeft = '3px solid #059669';
+  newContainer.style.maxHeight = '300px';
+  newContainer.style.overflowY = 'auto';
   overlay.appendChild(newContainer);
+  
+  // 内置确认按钮区域
+  const confirmContainer = document.createElement('div');
+  confirmContainer.id = 'ol-ai-inline-confirm';
+  confirmContainer.style.display = 'none';
+  confirmContainer.style.marginTop = '12px';
+  confirmContainer.style.paddingTop = '10px';
+  confirmContainer.style.borderTop = '1px solid rgba(0,0,0,0.1)';
+  confirmContainer.style.flexDirection = 'row';
+  confirmContainer.style.gap = '10px';
+  confirmContainer.style.alignItems = 'center';
+  confirmContainer.style.justifyContent = 'flex-end';
+  
+  // 提示文字
+  const confirmHint = document.createElement('span');
+  confirmHint.id = 'ol-ai-inline-confirm-hint';
+  confirmHint.style.color = '#6b7280';
+  confirmHint.style.fontSize = '12px';
+  confirmHint.style.marginRight = 'auto';
+  confirmHint.textContent = '是否接受更改？';
+  confirmContainer.appendChild(confirmHint);
+  
+  // 接受按钮
+  const inlineAcceptBtn = document.createElement('button');
+  inlineAcceptBtn.textContent = '✓ 接受';
+  inlineAcceptBtn.style.background = '#10b981';
+  inlineAcceptBtn.style.color = 'white';
+  inlineAcceptBtn.style.border = 'none';
+  inlineAcceptBtn.style.padding = '6px 16px';
+  inlineAcceptBtn.style.borderRadius = '4px';
+  inlineAcceptBtn.style.cursor = 'pointer';
+  inlineAcceptBtn.style.fontSize = '12px';
+  inlineAcceptBtn.style.fontWeight = '500';
+  inlineAcceptBtn.style.transition = 'all 0.2s ease';
+  
+  inlineAcceptBtn.onmouseenter = function() {
+    this.style.background = '#059669';
+  };
+  inlineAcceptBtn.onmouseleave = function() {
+    this.style.background = '#10b981';
+  };
+  inlineAcceptBtn.onclick = function(e) {
+    e.stopPropagation();
+    handlePreviewDecision(true);
+  };
+  confirmContainer.appendChild(inlineAcceptBtn);
+  
+  // 拒绝按钮
+  const inlineRejectBtn = document.createElement('button');
+  inlineRejectBtn.textContent = '✗ 拒绝';
+  inlineRejectBtn.style.background = '#ef4444';
+  inlineRejectBtn.style.color = 'white';
+  inlineRejectBtn.style.border = 'none';
+  inlineRejectBtn.style.padding = '6px 16px';
+  inlineRejectBtn.style.borderRadius = '4px';
+  inlineRejectBtn.style.cursor = 'pointer';
+  inlineRejectBtn.style.fontSize = '12px';
+  inlineRejectBtn.style.fontWeight = '500';
+  inlineRejectBtn.style.transition = 'all 0.2s ease';
+  
+  inlineRejectBtn.onmouseenter = function() {
+    this.style.background = '#dc2626';
+  };
+  inlineRejectBtn.onmouseleave = function() {
+    this.style.background = '#ef4444';
+  };
+  inlineRejectBtn.onclick = function(e) {
+    e.stopPropagation();
+    window.postMessage({
+      type: 'OVERLEAF_STREAM_CANCEL',
+      data: { reason: 'user_rejected' }
+    }, '*');
+    handlePreviewDecision(false);
+  };
+  confirmContainer.appendChild(inlineRejectBtn);
+  
+  overlay.appendChild(confirmContainer);
   
   // 添加 CSS 动画样式（如果还没添加）
   if (!document.getElementById('ol-ai-preview-styles')) {
@@ -1524,6 +2011,7 @@ function createPreviewConfirmMenu() {
   
   // 提示文字
   const hint = document.createElement('span');
+  hint.id = 'ol-ai-confirm-hint';
   hint.style.color = '#e5e7eb';
   hint.style.fontSize = '12px';
   hint.style.marginRight = '8px';
@@ -1646,15 +2134,54 @@ function startStreamPreview(data) {
     
     // 更新覆盖层内容
     const originalContainer = document.getElementById('ol-ai-preview-original');
+    const arrowEl = document.getElementById('ol-ai-preview-arrow');
     const newContainer = document.getElementById('ol-ai-preview-new');
+    const titleEl = document.getElementById('ol-ai-preview-title');
     
-    if (originalContainer) {
-      originalContainer.textContent = data.originalText;
+    // 判断是否为插入模式（无原文）
+    const isInsertMode = !data.originalText || data.originalText.trim().length === 0;
+    
+    if (isInsertMode) {
+      // 插入模式：隐藏原文区域和箭头，只显示生成内容
+      if (originalContainer) {
+        originalContainer.style.display = 'none';
+      }
+      if (arrowEl) {
+        arrowEl.style.display = 'none';
+      }
+      if (titleEl) {
+        titleEl.textContent = '📝 生成内容';
+      }
+      if (newContainer) {
+        // 插入模式使用深色文字（白色背景）
+        newContainer.style.color = '#1f2937';
+        newContainer.style.background = 'rgba(59, 130, 246, 0.08)';
+        newContainer.style.borderLeft = '3px solid #3b82f6';
+        newContainer.innerHTML = '<span style="color: #3b82f6; animation: pulse 1.5s ease-in-out infinite;">AI 正在生成...</span>';
+      }
+    } else {
+      // 替换模式：显示原文和新文本对比
+      if (originalContainer) {
+        originalContainer.style.display = 'block';
+        originalContainer.textContent = data.originalText;
+      }
+      if (arrowEl) {
+        arrowEl.style.display = 'block';
+      }
+      if (titleEl) {
+        titleEl.textContent = '📝 预览更改';
+      }
+      if (newContainer) {
+        // 恢复默认样式 - 使用深绿色
+        newContainer.style.color = '#166534';
+        newContainer.style.background = 'rgba(167, 243, 208, 0.3)';
+        newContainer.style.borderLeft = '3px solid #059669';
+        newContainer.innerHTML = '<span style="color: #3b82f6; animation: pulse 1.5s ease-in-out infinite;">AI 正在生成...</span>';
+      }
     }
-    if (newContainer) {
-      // 显示加载指示器
-      newContainer.innerHTML = '<span style="color: #60a5fa; animation: pulse 1.5s ease-in-out infinite;">AI 正在生成...</span>';
-    }
+    
+    // 保存插入模式标记
+    currentPreview.isInsertMode = isInsertMode;
     
     // 计算位置
     const scrollX = window.scrollX || window.pageXOffset;
@@ -1724,20 +2251,23 @@ function completeStreamPreview(data) {
     newContainer.textContent = currentPreview.newText;
   }
   
-  // 显示确认菜单
-  if (previewConfirmEl && previewOverlayEl) {
-    setTimeout(function() {
-      const overlayRect = previewOverlayEl.getBoundingClientRect();
-      const scrollY = window.scrollY || window.pageYOffset;
-      const confirmTop = overlayRect.bottom + scrollY + 10;
-      
-      previewConfirmEl.style.left = previewOverlayEl.style.left;
-      previewConfirmEl.style.top = confirmTop + 'px';
-      previewConfirmEl.style.display = 'flex';
-    }, 10);
+  // 显示内置确认按钮
+  const inlineConfirm = document.getElementById('ol-ai-inline-confirm');
+  if (inlineConfirm) {
+    // 根据模式更新提示文字
+    const hintEl = document.getElementById('ol-ai-inline-confirm-hint');
+    if (hintEl) {
+      hintEl.textContent = currentPreview.isInsertMode ? '是否插入此内容？' : '是否接受更改？';
+    }
+    inlineConfirm.style.display = 'flex';
   }
   
-  console.log('[OverleafBridge] Stream preview completed');
+  // 隐藏外部确认菜单（不再使用）
+  if (previewConfirmEl) {
+    previewConfirmEl.style.display = 'none';
+  }
+  
+  console.log('[OverleafBridge] Stream preview completed', { isInsertMode: currentPreview.isInsertMode });
 }
 
 /**

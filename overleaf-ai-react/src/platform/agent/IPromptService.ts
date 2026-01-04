@@ -13,7 +13,7 @@ import { ModelId } from '../llm/IModelRegistryService';
 /**
  * 文本操作类型
  */
-export type TextActionType = 'expand' | 'condense' | 'polish' | 'translate';
+export type TextActionType = 'expand' | 'condense' | 'polish' | 'translate' | 'custom';
 
 // ==================== 类型定义 ====================
 
@@ -120,15 +120,17 @@ export interface IPromptService {
   ): Promise<string>;
 
   /**
-   * 构建文本操作（润色/扩写/缩写）的消息列表
+   * 构建文本操作（润色/扩写/缩写/自定义）的消息列表
    * 
-   * @param action - 操作类型 ('polish' | 'expand' | 'condense')
+   * @param action - 操作类型 ('polish' | 'expand' | 'condense' | 'translate' | 'custom')
    * @param text - 用户选中的原始文本
+   * @param customPrompt - 自定义提示词（仅当 action 为 'custom' 时使用）
    * @returns LLM 消息列表（包含 system 和 user 消息）
    */
   buildTextActionPrompt(
     action: TextActionType,
-    text: string
+    text: string,
+    customPrompt?: string
   ): LLMMessage[];
 }
 

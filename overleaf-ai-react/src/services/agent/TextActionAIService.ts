@@ -72,11 +72,12 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
    * 执行文本操作
    */
   async execute(options: TextActionAIOptions): Promise<TextActionAIResult> {
-    const { action, text, modelId: specifiedModelId, onStream, onThinkingStream, abortSignal } = options;
+    const { action, text, modelId: specifiedModelId, customPrompt, onStream, onThinkingStream, abortSignal } = options;
 
     console.log(`[TextActionAIService] 执行操作: ${action}`, {
       textLength: text.length,
       specifiedModelId,
+      customPrompt: customPrompt ? customPrompt.substring(0, 50) + '...' : undefined,
       hasStreamCallback: !!onStream,
       hasThinkingStreamCallback: !!onThinkingStream
     });
@@ -95,8 +96,8 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
       
       console.log(`[TextActionAIService] 使用模型: ${modelId}`);
 
-      // 2. 构建消息
-      const messages = this.promptService.buildTextActionPrompt(action, text);
+      // 2. 构建消息（对于自定义操作，传递 customPrompt）
+      const messages = this.promptService.buildTextActionPrompt(action, text, customPrompt);
 
       // 3. 设置流式回调（如果提供）
       if (onStream || onThinkingStream) {

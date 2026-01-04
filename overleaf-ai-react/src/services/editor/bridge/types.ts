@@ -100,7 +100,7 @@ export interface SelectionInfo {
 }
 
 /** 文本操作类型 */
-export type TextActionType = 'expand' | 'condense' | 'polish' | 'translate';
+export type TextActionType = 'expand' | 'condense' | 'polish' | 'translate' | 'custom';
 
 /** 文本操作请求 */
 export interface TextActionRequest {
@@ -114,6 +114,8 @@ export interface TextActionRequest {
   to: number;
   /** 选择的模型 ID（可选） */
   modelId?: string;
+  /** 自定义提示词（仅当 action 为 'custom' 时使用） */
+  customPrompt?: string;
 }
 
 /** 文本操作结果 */
