@@ -138,7 +138,7 @@ export class PromptService implements IPromptService {
     const knowledgeCutoff = modelInfo?.knowledgeCutoff || 'Unknown';
 
     // 基础系统信息
-    const basePrompt = `\
+    let basePrompt = `\
 Knowledge cutoff: ${knowledgeCutoff}
 You are an AI paper writing assistant powered by ${modelInfo?.name || modelId}, specializing in LaTeX-based academic writing and typesetting. You operate in overleaf.
 You are pair paper-writing with a USER to solve their paper writing task. Each time the USER sends a message, we may automatically attach some information about their current state, such as what files they have open, where their cursor is, recently viewed files, edit history in their session so far, and more. This information may or may not be relevant to the paper writing task, it is up for you to decide.
@@ -146,6 +146,21 @@ Here is the user's system information:
 
 Current time: ${timestamp}
 `;
+
+    // Gemini：很多 OpenAI 兼容网关不会返回 reasoning_content / extra_content 思考字段。
+    // 为了让 UI 的 thinking 区稳定可用，这里要求模型在正文前输出“思考摘要”（高层计划，而非逐步推理）。
+    if (modelInfo?.provider === 'gemini' && modelInfo?.capabilities?.supportsReasoning) {
+      basePrompt += `
+
+<thinking_summary>
+Before your final answer, output a short high-level plan wrapped in <thought>...</thought> tags.
+- Keep it brief (2-6 bullet points or short sentences).
+- Do NOT include detailed step-by-step reasoning, hidden chain-of-thought, or sensitive content.
+- After </thought>, output the normal answer.
+- Never start your answer with a comma.
+</thinking_summary>
+`;
+    }
 
     // 根据模式获取工具列表
     const tools = this.getToolsForMode(mode);

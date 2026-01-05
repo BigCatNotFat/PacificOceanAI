@@ -73,12 +73,7 @@ export class ListDirTool extends BaseTool {
 
       // 通过 ProjectModule 获取文件树
       const fileTree = await overleafEditor.project.getFileTree();
-      const requestedPath = args.relative_workspace_path;
-      
-      // 规范化路径（确保以 / 开头）
-      const normalizedPath = requestedPath === '/' || requestedPath === '' || requestedPath === '.'
-        ? '/'
-        : (requestedPath.startsWith('/') ? requestedPath : `/${requestedPath}`);
+      const normalizedPath = this.normalizeRelativePath(args.relative_workspace_path);
       
       // 过滤出指定目录下的文件
       const result = this.filterByDirectory(fileTree.entities, normalizedPath);
@@ -143,7 +138,7 @@ export class ListDirTool extends BaseTool {
           // 顶层文件
           items.push({
             name: parts[0],
-            type: entity.type === 'folder' ? 'directory' : 'file',
+            type: entity.type === 'folder' ? 'directory' : (entity.type === 'doc' ? 'doc' : 'file'),
             path: entityPath,
             id: entity.id ?? entity._id ?? domIdMap.get(parts[0]) ?? undefined
           });
@@ -169,7 +164,7 @@ export class ListDirTool extends BaseTool {
             // 直接子文件
             items.push({
               name: parts[0],
-              type: entity.type === 'folder' ? 'directory' : 'file',
+              type: entity.type === 'folder' ? 'directory' : (entity.type === 'doc' ? 'doc' : 'file'),
               path: entityPath,
               id: entity.id ?? entity._id ?? domIdMap.get(parts[0]) ?? undefined
             });
@@ -199,7 +194,8 @@ export class ListDirTool extends BaseTool {
    * @param projectId 项目 ID
    */
   private async enrichWithStats(items: FileItem[], projectId: string): Promise<void> {
-    const fileItems = items.filter(item => item.type === 'file' && item.id);
+    // Overleaf 只有 doc 才能用 /doc/{id}/download 获取文本内容；二进制文件会 404
+    const fileItems = items.filter(item => item.type === 'doc' && item.id);
     
     // 并行获取所有文件的内容
     const statsPromises = fileItems.map(async (item) => {
@@ -256,5 +252,45 @@ export class ListDirTool extends BaseTool {
     }
 
     return map;
+  }
+
+  /**
+   * 将用户输入的相对路径规范化为 Overleaf 文件树可匹配的形式：
+   * - 空/`.`/`./` → `/`
+   * - 统一分隔符为 `/`
+   * - 去掉多余的 `./` 前缀与重复的 `/`
+   * - 确保以 `/` 开头（根目录为 `/`）
+   */
+  private normalizeRelativePath(input: string): string {
+    let p = (input ?? '').trim();
+    if (!p || p === '.' || p === './' || p === '.\\') {
+      return '/';
+    }
+
+    // 统一 Windows 风格分隔符
+    p = p.replace(/\\/g, '/');
+
+    // 去掉开头的 "./"（可能重复）
+    while (p.startsWith('./')) {
+      p = p.slice(2);
+    }
+
+    // 清理重复斜杠
+    p = p.replace(/\/+/g, '/');
+
+    // 特殊：如果最后变成空，仍视为根
+    if (!p) return '/';
+
+    // 确保以 / 开头
+    if (!p.startsWith('/')) {
+      p = `/${p}`;
+    }
+
+    // 规范化末尾：保留根目录的 "/"，其他去掉末尾 "/"
+    if (p.length > 1 && p.endsWith('/')) {
+      p = p.slice(0, -1);
+    }
+
+    return p;
   }
 }
