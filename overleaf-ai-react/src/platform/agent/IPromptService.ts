@@ -125,12 +125,14 @@ export interface IPromptService {
    * @param action - 操作类型 ('polish' | 'expand' | 'condense' | 'translate' | 'custom')
    * @param text - 用户选中的原始文本
    * @param customPrompt - 自定义提示词（仅当 action 为 'custom' 时使用）
+   * @param context - 上下文信息（用于提高翻译等操作的准确性）
    * @returns LLM 消息列表（包含 system 和 user 消息）
    */
   buildTextActionPrompt(
     action: TextActionType,
     text: string,
-    customPrompt?: string
+    customPrompt?: string,
+    context?: { before?: string; after?: string }
   ): LLMMessage[];
 }
 

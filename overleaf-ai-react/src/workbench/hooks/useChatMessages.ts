@@ -66,7 +66,17 @@ function mapServiceMessageToUI(
     // 如果有活跃的工具调用或有 thinking 内容，不需要显示占位符
     // 工具调用块会展示当前进度
     if (hasActiveToolCalls || thinkingContent) {
-      // 不添加空的主消息，让工具调用块显示进度
+      // ✅ 关键：仍然需要一个“锚点消息”（id = message.id），否则 Sidebar 无法挂载工具调用块
+      // 这个消息本身不展示正文，只用于承载 tool call 的 UI
+      if (hasActiveToolCalls) {
+        uiMessages.push({
+          id: message.id,
+          role,
+          content: '',
+          isHtml: false,
+          type: 'tool_status'
+        });
+      }
       return uiMessages;
     }
     // 根据是否已有流式数据来决定显示文本：

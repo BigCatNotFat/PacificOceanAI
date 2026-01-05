@@ -21,10 +21,17 @@ export type ChatMode = 'agent' | 'chat' | 'normal';
  * 上下文条目类型
  */
 export interface ContextItem {
-  type: 'file' | 'selection' | 'metadata';
+  type: 'file' | 'selection' | 'metadata' | 'reference';
   uri?: string;
   content?: string;
   metadata?: Record<string, any>;
+  /** 文件引用信息（仅当 type 为 'reference' 时使用） */
+  reference?: {
+    fileName: string;
+    startLine: number;
+    endLine: number;
+    originalText: string;
+  };
 }
 
 /**
@@ -37,6 +44,12 @@ export interface ChatOptions {
   mode: ChatMode;
   /** 选中的文件、代码片段、额外上下文（可选） */
   contextItems?: ContextItem[];
+  /**
+   * Agent Loop 最大迭代次数（防止连续工具调用导致死循环/资源耗尽）。
+   * - 一次迭代 ≈ 调用一次 LLM +（可选）执行工具 + 再进入下一轮
+   * - 达到上限后会自动结束本轮对话
+   */
+  maxIterations?: number;
   /** 会话 ID（可选，用于未来多会话支持） */
   conversationId?: string;
 }

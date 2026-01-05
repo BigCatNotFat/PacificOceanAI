@@ -150,6 +150,7 @@ export class AnthropicProvider extends BaseLLMProvider {
     // 累积完整内容
     let fullContent = '';
     let fullThinking = '';
+    // 使用 index 作为稳定 key：避免流式 chunk 缺失 id 时将同一 tool call 拆成两条
     const toolCallsMap = new Map<string, { id: string; name: string; args: string }>();
     
     let finishReason: LLMFinalMessage['finishReason'];
@@ -269,11 +270,11 @@ export class AnthropicProvider extends BaseLLMProvider {
             done: true
           });
         }
-        for (const [id] of toolCallsMap) {
+        for (const [, tc] of toolCallsMap) {
           this.uiStreamService.pushToolCall({
             conversationId,
             messageId,
-            toolCallId: id,
+            toolCallId: tc.id,
             phase: 'end'
           });
         }
@@ -291,11 +292,27 @@ export class AnthropicProvider extends BaseLLMProvider {
       }
 
       if (toolCallsMap.size > 0) {
-        result.toolCalls = Array.from(toolCallsMap.values()).map(tc => ({
-          id: tc.id,
-          name: tc.name,
-          arguments: tc.args ? JSON.parse(tc.args) : {}
-        }));
+        result.toolCalls = Array.from(toolCallsMap.values())
+          .filter(tc => typeof tc.name === 'string' && tc.name.trim().length > 0)
+          .map(tc => {
+            let parsedArgs: Record<string, any> = {};
+            if (tc.args) {
+              try {
+                parsedArgs = JSON.parse(tc.args);
+              } catch {
+                try {
+                  parsedArgs = JSON.parse(tc.args + '}');
+                } catch {
+                  parsedArgs = {};
+                }
+              }
+            }
+            return {
+              id: tc.id,
+              name: tc.name,
+              arguments: parsedArgs
+            };
+          });
       }
 
       return result;

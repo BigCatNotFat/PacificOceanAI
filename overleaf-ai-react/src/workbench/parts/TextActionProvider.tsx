@@ -63,9 +63,10 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
   
   // 创建 AI 调用处理器
   const createAIHandler = useCallback((action: TextActionType) => {
-    return async (_action: TextActionType, text: string, from: number, to: number, modelId?: string, customPrompt?: string): Promise<string | null> => {
+    return async (_action: TextActionType, text: string, from: number, to: number, modelId?: string, customPrompt?: string, context?: { before?: string; after?: string }): Promise<string | null> => {
       console.log(`[TextActionProvider] AI ${action} - 原文长度:`, text.length, '模型:', modelId, 
-        customPrompt ? '自定义:' + customPrompt.substring(0, 30) + '...' : '');
+        customPrompt ? '自定义:' + customPrompt.substring(0, 30) + '...' : '',
+        '上下文:', { before: context?.before?.length || 0, after: context?.after?.length || 0 });
       
       // 重置流式文本
       setStreamingText('');
@@ -114,6 +115,7 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
           text,
           modelId,
           customPrompt,  // 传递自定义提示词
+          context,       // 传递上下文信息（用于提高翻译等操作的准确性）
           onStream,
           onThinkingStream,
           abortSignal: abortControllerRef.current.signal

@@ -9,8 +9,13 @@
   },
   "dependencies": {
     "diff-match-patch": "^1.0.5",
+    "katex": "^0.16.27",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0",

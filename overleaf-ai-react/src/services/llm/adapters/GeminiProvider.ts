@@ -144,6 +144,7 @@ export class GeminiProvider extends BaseLLMProvider {
     // 累积完整内容
     let fullContent = '';
     let fullThinking = '';
+    // 使用 index 作为稳定 key：避免流式 chunk 缺失 id 时将同一 tool call 拆成两条
     const toolCallsMap = new Map<string, { id: string; name: string; args: string }>();
     
     let finishReason: LLMFinalMessage['finishReason'];
@@ -232,16 +233,19 @@ export class GeminiProvider extends BaseLLMProvider {
             const toolCallsDelta = (delta as any)?.tool_calls;
             if (Array.isArray(toolCallsDelta) && toolCallsDelta.length > 0) {
               for (const tcDelta of toolCallsDelta) {
-                const id = tcDelta.id || `tool_call_${tcDelta.index || 0}`;
+                const index = tcDelta.index ?? 0;
+                const stableKey = `tool_call_${index}`;
+                const apiId = tcDelta.id;
                 const name = tcDelta.function?.name;
                 const argsText = tcDelta.function?.arguments || '';
 
-                let existing = toolCallsMap.get(id);
+                let existing = toolCallsMap.get(stableKey);
                 if (!existing) {
-                  existing = { id, name: name || '', args: '' };
-                  toolCallsMap.set(id, existing);
+                  existing = { id: apiId || stableKey, name: name || '', args: '' };
+                  toolCallsMap.set(stableKey, existing);
                 }
 
+                if (apiId) existing.id = apiId;
                 if (name) existing.name = name;
                 existing.args += argsText;
 
@@ -249,7 +253,7 @@ export class GeminiProvider extends BaseLLMProvider {
                   this.uiStreamService.pushToolCall({
                     conversationId,
                     messageId,
-                    toolCallId: id,
+                    toolCallId: existing.id,
                     phase: 'args',
                     name: existing.name,
                     argsDelta: argsText
@@ -295,11 +299,11 @@ export class GeminiProvider extends BaseLLMProvider {
             done: true
           });
         }
-        for (const [id] of toolCallsMap) {
+        for (const [, tc] of toolCallsMap) {
           this.uiStreamService.pushToolCall({
             conversationId,
             messageId,
-            toolCallId: id,
+            toolCallId: tc.id,
             phase: 'end'
           });
         }
@@ -317,11 +321,27 @@ export class GeminiProvider extends BaseLLMProvider {
       }
 
       if (toolCallsMap.size > 0) {
-        result.toolCalls = Array.from(toolCallsMap.values()).map(tc => ({
-          id: tc.id,
-          name: tc.name,
-          arguments: tc.args ? JSON.parse(tc.args) : {}
-        }));
+        result.toolCalls = Array.from(toolCallsMap.values())
+          .filter(tc => typeof tc.name === 'string' && tc.name.trim().length > 0)
+          .map(tc => {
+            let parsedArgs: Record<string, any> = {};
+            if (tc.args) {
+              try {
+                parsedArgs = JSON.parse(tc.args);
+              } catch {
+                try {
+                  parsedArgs = JSON.parse(tc.args + '}');
+                } catch {
+                  parsedArgs = {};
+                }
+              }
+            }
+            return {
+              id: tc.id,
+              name: tc.name,
+              arguments: parsedArgs
+            };
+          });
       }
 
       return result;

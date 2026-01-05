@@ -2075,3 +2075,397 @@
   font-size: 11px;
   color: var(--text-tertiary);
 }
+
+/* ============================================
+   Markdown 渲染样式
+   ============================================ */
+
+/* Markdown 内容容器 */
+.markdown-content {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* 标题样式 */
+.markdown-content h1 {
+  font-size: 1.5em;
+  font-weight: 600;
+  margin: 16px 0 8px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.markdown-content h2 {
+  font-size: 1.3em;
+  font-weight: 600;
+  margin: 14px 0 8px 0;
+  color: var(--text-primary);
+}
+
+.markdown-content h3 {
+  font-size: 1.15em;
+  font-weight: 600;
+  margin: 12px 0 6px 0;
+  color: var(--text-primary);
+}
+
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  font-size: 1em;
+  font-weight: 600;
+  margin: 10px 0 4px 0;
+  color: var(--text-primary);
+}
+
+/* 段落样式 */
+.markdown-content p {
+  margin: 8px 0;
+}
+
+.markdown-content p:first-child {
+  margin-top: 0;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* 强调样式 */
+.markdown-content strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.markdown-content em {
+  font-style: italic;
+}
+
+.markdown-content del {
+  text-decoration: line-through;
+  color: var(--text-tertiary);
+}
+
+/* 链接样式 */
+.markdown-content a {
+  color: var(--accent-primary);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+
+.markdown-content a:hover {
+  border-bottom-color: var(--accent-primary);
+}
+
+/* 列表样式 */
+.markdown-content ul,
+.markdown-content ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.markdown-content li {
+  margin: 4px 0;
+}
+
+.markdown-content li > p {
+  margin: 2px 0;
+}
+
+.markdown-content ul {
+  list-style-type: disc;
+}
+
+.markdown-content ol {
+  list-style-type: decimal;
+}
+
+.markdown-content ul ul,
+.markdown-content ol ul {
+  list-style-type: circle;
+}
+
+.markdown-content ul ul ul,
+.markdown-content ol ul ul {
+  list-style-type: square;
+}
+
+/* 任务列表 */
+.markdown-content input[type="checkbox"] {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+/* 引用样式 */
+.markdown-blockquote {
+  margin: 12px 0;
+  padding: 8px 16px;
+  background-color: var(--bg-secondary);
+  border-left: 3px solid var(--accent-primary);
+  border-radius: 0 6px 6px 0;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.markdown-blockquote p {
+  margin: 4px 0;
+}
+
+/* 行内代码样式 */
+.markdown-content .inline-code {
+  background-color: rgba(0, 150, 136, 0.15);
+  color: var(--accent-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.9em;
+  word-break: break-word;
+}
+
+/* 代码块容器 */
+.code-block-wrapper {
+  margin: 12px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: #1e1e1e;
+  border: 1px solid var(--border-color);
+}
+
+/* 代码块头部 */
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background-color: #2d2d2d;
+  border-bottom: 1px solid #404040;
+}
+
+.code-language {
+  font-size: 11px;
+  font-weight: 500;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* 代码块内容 */
+.code-block {
+  margin: 0;
+  padding: 12px 16px;
+  overflow-x: auto;
+  background-color: #1e1e1e;
+}
+
+.code-block code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #d4d4d4;
+  white-space: pre;
+  tab-size: 2;
+}
+
+/* 表格样式 */
+.table-wrapper {
+  margin: 12px 0;
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.markdown-content th,
+.markdown-content td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.markdown-content th {
+  background-color: var(--bg-secondary);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.markdown-content tr:hover {
+  background-color: var(--bg-secondary);
+}
+
+.markdown-content tr:last-child td {
+  border-bottom: none;
+}
+
+/* 图片样式 */
+.markdown-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 12px 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 水平分割线 */
+.markdown-content hr {
+  margin: 20px 0;
+  border: none;
+  border-top: 1px solid var(--border-color);
+}
+
+/* ============================================
+   KaTeX 数学公式样式
+   ============================================ */
+
+/* 行内公式 */
+.markdown-content .katex {
+  font-size: 1em;
+}
+
+/* 块级公式 */
+.markdown-content .katex-display {
+  margin: 16px 0;
+  padding: 16px;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.markdown-content .katex-display > .katex {
+  font-size: 1.1em;
+}
+
+/* KaTeX 错误样式 */
+.markdown-content .katex-error {
+  color: #ef4444;
+  font-size: 0.9em;
+  background-color: rgba(239, 68, 68, 0.1);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+/* 确保公式不会溢出 */
+.markdown-content .katex-html {
+  white-space: nowrap;
+}
+
+/* 调整 thinking 区域内的 markdown */
+.ai-thinking-content .markdown-content {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.ai-thinking-content .markdown-content h1,
+.ai-thinking-content .markdown-content h2,
+.ai-thinking-content .markdown-content h3 {
+  font-size: 1.1em;
+  color: var(--text-secondary);
+}
+
+/* 工具结果中的 markdown */
+.ai-tool-content .markdown-content {
+  font-size: 13px;
+}
+
+/* ============================================
+   富文本输入框 & 文件引用标签
+   ============================================ */
+
+.ai-rich-input {
+  flex: 1;
+  min-height: 24px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.ai-rich-input:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-secondary);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.ai-rich-input:focus {
+  outline: none;
+}
+
+.ai-rich-input[aria-disabled="true"] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 文件引用标签样式 */
+.ai-file-reference {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  margin: 0 2px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #fff;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  vertical-align: middle;
+  cursor: default;
+  user-select: none;
+  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3);
+  transition: all 0.15s ease;
+}
+
+.ai-file-reference:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+}
+
+.ai-file-reference .ai-ref-icon {
+  font-size: 10px;
+  opacity: 0.9;
+}
+
+.ai-file-reference .ai-ref-text {
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  letter-spacing: -0.3px;
+}
+
+/* 深色模式下的引用标签 */
+@media (prefers-color-scheme: dark) {
+  .ai-file-reference {
+    background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+    box-shadow: 0 1px 3px rgba(79, 70, 229, 0.4);
+  }
+  
+  .ai-file-reference:hover {
+    background: linear-gradient(135deg, #4338ca 0%, #3730a3 100%);
+    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.5);
+  }
+}
+
+/* 聊天历史中的引用标签（内联样式） */
+.ai-file-reference-inline {
+  display: inline-flex;
+  vertical-align: baseline;
+  margin: 0 2px;
+  transform: translateY(2px);
+}

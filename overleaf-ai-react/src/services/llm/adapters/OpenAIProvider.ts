@@ -126,6 +126,8 @@ export class OpenAIProvider extends BaseLLMProvider {
     // 累积完整内容
     let fullContent = '';
     let fullThinking = '';
+    // 使用 index 作为稳定 key：流式传输中 id 可能只在第一个 chunk 出现
+    // 如果用 id 作为 key，后续 chunk 缺失 id 会导致同一个 tool call 被拆成两条（name/args 分裂）
     const toolCallsMap = new Map<string, { id: string; name: string; args: string }>();
     
     let finishReason: LLMFinalMessage['finishReason'];
@@ -193,16 +195,20 @@ export class OpenAIProvider extends BaseLLMProvider {
             const toolCallsDelta = (delta as any)?.tool_calls;
             if (Array.isArray(toolCallsDelta) && toolCallsDelta.length > 0) {
               for (const tcDelta of toolCallsDelta) {
-                const id = tcDelta.id || `tool_call_${tcDelta.index || 0}`;
+                const index = tcDelta.index ?? 0;
+                const stableKey = `tool_call_${index}`;
+                const apiId = tcDelta.id;
                 const name = tcDelta.function?.name;
                 const argsText = tcDelta.function?.arguments || '';
 
-                let existing = toolCallsMap.get(id);
+                let existing = toolCallsMap.get(stableKey);
                 if (!existing) {
-                  existing = { id, name: name || '', args: '' };
-                  toolCallsMap.set(id, existing);
+                  existing = { id: apiId || stableKey, name: name || '', args: '' };
+                  toolCallsMap.set(stableKey, existing);
                 }
 
+                // 更新 id（第一个 chunk 通常包含真实 id）
+                if (apiId) existing.id = apiId;
                 if (name) existing.name = name;
                 existing.args += argsText;
 
@@ -210,7 +216,7 @@ export class OpenAIProvider extends BaseLLMProvider {
                   this.uiStreamService.pushToolCall({
                     conversationId,
                     messageId,
-                    toolCallId: id,
+                    toolCallId: existing.id,
                     phase: 'args',
                     name: existing.name,
                     argsDelta: argsText
@@ -256,11 +262,11 @@ export class OpenAIProvider extends BaseLLMProvider {
             done: true
           });
         }
-        for (const [id] of toolCallsMap) {
+        for (const [, tc] of toolCallsMap) {
           this.uiStreamService.pushToolCall({
             conversationId,
             messageId,
-            toolCallId: id,
+            toolCallId: tc.id,
             phase: 'end'
           });
         }
@@ -278,11 +284,29 @@ export class OpenAIProvider extends BaseLLMProvider {
       }
 
       if (toolCallsMap.size > 0) {
-        result.toolCalls = Array.from(toolCallsMap.values()).map(tc => ({
-          id: tc.id,
-          name: tc.name,
-          arguments: tc.args ? JSON.parse(tc.args) : {}
-        }));
+        result.toolCalls = Array.from(toolCallsMap.values())
+          // 防御：过滤掉缺失 name 的 tool call，否则下一轮回传会触发 400
+          .filter(tc => typeof tc.name === 'string' && tc.name.trim().length > 0)
+          .map(tc => {
+            let parsedArgs: Record<string, any> = {};
+            if (tc.args) {
+              try {
+                parsedArgs = JSON.parse(tc.args);
+              } catch {
+                // 常见情况：JSON 被截断（缺少末尾 }）
+                try {
+                  parsedArgs = JSON.parse(tc.args + '}');
+                } catch {
+                  parsedArgs = {};
+                }
+              }
+            }
+            return {
+              id: tc.id,
+              name: tc.name,
+              arguments: parsedArgs
+            };
+          });
       }
 
       return result;

@@ -22,27 +22,40 @@ import { diffMatchPatchService } from '../utils/DiffMatchPatchService';
 export class EditFileTool extends BaseTool {
   protected metadata: ToolMetadata = {
     name: 'edit_file',
-    description: `Use this tool to propose an edit to an existing file.
+    description: `Use this tool to edit an existing LaTeX file.
 
-This will be read by a less intelligent model, which will quickly apply the edit. You should make it clear what the edit is, while also minimizing the unchanged latex you write.
-When writing the edit, you should specify each edit in sequence, with the special comment \`// ... existing latex codes...\` to represent unchanged latex codes in between edited lines.
+**CRITICAL**: The \`latex_edit\` parameter must contain the MODIFIED/NEW content, NOT the original unchanged text. The system locates where to apply changes using anchor lines.
 
-For example:
+**How it works**:
+1. Include 1-2 lines of UNCHANGED original text at the START as anchor (must exist verbatim in original)
+2. Include your MODIFIED/NEW content 
+3. Include 1-2 lines of UNCHANGED original text at the END as anchor (must exist verbatim in original)
+4. Use \`// ... existing latex codes...\` to skip large unchanged sections
 
+**Example**: To change "This is old text" to "This is NEW text":
+
+Original file content:
+\`\`\`
+\\section{Title}
+This is old text
+\\section{Next}
+\`\`\`
+
+Your latex_edit should be:
 \`\`\`
 // ... existing latex codes...
-FIRST_EDIT
-// ... existing latex codes...
-SECOND_EDIT
-// ... existing latex codes...
-THIRD_EDIT
+\\section{Title}
+This is NEW text
+\\section{Next}
 // ... existing latex codes...
 \`\`\`
 
-You should still bias towards repeating as few lines of the original file as possible to convey the change.
-But, each edit should contain sufficient context of unchanged lines around the latex you're editing to resolve ambiguity.
-DO NOT omit spans of pre-existing latex (or comments) without using the \`// ... existing latex ...\` comment to indicate its absence. If you omit the existing latex comment, the model may inadvertently delete these lines.
-Make sure it is clear what the edit should be, and where it should be applied.
+**Key Rules**:
+- FIRST non-placeholder line = start anchor (MUST exist in original file)
+- LAST non-placeholder line = end anchor (MUST exist in original file)
+- Content between anchors gets REPLACED with your edit
+- When modifying text, keep surrounding unchanged lines as anchors
+- NEVER pass unchanged original text without modifications - that causes "no changes" error
 
 You should specify the following arguments before the others: [target_file]`,
     parameters: {
@@ -50,15 +63,15 @@ You should specify the following arguments before the others: [target_file]`,
       properties: {
         target_file: {
           type: 'string',
-          description: 'The target file to modify. Always specify the target file as the first argument. You can use either a relative path in the workspace or an absolute path. If an absolute path is provided, it will be preserved as is.'
+          description: 'The target file to modify. Always specify the target file as the first argument.'
         },
         instructions: {
           type: 'string',
-          description: "A single sentence instruction describing what you are going to do for the sketched edit. This is used to assist the less intelligent model in applying the edit. Please use the first person to describe what you are going to do. Dont repeat what you have said previously in normal messages. And use it to disambiguate uncertainty in the edit."
+          description: "A single sentence describing what change you are making. Use first person (e.g., 'I am changing X to Y')."
         },
         latex_edit: {
           type: 'string',
-          description: 'Specify ONLY the precise lines of latex that you wish to edit. **NEVER specify or write out unchanged latex**. Instead, represent all unchanged latex using the comment of the language you\'re editing in - example: `// ... existing latex ...`'
+          description: 'The MODIFIED content with anchors. Structure: (1) `// ... existing latex codes...`, (2) 1-2 unchanged lines as START anchor, (3) your NEW/MODIFIED content, (4) 1-2 unchanged lines as END anchor, (5) `// ... existing latex codes...`. Anchors must match original file exactly. The middle content is what replaces the original.'
         }
       },
       required: ['target_file', 'instructions', 'latex_edit']

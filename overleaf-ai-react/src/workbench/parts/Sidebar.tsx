@@ -9,11 +9,14 @@ import { useService } from '../hooks/useService';
 import { IConfigurationServiceId } from '../../platform/configuration/configuration';
 import type { IConfigurationService, AIModelConfig } from '../../platform/configuration/configuration';
 import { IChatServiceId } from '../../platform/agent/IChatService';
-import type { IChatService } from '../../platform/agent/IChatService';
+import type { IChatService, ContextItem } from '../../platform/agent/IChatService';
 import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
 import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
 import { overleafEditor } from '../../services/editor/OverleafEditor';
 import { ToolResultRenderer } from './ToolResultRenderer';
+import { MarkdownRenderer } from './MarkdownRenderer';
+import RichTextInput, { RichTextInputHandle } from './RichTextInput';
+import 'katex/dist/katex.min.css';
 
 type SidebarProps = {
   isOpen: boolean;
@@ -25,7 +28,7 @@ type SidebarProps = {
 
 // 扩展消息类型以支持更多UI元素
 interface ExtendedChatMessage extends ChatMessage {
-  type?: 'normal' | 'action' | 'thinking' | 'tool' | 'error' | 'warning';
+  type?: 'normal' | 'action' | 'thinking' | 'tool' | 'tool_status' | 'error' | 'warning';
   metadata?: {
     thinkingTime?: number;
     actionIcon?: string;
@@ -35,13 +38,134 @@ interface ExtendedChatMessage extends ChatMessage {
   };
 }
 
+function truncateForPreview(text: string, maxChars: number = 1400): string {
+  if (!text) return '';
+  if (text.length <= maxChars) return text;
+  const head = Math.floor(maxChars * 0.65);
+  const tail = Math.floor(maxChars * 0.25);
+  return (
+    text.slice(0, head) +
+    `\n\n... ✂️ 中间省略 ${(text.length - head - tail).toLocaleString()} 字符 ...\n\n` +
+    text.slice(text.length - tail)
+  );
+}
+
+function safeJsonParse(str: string): any | null {
+  try {
+    return JSON.parse(str);
+  } catch {
+    return null;
+  }
+}
+
+function extractStringField(raw: string, field: string): string | undefined {
+  // Best-effort extraction for streaming / incomplete JSON:
+  //   "field": "value"
+  const re = new RegExp(`"${field}"\\s*:\\s*"([^"]*)"`, 'm');
+  const m = raw.match(re);
+  return m?.[1];
+}
+
+function summarizeLongText(text: string | undefined, maxPreview: number = 160): { preview: string; length: number } | null {
+  if (!text) return null;
+  if (text.length <= maxPreview) return { preview: text, length: text.length };
+  const head = Math.floor(maxPreview * 0.6);
+  const tail = Math.floor(maxPreview * 0.25);
+  return {
+    preview: text.slice(0, head) + ' ... ' + text.slice(text.length - tail),
+    length: text.length
+  };
+}
+
+const ToolArgsPreview: React.FC<{ toolName?: string; args: string }> = ({ toolName, args }) => {
+  const normalized = (toolName || '').toLowerCase().replace(/[_-]/g, '');
+  const parsed = safeJsonParse(args);
+
+  // Prefer parsed object if available (args may be complete JSON), otherwise best-effort regex extraction.
+  const getStr = (key: string): string | undefined =>
+    parsed && typeof parsed === 'object' && parsed[key] != null ? String(parsed[key]) : extractStringField(args, key);
+
+  const targetFile = getStr('target_file') || getStr('file') || getStr('path');
+
+  // Special-case: edit_file style args
+  if (normalized.includes('editfile')) {
+    const oldStr = getStr('old_string');
+    const newStr = getStr('new_string');
+    const instructions = getStr('instructions');
+    const oldSum = summarizeLongText(oldStr);
+    const newSum = summarizeLongText(newStr);
+    const insSum = summarizeLongText(instructions);
+
+    return (
+      <div className="tool-result-default">
+        <div className="tool-result-header">
+          <span className="material-symbols">edit_document</span>
+          <span>{targetFile || '编辑文件'}</span>
+          <span className="tool-result-count">{args.length.toLocaleString()} 字符</span>
+        </div>
+
+        {insSum && (
+          <div className="tool-result-instructions">
+            <span className="material-symbols">info</span>
+            <span>instructions（{insSum.length.toLocaleString()} 字符）：{insSum.preview}</span>
+          </div>
+        )}
+
+        {(oldSum || newSum) && (
+          <div className="tool-result-file-info">
+            {oldSum && (
+              <span className="info-item">
+                <span className="material-symbols">content_copy</span>
+                old（{oldSum.length.toLocaleString()}）
+              </span>
+            )}
+            {newSum && (
+              <span className="info-item">
+                <span className="material-symbols">content_paste</span>
+                new（{newSum.length.toLocaleString()}）
+              </span>
+            )}
+          </div>
+        )}
+
+        <details>
+          <summary className="tool-result-message">查看原始参数（截断）</summary>
+          <pre className="tool-result-raw">{truncateForPreview(args, 1800)}</pre>
+        </details>
+      </div>
+    );
+  }
+
+  // Generic preview for other tools
+  const query = getStr('query') || getStr('search_term') || getStr('pattern');
+  return (
+    <div className="tool-result-default">
+      <div className="tool-result-header">
+        <span className="material-symbols">terminal</span>
+        <span>{toolName || '工具参数'}</span>
+        <span className="tool-result-count">{args.length.toLocaleString()} 字符</span>
+      </div>
+      {(targetFile || query) && (
+        <div className="tool-result-message">
+          {targetFile && <div>目标：{targetFile}</div>}
+          {query && <div>查询：{query}</div>}
+        </div>
+      )}
+      <details>
+        <summary className="tool-result-message">查看原始参数（截断）</summary>
+        <pre className="tool-result-raw">{truncateForPreview(args, 1800)}</pre>
+      </details>
+    </div>
+  );
+};
+
 const initialMessages: ExtendedChatMessage[] = [];
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onWidthChange }) => {
   const sidebarRef = useRef<HTMLDivElement | null>(null);
   const handleRef = useRef<HTMLDivElement | null>(null);
   const chatHistoryRef = useRef<HTMLDivElement | null>(null);
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const inputRef = useRef<RichTextInputHandle | null>(null);
   const lastInputRef = useRef<string>('');
   const { messages } = useChatMessages(initialMessages);
   const configService = useService<IConfigurationService>(IConfigurationServiceId);
@@ -181,7 +305,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   }, [messages]);
 
   const sendMessage = useCallback(async () => {
-    const value = inputRef.current?.value?.trim() ?? '';
+    const { text, references } = inputRef.current?.getValueWithReferences() ?? { text: '', references: [] };
+    const value = text.trim();
     if (!value) return;
     
     // 检查 API Key
@@ -190,12 +315,22 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
       return;
     }
 
-    lastInputRef.current = value;
+    // 处理消息中的引用占位符，替换为可读的引用标记
+    let finalMessage = value;
+    if (references.length > 0) {
+      references.forEach((ref, index) => {
+        const placeholder = `{{REF_${index}}}`;
+        const refMarker = ref.startLine === ref.endLine
+          ? `[${ref.fileName}:第${ref.startLine}行]`
+          : `[${ref.fileName}:第${ref.startLine}-${ref.endLine}行]`;
+        finalMessage = finalMessage.replace(placeholder, refMarker);
+      });
+    }
+
+    lastInputRef.current = finalMessage;
 
     // 清空输入框
-    if (inputRef.current) {
-      inputRef.current.value = '';
-    }
+    inputRef.current?.clear();
 
     // 🔧 确保在发送消息前有当前对话
     // 如果没有当前对话，先创建一个
@@ -206,19 +341,27 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
       conversationId = await createConversation();
     }
 
-    // TODO: 从 UI 收集上下文条目
-    // - 用户选中的文件
-    // - 用户选中的代码片段
-    // - 其他附加信息
-    const contextItems = [];
+    // 构建上下文条目
+    // 将引用转换为 ContextItem（reference 类型）
+    const contextItems: ContextItem[] = references.map(ref => ({
+      type: 'reference' as const,
+      reference: {
+        fileName: ref.fileName,
+        startLine: ref.startLine,
+        endLine: ref.endLine,
+        originalText: ref.originalText
+      }
+    }));
 
     // 调用 ChatService 发送消息
     setIsGenerating(true);
     try {
-      await chatService.sendMessage(value, {
+      await chatService.sendMessage(finalMessage, {
         mode: chatMode,
         modelId: selectedModel,
         contextItems,
+        // agent 模式更容易出现连续工具调用链，给一个更宽松的默认上限，避免过早“对话完成”
+        maxIterations: chatMode === 'agent' ? 25 : 10,
         conversationId
       });
     } catch (error) {
@@ -230,14 +373,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const stopGeneration = useCallback(() => {
     chatService.abort();
     setIsGenerating(false);
-    const currentValue = inputRef.current?.value ?? '';
+    const currentValue = inputRef.current?.getValue() ?? '';
     if (!currentValue.trim() && lastInputRef.current && inputRef.current) {
-      inputRef.current.value = lastInputRef.current;
+      inputRef.current.setValue(lastInputRef.current);
     }
   }, [chatService]);
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (e.key === 'Enter' && !e.shiftKey && !isGenerating) {
         e.preventDefault();
         sendMessage();
@@ -316,6 +459,48 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
       }
       return part;
     });
+  };
+
+  // 渲染用户消息内容（包含引用标签）
+  // 匹配格式: [文件名:第X行] 或 [文件名:第X-Y行]
+  const renderUserMessageContent = (text: string) => {
+    // 正则匹配引用标记: [xxx.tex:第15行] 或 [xxx.tex:第15-20行]
+    const refPattern = /\[([^:]+):第(\d+)(?:-(\d+))?行\]/g;
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = refPattern.exec(text)) !== null) {
+      // 添加匹配前的文本
+      if (match.index > lastIndex) {
+        parts.push(text.slice(lastIndex, match.index));
+      }
+
+      // 提取引用信息
+      const fileName = match[1];
+      const startLine = match[2];
+      const endLine = match[3];
+      const displayText = endLine 
+        ? `${fileName}:L${startLine}-${endLine}`
+        : `${fileName}:L${startLine}`;
+
+      // 渲染引用标签
+      parts.push(
+        <span key={match.index} className="ai-file-reference ai-file-reference-inline">
+          <span className="ai-ref-icon">📄</span>
+          <span className="ai-ref-text">{displayText}</span>
+        </span>
+      );
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    // 添加剩余的文本
+    if (lastIndex < text.length) {
+      parts.push(text.slice(lastIndex));
+    }
+
+    return parts.length > 0 ? parts : text;
   };
 
   const hasModels = availableModels.length > 0;
@@ -633,7 +818,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                   className="ai-welcome-action"
                   onClick={() => {
                     if (inputRef.current) {
-                      inputRef.current.value = '帮我优化这段文字的学术表达';
+                      inputRef.current.setValue('帮我优化这段文字的学术表达');
                       inputRef.current.focus();
                     }
                   }}
@@ -645,7 +830,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                   className="ai-welcome-action"
                   onClick={() => {
                     if (inputRef.current) {
-                      inputRef.current.value = '检查并修正 LaTeX 语法错误';
+                      inputRef.current.setValue('检查并修正 LaTeX 语法错误');
                       inputRef.current.focus();
                     }
                   }}
@@ -657,7 +842,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                   className="ai-welcome-action"
                   onClick={() => {
                     if (inputRef.current) {
-                      inputRef.current.value = '帮我写一个数学公式';
+                      inputRef.current.setValue('帮我写一个数学公式');
                       inputRef.current.focus();
                     }
                   }}
@@ -669,7 +854,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                   className="ai-welcome-action"
                   onClick={() => {
                     if (inputRef.current) {
-                      inputRef.current.value = '为这个表格添加标题和注释';
+                      inputRef.current.setValue('为这个表格添加标题和注释');
                       inputRef.current.focus();
                     }
                   }}
@@ -712,7 +897,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
               return (
                 <div key={msg.id} className="ai-message-block">
                   <div className="ai-message ai-user">
-                    {renderInlineCode(msg.content)}
+                    {renderUserMessageContent(msg.content)}
                   </div>
                 </div>
               );
@@ -731,15 +916,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                   // 判断是否是临时状态消息（不应显示复制按钮）
                   const isTemporaryMessage = msg.content === '正在发送...' || msg.content === '正在思考...';
                   // 只有在不是临时状态且不在生成中时才显示复制按钮
-                  const shouldShowCopyButton = !isTemporaryMessage && !isGenerating;
+                  const shouldShowCopyButton =
+                    !isTemporaryMessage && !isGenerating && msg.content.trim().length > 0;
                   
                   return (
                     <div className="ai-message ai-bot">
                       <div className="ai-bot-content">
                         {msg.isHtml ? (
                           <div dangerouslySetInnerHTML={{ __html: msg.content }} />
-                        ) : (
+                        ) : isTemporaryMessage ? (
                           renderInlineCode(msg.content)
+                        ) : (
+                          <MarkdownRenderer content={msg.content} />
                         )}
                       </div>
                       {shouldShowCopyButton && (
@@ -804,7 +992,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                       </div>
                       {isExpanded && (
                         <div className="ai-thinking-content">
-                          {renderInlineCode(msg.content)}
+                          <MarkdownRenderer content={msg.content} />
                         </div>
                       )}
                     </div>
@@ -854,7 +1042,10 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                   
                   return visibleTools.map(([toolCallId, toolCall]) => {
                     const toolMsgId = `${msg.id}:${toolCallId}`;
-                    const canExpand = toolCall.status === 'completed' || toolCall.status === 'error';
+                    const canExpand =
+                      toolCall.status === 'completed' ||
+                      toolCall.status === 'error' ||
+                      toolCall.status === 'running';
                     const isExpanded = canExpand && !!thinkingStates[toolMsgId];
 
                     // 状态标签
@@ -909,12 +1100,25 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
                             </span>
                           )}
                         </div>
-                        {canExpand && isExpanded && rawDetail && (
+                        {canExpand && isExpanded && (
                           <div className="ai-tool-content">
-                            <ToolResultRenderer 
-                              toolName={toolCall.name} 
-                              result={toolCall.result} 
-                            />
+                            {toolCall.status === 'running' ? (
+                              toolCall.args ? (
+                                <ToolArgsPreview toolName={toolCall.name} args={toolCall.args} />
+                              ) : (
+                                <div className="tool-result-empty">正在生成工具参数...</div>
+                              )
+                            ) : toolCall.status === 'error' ? (
+                              <ToolResultRenderer
+                                toolName={toolCall.name}
+                                result={toolCall.result || toolCall.error}
+                              />
+                            ) : (
+                              <ToolResultRenderer
+                                toolName={toolCall.name}
+                                result={toolCall.result}
+                              />
+                            )}
                           </div>
                         )}
                       </div>
@@ -943,12 +1147,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
 
         <div className="ai-input-area">
           <div className="ai-input-wrapper">
-            <textarea
+            <RichTextInput
+              ref={inputRef}
               className="ai-input"
               placeholder={isGenerating ? "正在生成..." : "Ask anything (Ctrl+L)"}
-              ref={inputRef}
               onKeyDown={handleKeyDown}
-              rows={1}
               disabled={isGenerating}
             />
           </div>

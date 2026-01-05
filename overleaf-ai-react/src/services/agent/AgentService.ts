@@ -189,6 +189,7 @@ export class AgentService implements IAgentService {
   private async executeLoop(context: LoopContext): Promise<void> {
     try {
       const maxIterations = context.options.maxIterations || 10;
+      const requestedMaxIterations = maxIterations;
 
       while (context.iteration < maxIterations && !context.aborted) {
         // console.log(`[AgentService] Loop ${context.loopId} 第 ${context.iteration + 1} 轮迭代`);
@@ -295,7 +296,12 @@ export class AgentService implements IAgentService {
         }
         
         if (finalResult.toolCalls) {
-          assistantMessage.toolCalls = finalResult.toolCalls.map((tc: any) => ({
+          // 防御：过滤掉无效的工具调用（例如 name 为空）。
+          // 否则下一轮 PromptService 会把它写入 messages[].tool_calls 回传给 API，触发 400。
+          const validToolCalls = finalResult.toolCalls.filter((tc: any) =>
+            typeof tc?.name === 'string' && tc.name.trim().length > 0
+          );
+          assistantMessage.toolCalls = validToolCalls.map((tc: any) => ({
             id: tc.id,
             name: tc.name,
             arguments: tc.arguments,
@@ -326,6 +332,19 @@ export class AgentService implements IAgentService {
         }
 
         context.iteration++;
+      }
+
+      // 如果是因为达到最大迭代次数而退出（常见于连续工具调用链），给用户一个明确提示，
+      // 避免看起来“突然对话完成但没解释/没收尾”。
+      if (!context.aborted && context.iteration >= requestedMaxIterations) {
+        const limitMessage = this.createMessage(
+          'assistant',
+          `已达到最大迭代次数（${requestedMaxIterations}）。为避免连续工具调用导致死循环/资源耗尽，我已停止本轮自动执行。` +
+            `\n\n你可以：\n- 继续追问“继续/下一步”，我会在新一轮对话里接着做\n- 或在调用 sendMessage 时提高 maxIterations（谨慎增大）`
+        );
+        limitMessage.status = 'completed';
+        context.messages.push(limitMessage);
+        context.onUpdateEmitter.fire([...context.messages]);
       }
 
       // Loop 完成

@@ -116,6 +116,10 @@ export interface TextActionRequest {
   modelId?: string;
   /** 自定义提示词（仅当 action 为 'custom' 时使用） */
   customPrompt?: string;
+  /** 选区前的上下文（用于提高翻译等操作的准确性） */
+  contextBefore?: string;
+  /** 选区后的上下文（用于提高翻译等操作的准确性） */
+  contextAfter?: string;
 }
 
 /** 文本操作结果 */

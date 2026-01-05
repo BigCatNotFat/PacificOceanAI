@@ -606,16 +606,39 @@ const methodHandlers = {
     return {
       totalLines: doc.lines,
       totalLength: doc.length,
-      // 尝试获取当前文件名（从 breadcrumbs）
+      // 尝试获取当前文件名
       fileName: (function() {
         try {
+          // 方法1：优先从 Overleaf store 获取（最可靠）
+          var store = window.overleaf?.unstable?.store;
+          if (store) {
+            var docName = store.get('editor.open_doc_name');
+            if (docName) {
+              return docName;
+            }
+          }
+          
+          // 方法2：从 breadcrumbs 获取
           var breadcrumb = document.querySelector('.ol-cm-breadcrumbs, .breadcrumbs');
           if (breadcrumb) {
             var nameElement = breadcrumb.querySelector('div:last-child');
-            return nameElement ? nameElement.textContent.trim() : null;
+            if (nameElement && nameElement.textContent) {
+              return nameElement.textContent.trim();
+            }
           }
+          
+          // 方法3：从文件树选中项获取
+          var selectedItem = document.querySelector('li[role="treeitem"].selected, li[role="treeitem"][aria-selected="true"]');
+          if (selectedItem) {
+            var label = selectedItem.getAttribute('aria-label');
+            if (label) {
+              return label;
+            }
+          }
+          
           return null;
         } catch (e) {
+          console.error('[getFileInfo] 获取文件名失败:', e);
           return null;
         }
       })()
@@ -1314,6 +1337,63 @@ function getCurrentSelection() {
 }
 
 /**
+ * 获取选区前后的上下文内容
+ * @param {Object} view EditorView 实例
+ * @param {number} from 选区起始位置
+ * @param {number} to 选区结束位置
+ * @param {number} contextLines 上下文行数（默认5行）
+ * @returns {{ contextBefore: string, contextAfter: string }}
+ */
+function getSelectionContext(view, from, to, contextLines = 5) {
+  try {
+    const doc = view.state.doc;
+    
+    // 获取选区起始位置的行号
+    const startLine = doc.lineAt(from);
+    // 获取选区结束位置的行号
+    const endLine = doc.lineAt(to);
+    
+    // 计算上下文的行范围
+    const contextStartLineNum = Math.max(1, startLine.number - contextLines);
+    const contextEndLineNum = Math.min(doc.lines, endLine.number + contextLines);
+    
+    // 获取选区前的上下文
+    let contextBefore = '';
+    if (contextStartLineNum < startLine.number) {
+      const beforeStartPos = doc.line(contextStartLineNum).from;
+      const beforeEndPos = startLine.from; // 选区开始行的起始位置
+      contextBefore = doc.sliceString(beforeStartPos, beforeEndPos);
+      // 去掉末尾的换行符
+      contextBefore = contextBefore.replace(/\n$/, '');
+    }
+    
+    // 获取选区后的上下文
+    let contextAfter = '';
+    if (contextEndLineNum > endLine.number) {
+      const afterStartPos = endLine.to + 1; // 选区结束行的下一个位置
+      const afterEndPos = doc.line(contextEndLineNum).to;
+      if (afterStartPos <= afterEndPos) {
+        contextAfter = doc.sliceString(afterStartPos, afterEndPos);
+      }
+    }
+    
+    console.log('[OverleafBridge] Context extracted:', {
+      startLine: startLine.number,
+      endLine: endLine.number,
+      contextStartLine: contextStartLineNum,
+      contextEndLine: contextEndLineNum,
+      contextBeforeLength: contextBefore.length,
+      contextAfterLength: contextAfter.length
+    });
+    
+    return { contextBefore, contextAfter };
+  } catch (e) {
+    console.error('[OverleafBridge] Failed to get selection context:', e);
+    return { contextBefore: '', contextAfter: '' };
+  }
+}
+
+/**
  * 处理文本操作请求（扩写/缩写/润色等）
  * @param {string} actionType 操作类型
  */
@@ -1338,6 +1418,16 @@ function handleTextActionRequest(actionType) {
   const selectedModel = getSelectedTextActionModel();
   console.log('[OverleafBridge] Text action requested:', actionType, 'model:', selectedModel, 'text:', preview);
   
+  // 获取选区上下文（用于提高翻译等操作的准确性）
+  let contextBefore = '';
+  let contextAfter = '';
+  const view = getEditorView();
+  if (view) {
+    const context = getSelectionContext(view, currentSelection.from, currentSelection.to);
+    contextBefore = context.contextBefore;
+    contextAfter = context.contextAfter;
+  }
+  
   // 发送操作请求到 content script
   window.postMessage({
     type: 'OVERLEAF_TEXT_ACTION_REQUEST',
@@ -1346,7 +1436,9 @@ function handleTextActionRequest(actionType) {
       text: currentSelection.text,
       from: currentSelection.from,
       to: currentSelection.to,
-      modelId: selectedModel  // 添加选中的模型 ID
+      modelId: selectedModel,  // 添加选中的模型 ID
+      contextBefore: contextBefore,  // 选区前的上下文
+      contextAfter: contextAfter     // 选区后的上下文
     }
   }, '*');
   

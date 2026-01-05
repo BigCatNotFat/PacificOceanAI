@@ -97,22 +97,31 @@ export class PromptService implements IPromptService {
       content: systemPrompt
     });
 
-    // 2. 添加上下文信息（如果提供）
+    // 2. 格式化上下文信息（稍后会合并到最后一条用户消息中）
+    let contextText = '';
     if (context && context.length > 0) {
-      const contextText = await this.formatContext(context, 10000); // 限制上下文最大 10k tokens
-      if (contextText) {
-        messages.push({
-          role: 'user',
-          content: `<context>\n${contextText}\n</context>`
-        });
-      }
+      contextText = await this.formatContext(context, 10000); // 限制上下文最大 10k tokens
     }
 
     // 3. 转换历史消息
     const llmHistory = this.convertHistoryToLLMMessages(history, options.includeThinking);
+    
+    // 4. 将上下文合并到最后一条用户消息中（而不是作为单独的消息）
+    // 这样可以避免两个连续的 user 消息，并且语义更连贯
+    if (contextText && llmHistory.length > 0) {
+      // 找到最后一条用户消息
+      for (let i = llmHistory.length - 1; i >= 0; i--) {
+        if (llmHistory[i].role === 'user') {
+          // 将 context 前置到用户消息中
+          llmHistory[i].content = `<context>\n${contextText}\n</context>\n\n${llmHistory[i].content}`;
+          break;
+        }
+      }
+    }
+    
     messages.push(...llmHistory);
 
-    // 4. 截断超长历史（保留最近的消息）
+    // 5. 截断超长历史（保留最近的消息）
     const truncatedMessages = this.truncateMessages(messages, 100000); // 假设最大 100k tokens
 
     return truncatedMessages;
@@ -185,6 +194,21 @@ Current time: ${timestamp}
             parts.push(`Metadata: ${JSON.stringify(item.metadata, null, 2)}`);
           }
           break;
+        
+        case 'reference':
+          // 文件引用：用户在对话框中粘贴的文件内容片段
+          if (item.reference) {
+            const { fileName, startLine, endLine, originalText } = item.reference;
+            const lineRange = startLine === endLine 
+              ? `line ${startLine}` 
+              : `lines ${startLine}-${endLine}`;
+            parts.push(
+              `<file_reference file="${fileName}" ${lineRange}>\n` +
+              `${originalText}\n` +
+              `</file_reference>`
+            );
+          }
+          break;
       }
     }
 
@@ -204,20 +228,26 @@ Current time: ${timestamp}
    * @param action - 操作类型 ('polish' | 'expand' | 'condense' | 'translate' | 'custom')
    * @param text - 用户选中的原始文本
    * @param customPrompt - 自定义提示词（仅当 action 为 'custom' 时使用）
+   * @param context - 上下文信息（用于提高翻译等操作的准确性）
    * @returns LLM 消息列表（包含 system 和 user 消息）
    */
-  buildTextActionPrompt(action: TextActionType, text: string, customPrompt?: string): LLMMessage[] {
+  buildTextActionPrompt(
+    action: TextActionType, 
+    text: string, 
+    customPrompt?: string,
+    context?: { before?: string; after?: string }
+  ): LLMMessage[] {
     const messages: LLMMessage[] = [];
 
     // 获取对应操作的 System Prompt
-    const systemPrompt = this.getTextActionSystemPrompt(action, customPrompt);
+    const systemPrompt = this.getTextActionSystemPrompt(action, customPrompt, context);
     messages.push({
       role: 'system',
       content: systemPrompt
     });
 
     // 构建 User 消息
-    const userPrompt = this.getTextActionUserPrompt(action, text, customPrompt);
+    const userPrompt = this.getTextActionUserPrompt(action, text, customPrompt, context);
     messages.push({
       role: 'user',
       content: userPrompt
@@ -233,7 +263,11 @@ Current time: ${timestamp}
   /**
    * 获取文本操作的 System Prompt
    */
-  private getTextActionSystemPrompt(action: TextActionType, customPrompt?: string): string {
+  private getTextActionSystemPrompt(
+    action: TextActionType, 
+    customPrompt?: string,
+    context?: { before?: string; after?: string }
+  ): string {
     // 自定义操作使用通用的 system prompt
     if (action === 'custom') {
       return `You are a professional academic writing assistant specializing in LaTeX document editing.
@@ -332,12 +366,18 @@ Your task is to TRANSLATE the given Chinese text into English while maintaining 
 7. Ensure technical terms are translated accurately using standard academic terminology
 8. Do NOT add explanations or comments - only output the translated text
 9. If the text is already in English or contains mixed languages, translate only the Chinese portions
+10. **CONTEXT AWARENESS:** When context is provided (text before/after the selection), use it to:
+    - Understand the topic and domain of the document
+    - Maintain consistency with terminology used in surrounding text
+    - Correctly translate pronouns and references that depend on context
+    - Match the writing style and tone of the surrounding content
 
 **Important:**
 - Output ONLY the translated text, nothing else
 - Do NOT wrap the output in code blocks or quotes
 - Do NOT include phrases like "Here is the translation" or similar
-- Preserve the exact formatting and structure of the original text`
+- Preserve the exact formatting and structure of the original text
+- Only translate the content within <text_to_translate> tags, NOT the context`
     };
 
     return prompts[action as Exclude<TextActionType, 'custom'>];
@@ -346,7 +386,12 @@ Your task is to TRANSLATE the given Chinese text into English while maintaining 
   /**
    * 获取文本操作的 User Prompt
    */
-  private getTextActionUserPrompt(action: TextActionType, text: string, customPrompt?: string): string {
+  private getTextActionUserPrompt(
+    action: TextActionType, 
+    text: string, 
+    customPrompt?: string,
+    context?: { before?: string; after?: string }
+  ): string {
     // 自定义操作使用用户的自定义提示词
     if (action === 'custom' && customPrompt) {
       // 如果没有选中文本（插入模式），不需要包含 <text> 标签
@@ -369,6 +414,37 @@ ${text}
       condense: 'Condense the following text to be more concise:',
       translate: 'Translate the following Chinese text into English:'
     };
+
+    // 对于翻译操作，添加上下文信息
+    if (action === 'translate' && context && (context.before || context.after)) {
+      let prompt = actionDescriptions.translate + '\n\n';
+      
+      if (context.before) {
+        prompt += `<context_before>
+${context.before}
+</context_before>
+
+`;
+      }
+      
+      prompt += `<text_to_translate>
+${text}
+</text_to_translate>`;
+      
+      if (context.after) {
+        prompt += `
+
+<context_after>
+${context.after}
+</context_after>`;
+      }
+      
+      prompt += `
+
+**Remember:** Only translate the content within <text_to_translate> tags. Use the context to understand the topic and maintain consistency, but do NOT include any context in your output.`;
+      
+      return prompt;
+    }
 
     return `${actionDescriptions[action as Exclude<TextActionType, 'custom'>]}
 
@@ -400,7 +476,8 @@ You have tools at your disposal to solve the writing task. Follow these rules re
    - Questions you can answer from your knowledge without needing project context
    - When the user hasn't explicitly asked you to do anything with files
 5. **Do NOT proactively explore or read files unless the user explicitly asks for it or the task clearly requires file operations.**
-6. Before calling each tool, first explain to the USER why you are calling it.
+6. **When you decide a tool call is needed, call the tool immediately (do not send a separate natural-language "I'll call a tool" message).**
+7. If the tool schema includes an \`explanation\` field, put your one-sentence rationale there. Do NOT mention tool names in user-facing text.
 </tool_calling>
 
 <making_latex_changes>
@@ -419,6 +496,27 @@ You have tools to search the paperbase and read files. Follow these rules regard
 2. If you need to read a file, prefer to read larger sections of the file at once over multiple smaller calls.
 3. If you have found a reasonable place to edit or answer, do not continue calling tools. Edit or answer from the information you have found.
 </searching_and_reading>
+
+<file_references>
+When the user's message contains a <context> block with <file_reference> tags, this represents ACTUAL content from the user's project files that they have explicitly selected and pasted.
+
+**CRITICAL: You MUST treat <file_reference> content as ground truth:**
+1. The content inside <file_reference> is the EXACT, VERBATIM content from the specified file at the specified line(s)
+2. The file attribute contains the REAL filename (e.g., "main.tex", "chapter1.tex")
+3. The line attribute(s) indicate the EXACT line number(s) in the file
+4. Do NOT question or verify the accuracy of this content - it comes directly from the user's editor
+5. When the user refers to "[filename:第X行]" or similar notation in their query, they are referencing the content provided in <file_reference>
+6. You can directly work with this content without needing to use read_file or other tools to verify it
+
+Example:
+<context>
+<file_reference file="main.tex" line 15>
+To configure the document language, simply edit the option provided to the babel package.
+</file_reference>
+</context>
+
+When the user says "优化 [main.tex:第15行]", you should directly work with the content "To configure the document language..." without any verification.
+</file_references>
 `;
 
     // 添加工具列表
@@ -457,8 +555,9 @@ You have read-only tools at your disposal to help analyze the writing task. Foll
 2. The conversation may reference tools that are no longer available. NEVER call tools that are not explicitly provided.
 3. **NEVER refer to tool names when speaking to the USER.** For example, instead of saying 'I need to use the read_file tool', just say 'Let me read that file'.
 4. Only call tools when they are necessary. If the USER's task is general or you already know the answer, just respond without calling tools.
-5. Before calling each tool, briefly explain to the USER what you're checking or analyzing.
-6. Focus on providing helpful insights and suggestions rather than attempting to make changes.
+5. **When you decide a tool call is needed, call the tool immediately (do not send a separate natural-language "I'll check X" message).**
+6. If the tool schema includes an \`explanation\` field, put your one-sentence rationale there. Do NOT mention tool names in user-facing text.
+7. Focus on providing helpful insights and suggestions rather than attempting to make changes.
 </tool_calling>
 
 <searching_and_reading>
@@ -467,6 +566,18 @@ You have tools to search the paperbase and read files. Follow these rules regard
 2. If you need to read a file, prefer to read larger sections of the file at once over multiple smaller calls.
 3. If you have found a reasonable place to edit or answer, do not continue calling tools. Edit or answer from the information you have found.
 </searching_and_reading>
+
+<file_references>
+When the user's message contains a <context> block with <file_reference> tags, this represents ACTUAL content from the user's project files that they have explicitly selected and pasted.
+
+**CRITICAL: You MUST treat <file_reference> content as ground truth:**
+1. The content inside <file_reference> is the EXACT, VERBATIM content from the specified file at the specified line(s)
+2. The file attribute contains the REAL filename (e.g., "main.tex", "chapter1.tex")
+3. The line attribute(s) indicate the EXACT line number(s) in the file
+4. Do NOT question or verify the accuracy of this content - it comes directly from the user's editor
+5. When the user refers to "[filename:第X行]" or similar notation in their query, they are referencing the content provided in <file_reference>
+6. You can directly work with this content without needing to use read_file or other tools to verify it
+</file_references>
 `;
 
     // 添加只读工具列表
