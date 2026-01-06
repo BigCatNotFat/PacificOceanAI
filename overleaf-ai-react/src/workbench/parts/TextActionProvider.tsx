@@ -24,6 +24,8 @@ import { useService } from '../hooks/useService';
 import type { TextActionType } from '../../services/editor/bridge';
 import type { ITextActionAIService } from '../../platform/agent/ITextActionAIService';
 import { ITextActionAIServiceId } from '../../services/agent/TextActionAIService';
+import { IConfigurationServiceId } from '../../platform/configuration/configuration';
+import type { IConfigurationService } from '../../platform/configuration/configuration';
 
 interface TextActionProviderProps {
   children: React.ReactNode;
@@ -43,6 +45,7 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
   
   // 获取 TextActionAI 服务
   const textActionAIService = useService<ITextActionAIService>(ITextActionAIServiceId);
+  const configService = useService<IConfigurationService>(IConfigurationServiceId);
   
   // 使用 ref 保存服务实例，避免在 useEffect 中引起重新注册
   const serviceRef = useRef(textActionAIService);
@@ -50,6 +53,52 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
 
   // 用于中断请求的 AbortController
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // ============ 激活状态同步到注入脚本 ============
+  
+  // 发送激活状态到注入脚本
+  const sendActivationStatus = useCallback(async () => {
+    const config = await configService.getAPIConfig();
+    // 只有当 apiKey 存在且已验证时才认为已激活
+    const isActivated = !!(config && config.apiKey && config.isVerified);
+    
+    window.postMessage({
+      type: 'OVERLEAF_ACTIVATION_STATUS_UPDATE',
+      data: { isActivated }
+    }, '*');
+    
+    console.log('[TextActionProvider] Sent activation status:', isActivated, '(apiKey:', !!config?.apiKey, 'isVerified:', !!config?.isVerified, ')');
+  }, [configService]);
+
+  // 初始化时和配置变化时同步激活状态
+  useEffect(() => {
+    // 初始同步
+    sendActivationStatus();
+    
+    // 监听激活状态请求
+    const handleActivationStatusRequest = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      if (event.data?.type === 'OVERLEAF_REQUEST_ACTIVATION_STATUS') {
+        sendActivationStatus();
+      }
+    };
+    
+    // 监听显示激活模态框请求（来自注入脚本）
+    const handleShowActivationModal = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      if (event.data?.type === 'OVERLEAF_SHOW_ACTIVATION_MODAL') {
+        window.dispatchEvent(new CustomEvent('SHOW_ACTIVATION_MODAL'));
+      }
+    };
+    
+    window.addEventListener('message', handleActivationStatusRequest);
+    window.addEventListener('message', handleShowActivationModal);
+    
+    return () => {
+      window.removeEventListener('message', handleActivationStatusRequest);
+      window.removeEventListener('message', handleShowActivationModal);
+    };
+  }, [sendActivationStatus]);
   
   // 思考内容滚动区域的 ref - 用于实现从底部向上滚动的效果
   const thinkingScrollRef = useRef<HTMLDivElement>(null);
@@ -64,6 +113,14 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
   // 创建 AI 调用处理器
   const createAIHandler = useCallback((action: TextActionType) => {
     return async (_action: TextActionType, text: string, from: number, to: number, modelId?: string, customPrompt?: string, context?: { before?: string; after?: string }): Promise<string | null> => {
+      // 检查 API Key 和验证状态
+      const config = await configService.getAPIConfig();
+      if (!config || !config.apiKey || !config.isVerified) {
+        console.warn('[TextActionProvider] 未配置或未验证 API Key，请求用户激活');
+        window.dispatchEvent(new CustomEvent('SHOW_ACTIVATION_MODAL'));
+        return null;
+      }
+
       console.log(`[TextActionProvider] AI ${action} - 原文长度:`, text.length, '模型:', modelId, 
         customPrompt ? '自定义:' + customPrompt.substring(0, 30) + '...' : '',
         '上下文:', { before: context?.before?.length || 0, after: context?.after?.length || 0 });

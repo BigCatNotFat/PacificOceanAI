@@ -1,12 +1,12 @@
 {
   "../../../../../../../../../@crx/manifest": {
-    "file": "assets/crx-manifest.js-DEo-YzsJ.js",
+    "file": "assets/crx-manifest.js-C7Hki14P.js",
     "name": "crx-manifest.js",
     "src": "../../../../../../../../../@crx/manifest",
     "isEntry": true
   },
-  "_StorageService-CnFXTPEB.js": {
-    "file": "assets/StorageService-CnFXTPEB.js",
+  "_StorageService-CZysl31p.js": {
+    "file": "assets/StorageService-CZysl31p.js",
     "name": "StorageService",
     "imports": [
       "_client-CLze4-QF.js"
@@ -21,7 +21,7 @@
     "name": "modulepreload-polyfill"
   },
   "main.tsx-loader.js": {
-    "file": "assets/main.tsx-loader-i1QsXdzN.js",
+    "file": "assets/main.tsx-loader-vGLuXk3k.js",
     "src": "main.tsx-loader.js"
   },
   "node_modules/katex/dist/fonts/KaTeX_AMS-Regular.ttf": {
@@ -261,13 +261,13 @@
     "src": "node_modules/katex/dist/fonts/KaTeX_Typewriter-Regular.woff2"
   },
   "src/extension/content/main.tsx": {
-    "file": "assets/main.tsx-D7uaQcpD.js",
+    "file": "assets/main.tsx-2mkTVQLq.js",
     "name": "main.tsx",
     "src": "src/extension/content/main.tsx",
     "isEntry": true,
     "imports": [
       "_client-CLze4-QF.js",
-      "_StorageService-CnFXTPEB.js"
+      "_StorageService-CZysl31p.js"
     ],
     "css": [
       "assets/main-CVUXB31x.css"
@@ -335,14 +335,14 @@
     ]
   },
   "src/extension/options/index.html": {
-    "file": "assets/index.html-_bls9R-5.js",
+    "file": "assets/index.html-uFeqSeab.js",
     "name": "index.html",
     "src": "src/extension/options/index.html",
     "isEntry": true,
     "imports": [
       "_modulepreload-polyfill-B5Qt9EMX.js",
       "_client-CLze4-QF.js",
-      "_StorageService-CnFXTPEB.js"
+      "_StorageService-CZysl31p.js"
     ]
   },
   "src/extension/popup/index.html": {

@@ -291,7 +291,8 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
     if (!value) return;
     
     if (!hasApiKey) {
-      console.error('[ConversationPane] 未配置 API Key，无法发送消息');
+      console.warn('[ConversationPane] 未配置 API Key，请求用户激活');
+      window.dispatchEvent(new CustomEvent('SHOW_ACTIVATION_MODAL'));
       return;
     }
 

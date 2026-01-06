@@ -72,6 +72,14 @@ const OptionsApp: React.FC = () => {
       await configService.setAPIConfig(apiConfig);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+      
+      // 同步激活状态到注入脚本（根据 isVerified 字段）
+      const isActivated = !!(apiConfig.apiKey && apiConfig.isVerified);
+      window.postMessage({
+        type: 'OVERLEAF_ACTIVATION_STATUS_UPDATE',
+        data: { isActivated }
+      }, '*');
+      console.log('[OptionsApp] Config saved, activation status:', isActivated);
     } catch (error) {
       console.error('Failed to save API config:', error);
       alert('保存失败：' + (error instanceof Error ? error.message : String(error)));
@@ -164,12 +172,20 @@ const OptionsApp: React.FC = () => {
           if (updatedConfig) {
             updatedConfig.apiKey = currentApiKey;
             updatedConfig.baseUrl = currentBaseUrl;
+            updatedConfig.isVerified = true;  // 测试成功，标记为已验证
             setApiConfig(updatedConfig);
             
             console.log('[测试连通性] 最终状态:', updatedConfig.models.map(m => `${m.id} (${m.enabled ? '启用' : '禁用'})`));
             
             // 5. 自动保存 API 配置（包含 API Key 和 Base URL）
             await configService.setAPIConfig(updatedConfig);
+            
+            // 同步激活状态到注入脚本
+            window.postMessage({
+              type: 'OVERLEAF_ACTIVATION_STATUS_UPDATE',
+              data: { isActivated: true }
+            }, '*');
+            console.log('[OptionsApp] Test successful, sent activation status update');
           }
         }
         
@@ -365,28 +381,18 @@ const OptionsApp: React.FC = () => {
               <>
                 <div style={styles.settingRow}>
                   <div style={styles.settingInfo}>
-                    <div style={styles.settingName}>API Key</div>
-                    <div style={styles.settingDescription}>配置 AI 服务的访问密钥</div>
+                    <div style={styles.settingName}>启动码</div>
+                    <div style={styles.settingDescription}>请输入获取的启动码以使用 AI 服务（修改后需重新测试）</div>
                   </div>
                   <input
                     type="password"
                     value={apiConfig.apiKey}
-                    onChange={(e) => setApiConfig({ ...apiConfig, apiKey: e.target.value })}
-                    placeholder="请输入你的 API Key"
-                    style={styles.textInput}
-                  />
-                </div>
-
-                <div style={styles.settingRow}>
-                  <div style={styles.settingInfo}>
-                    <div style={styles.settingName}>Base URL</div>
-                    <div style={styles.settingDescription}>API 服务的基础 URL（支持自定义兼容 OpenAI 接口的服务）</div>
-                  </div>
-                  <input
-                    type="text"
-                    value={apiConfig.baseUrl}
-                    onChange={(e) => setApiConfig({ ...apiConfig, baseUrl: e.target.value })}
-                    placeholder="https://api.openai.com/v1"
+                    onChange={(e) => setApiConfig({ 
+                      ...apiConfig, 
+                      apiKey: e.target.value,
+                      isVerified: false  // 修改后需要重新验证
+                    })}
+                    placeholder="请输入启动码"
                     style={styles.textInput}
                   />
                 </div>

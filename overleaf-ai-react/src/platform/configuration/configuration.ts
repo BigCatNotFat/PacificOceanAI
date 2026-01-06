@@ -24,6 +24,8 @@ export interface APIConfig {
   baseUrl: string;
   /** 自定义模型列表 */
   models: AIModelConfig[];
+  /** API Key 是否已验证 */
+  isVerified?: boolean;
   /** 创建时间 */
   createdAt?: number;
   /** 更新时间 */

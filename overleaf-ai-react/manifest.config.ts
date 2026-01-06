@@ -43,7 +43,9 @@ export default defineManifest({
     {
       resources: [
         'src/workbench/styles/sidebar.css',
-        'injected/overleafBridge.js'
+        'injected/overleafBridge.js',
+        'src/extension/options/index.html',
+        'images/*'
       ],
       matches: [
         'https://www.overleaf.com/*',

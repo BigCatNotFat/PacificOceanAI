@@ -54,8 +54,9 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
   getDefaultConfig(): APIConfig {
     return {
       apiKey: '',
-      baseUrl: 'https://api.openai.com/v1',
+      baseUrl: 'https://api.silicondream.top/v1',
       models: [],
+      isVerified: false,
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
@@ -74,7 +75,11 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
         return this.getDefaultConfig();
       }
       
-      return config;
+      // 强制使用固定的 Base URL
+      return {
+        ...config,
+        baseUrl: 'https://api.silicondream.top/v1'
+      };
     } catch (error) {
       console.error('[ConfigurationService] Failed to get API config:', error);
       return this.getDefaultConfig();
