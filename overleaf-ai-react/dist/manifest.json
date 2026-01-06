@@ -19,7 +19,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/main.tsx-loader-CjR-lIQv.js"
+        "assets/main.tsx-loader-DdzLYpzy.js"
       ],
       "matches": [
         "https://www.overleaf.com/*",
@@ -28,7 +28,7 @@
       ],
       "run_at": "document_idle",
       "css": [
-        "assets/main-BNsE-vmV.css"
+        "assets/main-CVUXB31x.css"
       ]
     }
   ],
@@ -103,7 +103,7 @@
         "assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf",
         "assets/client-CLze4-QF.js",
         "assets/StorageService-CnFXTPEB.js",
-        "assets/main.tsx-CkxUyBFa.js"
+        "assets/main.tsx-DZLLpbCP.js"
       ],
       "use_dynamic_url": false
     }

@@ -2469,3 +2469,274 @@
   margin: 0 2px;
   transform: translateY(2px);
 }
+
+/* ==================== 多列布局样式 ==================== */
+
+/* 全局 Header（显示 Logo 和列数控制） */
+.ai-header-global {
+  border-bottom: 1px solid var(--border-primary);
+  background-color: var(--bg-secondary);
+}
+
+.ai-header-global .ai-header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.ai-header-global .ai-header-title .material-symbols {
+  font-size: 18px;
+  color: var(--accent-primary);
+}
+
+/* 多列容器 */
+.multi-pane-container {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* 单个对话面板 */
+.conversation-pane {
+  flex: 1;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-primary);
+  overflow: hidden;
+}
+
+.conversation-pane:not(:first-child) {
+  border-left: 1px solid var(--border-primary);
+}
+
+/* 紧凑模式（多列时使用） */
+.conversation-pane.compact .ai-welcome-header h2 {
+  font-size: 14px;
+}
+
+.conversation-pane.compact .ai-welcome-header p {
+  font-size: 12px;
+}
+
+.conversation-pane.compact .ai-welcome-logo {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 8px;
+}
+
+.conversation-pane.compact .ai-welcome-logo .material-symbols {
+  font-size: 20px;
+}
+
+.conversation-pane.compact .ai-input-area {
+  padding: 8px;
+}
+
+.conversation-pane.compact .ai-input-wrapper {
+  padding: 8px;
+}
+
+.conversation-pane.compact .ai-chat-history {
+  padding: 8px;
+}
+
+/* Pane Header */
+.ai-pane-header {
+  height: 36px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--bg-primary);
+  flex-shrink: 0;
+}
+
+.ai-pane-header-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.ai-pane-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.ai-pane-header .ai-conversation-trigger {
+  padding: 4px 8px;
+  max-width: 160px;
+}
+
+.ai-pane-header .ai-conversation-title {
+  font-size: 12px;
+}
+
+/* 列间分隔条 */
+.pane-divider {
+  width: 4px;
+  background-color: var(--border-primary);
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background-color 0.2s;
+}
+
+.pane-divider:hover {
+  background-color: var(--accent-primary);
+}
+
+/* 列数选择器 */
+.ai-column-selector {
+  position: relative;
+}
+
+.ai-column-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  background-color: var(--accent-primary);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 列数选择下拉菜单 */
+.ai-column-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 1000;
+  min-width: 160px;
+  overflow: hidden;
+}
+
+.ai-column-dropdown-header {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ai-column-dropdown-options {
+  padding: 6px;
+}
+
+.ai-column-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  text-align: left;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.ai-column-option:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.ai-column-option.active {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: var(--accent-primary);
+}
+
+.ai-column-option .material-symbols {
+  font-size: 18px;
+  color: var(--text-tertiary);
+}
+
+.ai-column-option.active .material-symbols {
+  color: var(--accent-primary);
+}
+
+.ai-column-check {
+  margin-left: auto;
+  font-size: 16px;
+}
+
+.ai-column-dropdown-footer {
+  padding: 6px;
+  border-top: 1px solid var(--border-secondary);
+}
+
+.ai-column-add-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background-color: var(--accent-primary);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.ai-column-add-btn:hover {
+  background-color: var(--accent-hover);
+}
+
+.ai-column-add-btn .material-symbols {
+  font-size: 16px;
+}
+
+/* 紧凑欢迎界面 */
+.ai-welcome-compact {
+  padding: 16px;
+}
+
+.ai-welcome-compact .ai-welcome-header {
+  margin-bottom: 16px;
+  padding-top: 16px;
+}
+
+.ai-welcome-logo-small {
+  width: 48px !important;
+  height: 48px !important;
+  margin-bottom: 12px !important;
+}
+
+.ai-welcome-logo-small .material-symbols {
+  font-size: 24px !important;
+}
+
+/* 多列时隐藏欢迎界面的快捷操作 */
+.conversation-pane.compact .ai-welcome-actions,
+.conversation-pane.compact .ai-welcome-history {
+  display: none;
+}

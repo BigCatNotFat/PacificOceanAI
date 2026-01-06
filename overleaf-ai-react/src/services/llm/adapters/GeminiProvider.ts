@@ -11,8 +11,8 @@
  * 
  * Gemini 特性：
  * - 使用 OpenAI 兼容接口
- * - 支持思考过程（通过 <thought> 标签）
- * - 需要特殊处理 thinking_config
+ * - 支持思考过程（Gemini thinking + thought summaries）
+ * - 需要特殊处理 thinking_config / thought_signature
  */
 
 import type { LLMMessage, LLMConfig, LLMFinalMessage } from '../../../platform/llm/ILLMService';
@@ -112,7 +112,7 @@ export class GeminiProvider extends BaseLLMProvider {
 
     // 🔑 Gemini 特定参数：启用思考过程输出
     // 如果模型支持推理能力，自动启用 thinking_config
-    // 这样可以获得类似 DeepSeek 的 <thought> 标签包裹的思考过程
+    // 官方：include_thoughts 会让响应中包含 thought summaries（在 parts 上打 thought 标记）
     if (modelInfo?.capabilities?.supportsReasoning) {
       payload.extra_body = {
         google: {
@@ -142,9 +142,11 @@ export class GeminiProvider extends BaseLLMProvider {
   /**
    * 解析流式响应（内部方法）
    * 
-   * Gemini 特殊处理：
-   * - 检测 <thought> 标签并将其内容标记为 thinking 类型
-   * - 过滤掉标签本身，只保留内容
+   * Gemini 思考/回复拆分规则（参考 OpenAI 兼容流式网关）：
+   * - `delta.reasoning_content` -> 思考内容（thinking）
+   * - `delta.content` -> 根据 `delta.extra_content.google.thought` 判定：
+   *   - truthy（true/1/"true"）-> 思考内容（thinking）
+   *   - 否则 -> 最终回复（content）
    */
   private async parseStreamResponse(
     response: Response,
@@ -171,16 +173,14 @@ export class GeminiProvider extends BaseLLMProvider {
     let finishReason: LLMFinalMessage['finishReason'];
     let usage: LLMFinalMessage['usage'];
     
-    // Gemini 特殊状态：解析 <thought>...</thought>（可能跨 chunk、也可能与正文混在同 chunk）
-    const THOUGHT_OPEN = '<thought>';
-    const THOUGHT_CLOSE = '</thought>';
-    const tailKeep = Math.max(THOUGHT_OPEN.length, THOUGHT_CLOSE.length) - 1;
-    let thoughtParseBuffer = '';
-    let isInThought = false;
     // 可开关 debug：localStorage.setItem('overleaf_ai_debug_gemini_stream','1')
     const debugGeminiStream =
       typeof localStorage !== 'undefined' &&
       localStorage.getItem('overleaf_ai_debug_gemini_stream') === '1';
+    // 输出完整原始文本（包含 <thought> 标签）：localStorage.setItem('overleaf_ai_debug_gemini_stream_text','1')
+    const debugGeminiStreamText =
+      typeof localStorage !== 'undefined' &&
+      localStorage.getItem('overleaf_ai_debug_gemini_stream_text') === '1';
     let debugDeltaCount = 0;
     // 自动诊断：缓存少量原始 SSE data，便于定位“开头缺字/思考缺失”
     const rawSseSamples: Array<{
@@ -196,17 +196,27 @@ export class GeminiProvider extends BaseLLMProvider {
       if (rawSseSamples.length < 30) rawSseSamples.push(sample);
     };
 
+    // 兼容：部分上游会用 <thought>...</thought> 包裹思考内容，这里统一剥离标签，避免渲染到 UI。
+    const stripThoughtTags = (text: string): string => {
+      if (!text) return '';
+      return text.replace(/<\/?thought\b[^>]*>/gi, '');
+    };
+
     try {
       let buffer = '';
 
       const emitThinking = (text: string) => {
         if (!text) return;
-        fullThinking += text;
+        const nextText = stripThoughtTags(text);
+        if (!nextText) return;
+        // 轻量去重：避免同一段 thinking 被重复写入（常见于 reasoning_content 与 thought summary 重叠）
+        if (fullThinking.endsWith(nextText)) return;
+        fullThinking += nextText;
         if (this.uiStreamService && messageId) {
           this.uiStreamService.pushThinking({
             conversationId,
             messageId,
-            delta: text
+            delta: nextText
           });
         }
       };
@@ -215,7 +225,8 @@ export class GeminiProvider extends BaseLLMProvider {
         if (!text) return;
         // 防御：有些网关/模型会把首段 content 以 ", " 开头（看起来像“被截断”）
         // 这里仅在“正文尚未开始”时做一次非常保守的清洗。
-        let nextText = text;
+        let nextText = stripThoughtTags(text);
+        if (!nextText) return;
         if (!fullContent) {
           nextText = nextText.replace(/^\s*[，,]\s+/, '');
         }
@@ -228,61 +239,6 @@ export class GeminiProvider extends BaseLLMProvider {
             messageId,
             delta: nextText
           });
-        }
-      };
-
-      const indexOfIgnoreCase = (haystack: string, needle: string): number => {
-        return haystack.toLowerCase().indexOf(needle.toLowerCase());
-      };
-
-      const processTextWithThoughtTags = (raw: string, forceThinking: boolean) => {
-        if (!raw) return;
-
-        // 某些兼容层可能用独立字段标注 thought（无需再解析标签）
-        if (forceThinking) {
-          emitThinking(raw);
-          return;
-        }
-
-        thoughtParseBuffer += raw;
-
-        while (true) {
-          if (!isInThought) {
-            const i = indexOfIgnoreCase(thoughtParseBuffer, THOUGHT_OPEN);
-            if (i === -1) {
-              // 没有完整 open tag：输出除尾巴外的内容，避免标签被切碎导致误判
-              const flushLen = thoughtParseBuffer.length - tailKeep;
-              if (flushLen > 0) {
-                emitContent(thoughtParseBuffer.slice(0, flushLen));
-                thoughtParseBuffer = thoughtParseBuffer.slice(flushLen);
-              }
-              break;
-            }
-
-            // 输出 tag 前的内容（正文）
-            const before = thoughtParseBuffer.slice(0, i);
-            if (before) emitContent(before);
-
-            thoughtParseBuffer = thoughtParseBuffer.slice(i + THOUGHT_OPEN.length);
-            isInThought = true;
-          } else {
-            const j = indexOfIgnoreCase(thoughtParseBuffer, THOUGHT_CLOSE);
-            if (j === -1) {
-              // thought 未闭合：持续输出除尾巴外内容
-              const flushLen = thoughtParseBuffer.length - tailKeep;
-              if (flushLen > 0) {
-                emitThinking(thoughtParseBuffer.slice(0, flushLen));
-                thoughtParseBuffer = thoughtParseBuffer.slice(flushLen);
-              }
-              break;
-            }
-
-            const thoughtText = thoughtParseBuffer.slice(0, j);
-            if (thoughtText) emitThinking(thoughtText);
-
-            thoughtParseBuffer = thoughtParseBuffer.slice(j + THOUGHT_CLOSE.length);
-            isInThought = false;
-          }
         }
       };
 
@@ -310,11 +266,12 @@ export class GeminiProvider extends BaseLLMProvider {
             const delta = choice.delta;
 
             // Debug：抓前若干个 delta 的形状，方便定位 thought 字段实际在哪里
+            let debugN: number | null = null;
             if (debugGeminiStream && debugDeltaCount < 20) {
-              debugDeltaCount++;
+              debugN = ++debugDeltaCount;
               const extraGoogle = (delta as any)?.extra_content?.google;
               console.log('[GeminiProvider][debug] delta snapshot', {
-                n: debugDeltaCount,
+                n: debugN,
                 deltaKeys: delta ? Object.keys(delta) : [],
                 finish_reason: choice.finish_reason,
                 hasContent: typeof (delta as any)?.content === 'string' && (delta as any).content.length > 0,
@@ -341,42 +298,46 @@ export class GeminiProvider extends BaseLLMProvider {
               });
             }
 
-            // 处理推理内容（兼容：有的 OpenAI 兼容层使用 reasoning_content 字段）
-            const reasoningDelta = (delta as any)?.reasoning_content;
-            if (reasoningDelta) {
-              processTextWithThoughtTags(String(reasoningDelta), true);
+            // 1) reasoning_content -> 思考（thinking）
+            const reasoningDeltaRaw = (delta as any)?.reasoning_content;
+            if (debugGeminiStreamText && reasoningDeltaRaw != null && reasoningDeltaRaw !== '') {
+              console.log('[GeminiProvider][debug][raw] reasoning_content', reasoningDeltaRaw);
+            }
+            const reasoningDelta =
+              typeof reasoningDeltaRaw === 'string'
+                ? stripThoughtTags(reasoningDeltaRaw)
+                : reasoningDeltaRaw != null && reasoningDeltaRaw !== ''
+                  ? stripThoughtTags(String(reasoningDeltaRaw))
+                  : '';
+            const hasReasoningDelta = reasoningDelta.length > 0;
+            if (hasReasoningDelta) {
+              emitThinking(reasoningDelta);
             }
 
-            // 处理内容（Gemini 可能通过 <thought> 标签输出思考过程）
-            if (delta?.content) {
-              const text = String(delta.content);
+            // 2) content -> 根据 extra_content.google.thought 判定是思考还是最终回复
+            const contentRaw = (delta as any)?.content;
+            if (!hasReasoningDelta && typeof contentRaw === 'string' && contentRaw) {
+              if (debugGeminiStreamText) {
+                console.log('[GeminiProvider][debug][raw] content', contentRaw);
+              }
+              const thoughtFlag = (delta as any)?.extra_content?.google?.thought;
+              const isThought =
+                thoughtFlag === true ||
+                thoughtFlag === 1 ||
+                (typeof thoughtFlag === 'string' && thoughtFlag.toLowerCase() === 'true');
 
-              // 检测 Gemini 特有的思考内容标记（某些代理不使用标签）
-              const googleExtra = (delta as any)?.extra_content?.google;
-              const thoughtFlag = googleExtra?.thought;
-
-              // 变体1：thought 直接给出思考文本（字符串 / 数组 / 对象）
-              if (typeof thoughtFlag === 'string' && thoughtFlag.trim().length > 0 && thoughtFlag !== 'true') {
-                emitThinking(thoughtFlag);
-                processTextWithThoughtTags(text, false);
-              } else if (Array.isArray(thoughtFlag) && thoughtFlag.length > 0) {
-                emitThinking(thoughtFlag.map(String).join(''));
-                processTextWithThoughtTags(text, false);
-              } else if (thoughtFlag && typeof thoughtFlag === 'object') {
-                try {
-                  emitThinking(JSON.stringify(thoughtFlag));
-                } catch {
-                  emitThinking(String(thoughtFlag));
-                }
-                processTextWithThoughtTags(text, false);
+              if (isThought) {
+                emitThinking(contentRaw);
               } else {
-                // 变体2：thought 只是标志位（boolean / number / 'true'）
-                const isThinkingContent =
-                  thoughtFlag === true ||
-                  thoughtFlag === 1 ||
-                  thoughtFlag === 'true' ||
-                  googleExtra?.thought === 'THOUGHT';
-                processTextWithThoughtTags(text, isThinkingContent);
+                emitContent(contentRaw);
+              }
+
+              if (debugN != null) {
+                console.log('[GeminiProvider][debug] route decision', {
+                  n: debugN,
+                  isThought,
+                  thoughtFlag
+                });
               }
             }
 
@@ -463,16 +424,6 @@ export class GeminiProvider extends BaseLLMProvider {
             pushRawSample({ dataStr });
           }
         }
-      }
-
-      // flush 残留 thought buffer
-      if (thoughtParseBuffer) {
-        if (isInThought) {
-          emitThinking(thoughtParseBuffer);
-        } else {
-          emitContent(thoughtParseBuffer);
-        }
-        thoughtParseBuffer = '';
       }
 
       // 自动异常诊断输出：当没有思考且正文像被截断（以逗号开头）时，打印前几个 raw SSE 片段

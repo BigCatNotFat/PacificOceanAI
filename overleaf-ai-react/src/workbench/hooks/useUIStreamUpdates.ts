@@ -2,8 +2,6 @@ import { useEffect, useState, useRef } from 'react';
 import { useService } from './useService';
 import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
 import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
-import type { IConversationService } from '../../platform/agent/IConversationService';
-import { IConversationServiceId } from '../../platform/agent/IConversationService';
 
 /**
  * Tool call status
@@ -36,33 +34,22 @@ export interface StreamingBuffer {
  * 
  * Returns a map of messageId -> streaming content that can be used to update
  * messages in real-time as the LLM generates responses.
+ * 
+ * 注意：由于消息 ID 现在包含 conversationId 前缀，是全局唯一的，
+ * 所以不再需要在对话切换时清空所有 buffer。
+ * 这支持了多列并行对话的功能。
  */
 export function useUIStreamUpdates() {
   const uiStreamService = useService<IUIStreamService>(IUIStreamServiceId);
-  const conversationService = useService<IConversationService>(IConversationServiceId);
   const [streamingBuffers, setStreamingBuffers] = useState<Map<string, StreamingBuffer>>(new Map());
   
   // Use ref to avoid stale closures in event handlers
   const buffersRef = useRef(streamingBuffers);
   buffersRef.current = streamingBuffers;
 
-  // 🔧 监听对话切换事件，清空 streaming buffers
-  // 这是为了防止新对话的消息 ID 与旧对话相同时，错误地显示旧内容
-  useEffect(() => {
-    if (!conversationService) {
-      return;
-    }
-
-    const disposable = conversationService.onDidCurrentConversationChange(() => {
-      // 对话切换时清空所有 streaming buffers
-      console.log('[useUIStreamUpdates] 对话切换，清空 streaming buffers');
-      setStreamingBuffers(new Map());
-    });
-
-    return () => {
-      disposable.dispose();
-    };
-  }, [conversationService]);
+  // 注意：移除了对话切换时清空所有 buffer 的逻辑
+  // 因为消息 ID 现在是全局唯一的（包含 conversationId 前缀），
+  // 不同对话的消息不会发生 ID 冲突，所以不需要在切换时清空
 
   useEffect(() => {
     if (!uiStreamService) {

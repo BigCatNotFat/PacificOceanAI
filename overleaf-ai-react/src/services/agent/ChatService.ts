@@ -11,7 +11,7 @@
  *   · 剔除 thinking，折叠失败的工具调用
  *   · 临时性，不存储，每次请求前计算
  * 
- * - 会话状态管理
+ * - 多会话状态管理（支持并行多列对话）
  * - 事件分发（消息更新、工具审批）
  * - 会话持久化（通过 ConversationService）
  */
@@ -23,7 +23,8 @@ import type {
   ChatMessage,
   ChatOptions,
   MessageRole,
-  ToolCallPendingEvent
+  ToolCallPendingEvent,
+  MessageUpdateEvent
 } from '../../platform/agent/IChatService';
 import { IChatServiceId } from '../../platform/agent/IChatService';
 import type { IAgentService, AgentLoopController } from '../../platform/agent/IAgentService';
@@ -32,41 +33,43 @@ import type { IConversationService } from '../../platform/agent/IConversationSer
 import { IConversationServiceId } from '../../platform/agent/IConversationService';
 
 /**
- * ChatService 实现
+ * 单个会话的状态
+ */
+interface SessionState {
+  /** 会话 ID */
+  conversationId: string;
+  /** 消息列表（用户视图） */
+  messages: ChatMessage[];
+  /** 是否正在处理 */
+  isProcessing: boolean;
+  /** 当前 Agent Loop 控制器 */
+  currentLoop?: AgentLoopController;
+  /** 当前 Loop ID（用于防止旧 Loop 的事件覆盖新消息） */
+  currentLoopId?: string;
+  /** 消息 ID 计数器 */
+  messageIdCounter: number;
+  /** 当前这一轮对话在列表一中的起始下标（用于中断时整体回滚） */
+  currentTurnStartIndex?: number;
+  /** 保存消息的防抖计时器 */
+  saveDebounceTimer?: ReturnType<typeof setTimeout>;
+}
+
+/**
+ * ChatService 实现 - 支持多会话并行
  */
 @injectable(IAgentServiceId, IConversationServiceId)
 export class ChatService implements IChatService {
   // ==================== 事件发射器 ====================
-  private readonly _onDidMessageUpdate = new Emitter<ChatMessage[]>();
-  public readonly onDidMessageUpdate: Event<ChatMessage[]> = this._onDidMessageUpdate.event;
+  private readonly _onDidMessageUpdate = new Emitter<MessageUpdateEvent>();
+  public readonly onDidMessageUpdate: Event<MessageUpdateEvent> = this._onDidMessageUpdate.event;
 
   private readonly _onDidToolCallPending = new Emitter<ToolCallPendingEvent>();
   public readonly onDidToolCallPending: Event<ToolCallPendingEvent> = this._onDidToolCallPending.event;
 
   // ==================== 核心状态 ====================
   
-  /** 列表一：用户视图 (The Master List)
-   * - 全量存储，给用户看的
-   * - 包含所有细节：thinking、工具调用等
-   */
-  private _messages: ChatMessage[] = [];
-
-  /** 防止重复提交 */
-  private _isProcessing: boolean = false;
-
-  /** 当前 Agent Loop 控制器 */
-  private _currentLoop?: AgentLoopController;
-
-  /** 当前 Loop ID（用于防止旧 Loop 的事件覆盖新消息） */
-  private _currentLoopId?: string;
-
-  /** 当前消息 ID 计数器 */
-  private _messageIdCounter: number = 0;
-  /** 当前这一轮对话在列表一中的起始下标（用于中断时整体回滚） */
-  private _currentTurnStartIndex: number | undefined;
-
-  /** 保存消息的防抖计时器 */
-  private _saveDebounceTimer?: ReturnType<typeof setTimeout>;
+  /** 按 conversationId 隔离的会话状态 */
+  private sessions: Map<string, SessionState> = new Map();
 
   constructor(
     private readonly agentService: IAgentService,
@@ -77,225 +80,62 @@ export class ChatService implements IChatService {
       hasConversationService: !!conversationService
     });
 
-    // 监听对话切换事件，加载对应对话的消息
+    // 监听对话切换事件，加载对应对话的消息到 session
     this.conversationService.onDidCurrentConversationChange((event) => {
+      if (!event.conversationId) return;
+      
       console.log('[ChatService] 对话切换:', event.conversationId);
-      this._messages = event.messages;
-      this._messageIdCounter = event.messages.length;
-      this._onDidMessageUpdate.fire([...this._messages]);
+      
+      // 获取或创建 session
+      const session = this.getOrCreateSession(event.conversationId);
+      
+      // 加载消息到 session
+      session.messages = event.messages;
+      session.messageIdCounter = event.messages.length;
+      
+      // 触发更新事件
+      this._onDidMessageUpdate.fire({
+        conversationId: event.conversationId,
+        messages: [...session.messages]
+      });
     });
 
     console.log('[ChatService] 初始化完成');
   }
 
-  // ==================== 公共方法 ====================
+  // ==================== 私有辅助方法 ====================
 
   /**
-   * 发送消息
+   * 获取或创建会话状态
    */
-  async sendMessage(input: string, options: ChatOptions): Promise<void> {
-    // 防止并发请求
-    if (this._isProcessing) {
-      console.warn('[ChatService] 已有请求正在处理中');
-      return;
+  private getOrCreateSession(conversationId: string): SessionState {
+    let session = this.sessions.get(conversationId);
+    if (!session) {
+      session = {
+        conversationId,
+        messages: [],
+        isProcessing: false,
+        messageIdCounter: 0
+      };
+      this.sessions.set(conversationId, session);
     }
-
-    this._isProcessing = true;
-
-    // 记录当前这一轮对话在列表一中的起始位置
-    this._currentTurnStartIndex = this._messages.length;
-
-    try {
-      // 1. 写入用户消息
-      const userMessage = this.createMessage('user', input);
-      // 用户消息在发送完成后即视为 completed，确保会被包含在上下文列表中
-      userMessage.status = 'completed';
-      this._messages.push(userMessage);
-      this._onDidMessageUpdate.fire([...this._messages]);
-
-      // 2. 立即创建占位的 assistant 消息，显示"正在发送..."
-      const assistantPlaceholder = this.createMessage('assistant', '');
-      assistantPlaceholder.status = 'streaming';
-      this._messages.push(assistantPlaceholder);
-      this._onDidMessageUpdate.fire([...this._messages]);
-
-      console.log('[ChatService] 发送消息:', {
-        mode: options.mode,
-        modelId: options.modelId,
-        contextItemsCount: options.contextItems?.length || 0,
-        userMessageId: userMessage.id,
-        assistantPlaceholderId: assistantPlaceholder.id
-      });
-
-      // 生成列表二：历史上下文视图（给 AI 看的，有损压缩）
-      const contextList = this.buildContextList(this._messages);
-
-      console.log('[ChatService] Context list before AgentService.execute:', {
-        contextMessageCount: contextList.length,
-        contextMessages: contextList.map(m => ({ id: m.id, role: m.role, status: m.status }))
-      });
-
-      // 3. 执行 Agent 任务（交给 AgentService）
-      this._currentLoop = await this.agentService.execute(
-        contextList, // 传递列表二（压缩后的历史）
-        {
-          modelId: options.modelId,
-          mode: options.mode,
-          contextItems: options.contextItems,
-          maxIterations: options.maxIterations ?? 10,
-          responseMessageId: assistantPlaceholder.id
-        }
-      );
-      
-      // 记录当前 Loop ID
-      this._currentLoopId = this._currentLoop.id;
-
-      // 4. 监听 Loop 更新（更新列表一）
-      const loopId = this._currentLoop.id;
-      this._currentLoop.onUpdate((updatedMessages) => {
-        // 检查是否还是当前的 Loop（防止旧 Loop 覆盖新消息）
-        if (this._currentLoopId !== loopId) {
-          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的更新事件`);
-          return;
-        }
-        this._messages = updatedMessages;
-        this._onDidMessageUpdate.fire([...this._messages]);
-        // 防抖保存消息
-        this.debouncedSaveMessages();
-      });
-
-      // 5. 监听 Loop 完成（更新列表一）
-      this._currentLoop.onDone((finalMessages) => {
-        // 检查是否还是当前的 Loop
-        if (this._currentLoopId !== loopId) {
-          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的完成事件`);
-          return;
-        }
-        this._messages = finalMessages;
-        this._onDidMessageUpdate.fire([...this._messages]);
-        this._isProcessing = false;
-        this._currentTurnStartIndex = undefined;
-        
-        // 注意：列表一保留所有细节（包括 thinking），给用户看
-        // 列表二会在下次请求时动态生成，自动剔除 thinking
-        
-        // 立即保存消息（完成时不防抖）
-        this.saveMessagesNow();
-        
-        console.log('[ChatService] 对话完成');
-      });
-
-      // 6. 监听 Loop 错误
-      this._currentLoop.onError((error) => {
-        // 检查是否还是当前的 Loop
-        if (this._currentLoopId !== loopId) {
-          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的错误事件`);
-          return;
-        }
-        console.error('[ChatService] Agent Loop 错误:', error);
-        
-        const errorMessage = this.createMessage('assistant', `抱歉，发生了错误: ${error.message}`);
-        errorMessage.status = 'error';
-        this._messages.push(errorMessage);
-        this._onDidMessageUpdate.fire([...this._messages]);
-        
-        this._isProcessing = false;
-        this._currentTurnStartIndex = undefined;
-      });
-
-      // 7. 监听工具审批事件（转发给 UI）
-      this._currentLoop.onToolCallPending((event) => {
-        // 检查是否还是当前的 Loop
-        if (this._currentLoopId !== loopId) {
-          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的工具审批事件`);
-          return;
-        }
-        console.log('[ChatService] 工具调用待审批:', event);
-        this._onDidToolCallPending.fire(event);
-      });
-
-    } catch (error) {
-      console.error('[ChatService] sendMessage error:', error);
-      
-      const errorMessage = this.createMessage('assistant', '抱歉，发生了错误');
-      errorMessage.status = 'error';
-      errorMessage.error = error instanceof Error ? error.message : String(error);
-      this._messages.push(errorMessage);
-      this._onDidMessageUpdate.fire([...this._messages]);
-      
-      this._isProcessing = false;
-      this._currentTurnStartIndex = undefined;
-    }
+    return session;
   }
 
   /**
-   * 中断当前正在进行的对话
+   * 创建全局唯一的消息 ID
+   * 格式：{conversationId}:msg_{counter}_{timestamp}
    */
-  abort(): void {
-    console.log('[ChatService] 中断请求');
-    
-    if (this._currentLoop) {
-      const abortedLoopId = this._currentLoop.id;
-      console.log(`[ChatService] 中断 Loop: ${abortedLoopId}`);
-      this._currentLoop.abort();
-      this._currentLoop = undefined;
-      this._currentLoopId = undefined;
-    }
-
-    // 回滚当前这一轮对话（从起始下标开始的所有消息全部移除）
-    if (typeof this._currentTurnStartIndex === 'number') {
-      this._messages = this._messages.slice(0, this._currentTurnStartIndex);
-      this._currentTurnStartIndex = undefined;
-      this._onDidMessageUpdate.fire([...this._messages]);
-    }
-
-    this._isProcessing = false;
+  private createMessage(session: SessionState, role: MessageRole, content: string): ChatMessage {
+    const timestamp = Date.now();
+    return {
+      id: `${session.conversationId}:msg_${session.messageIdCounter++}_${timestamp}`,
+      role,
+      content,
+      status: 'pending',
+      timestamp
+    };
   }
-
-  /**
-   * 批准工具调用（通过 controller）
-   */
-  async approveToolCall(toolCallId: string): Promise<void> {
-    if (!this._currentLoop) {
-      console.warn('[ChatService] 未找到当前 Loop');
-      return;
-    }
-
-    console.log('[ChatService] 批准工具调用:', toolCallId);
-    
-    try {
-      await this._currentLoop.approveToolCall(toolCallId);
-    } catch (error) {
-      console.error('[ChatService] approveToolCall error:', error);
-      
-      const errorMessage = this.createMessage('assistant', `工具执行失败: ${error}`);
-      errorMessage.status = 'error';
-      this._messages.push(errorMessage);
-      this._onDidMessageUpdate.fire([...this._messages]);
-    }
-  }
-
-  /**
-   * 拒绝工具调用（通过 controller）
-   */
-  async rejectToolCall(toolCallId: string): Promise<void> {
-    if (!this._currentLoop) {
-      console.warn('[ChatService] 未找到当前 Loop');
-      return;
-    }
-
-    console.log('[ChatService] 拒绝工具调用:', toolCallId);
-    
-    await this._currentLoop.rejectToolCall(toolCallId);
-    
-    // 添加拒绝消息
-    const rejectMessage = this.createMessage('assistant', '你已拒绝该操作。');
-    rejectMessage.status = 'completed';
-    this._messages.push(rejectMessage);
-    this._onDidMessageUpdate.fire([...this._messages]);
-  }
-
-  // ==================== 私有方法 ====================
 
   /**
    * 生成列表二：历史上下文视图 (The Context List)
@@ -304,11 +144,6 @@ export class ChatService implements IChatService {
    * 1. 剔除所有 assistant 消息的 thinking 字段
    * 2. 折叠/移除失败的工具调用（可选）
    * 3. 移除中间状态的消息（streaming、aborted 等）
-   * 
-   * 目的：
-   * - 节省 Token
-   * - 防止 AI 被上一轮错误的推理路径误导（Attention 污染）
-   * - 只保留关键的“用户意图”和“最终结果”
    */
   private buildContextList(messages: ChatMessage[]): ChatMessage[] {
     return messages
@@ -319,7 +154,7 @@ export class ChatService implements IChatService {
         }
         // 移除失败的消息（可选）
         if (msg.status === 'error' || msg.status === 'aborted') {
-          return false; // 或者保留，但简化错误信息
+          return false;
         }
         return true;
       })
@@ -334,56 +169,36 @@ export class ChatService implements IChatService {
   }
 
   /**
-   * 创建消息
-   */
-  private createMessage(role: MessageRole, content: string): ChatMessage {
-    return {
-      id: `msg_${this._messageIdCounter++}`,
-      role,
-      content,
-      status: 'pending',
-      timestamp: Date.now()
-    };
-  }
-
-  /**
-   * 获取列表一（用户视图）
-   */
-  getMessages(): ChatMessage[] {
-    return [...this._messages];
-  }
-
-  /**
    * 防抖保存消息（流式更新时调用）
    */
-  private debouncedSaveMessages(): void {
-    if (this._saveDebounceTimer) {
-      clearTimeout(this._saveDebounceTimer);
+  private debouncedSaveMessages(session: SessionState): void {
+    if (session.saveDebounceTimer) {
+      clearTimeout(session.saveDebounceTimer);
     }
-    this._saveDebounceTimer = setTimeout(() => {
-      this.saveMessagesNow();
+    session.saveDebounceTimer = setTimeout(() => {
+      this.saveMessagesNow(session);
     }, 1000); // 1 秒防抖
   }
 
   /**
    * 立即保存消息
    */
-  private async saveMessagesNow(): Promise<void> {
-    if (this._saveDebounceTimer) {
-      clearTimeout(this._saveDebounceTimer);
-      this._saveDebounceTimer = undefined;
+  private async saveMessagesNow(session: SessionState): Promise<void> {
+    if (session.saveDebounceTimer) {
+      clearTimeout(session.saveDebounceTimer);
+      session.saveDebounceTimer = undefined;
     }
 
     try {
-      // 保存消息到当前对话
-      await this.conversationService.saveMessages(this._messages);
+      // 确保保存到正确的对话
+      const currentConvId = this.conversationService.getCurrentConversationId();
+      if (currentConvId === session.conversationId) {
+        await this.conversationService.saveMessages(session.messages);
 
-      // 如果是第一条用户消息，自动生成对话名称
-      const firstUserMessage = this._messages.find(m => m.role === 'user');
-      if (firstUserMessage && this._messages.filter(m => m.role === 'user').length === 1) {
-        const conversationId = this.conversationService.getCurrentConversationId();
-        if (conversationId) {
-          await this.conversationService.autoGenerateName(conversationId, firstUserMessage.content);
+        // 如果是第一条用户消息，自动生成对话名称
+        const firstUserMessage = session.messages.find(m => m.role === 'user');
+        if (firstUserMessage && session.messages.filter(m => m.role === 'user').length === 1) {
+          await this.conversationService.autoGenerateName(session.conversationId, firstUserMessage.content);
         }
       }
     } catch (error) {
@@ -391,26 +206,298 @@ export class ChatService implements IChatService {
     }
   }
 
+  // ==================== 公共方法 ====================
+
   /**
-   * 清空当前对话消息
+   * 发送消息
    */
-  clearMessages(): void {
-    this._messages = [];
-    this._messageIdCounter = 0;
-    this._onDidMessageUpdate.fire([]);
+  async sendMessage(input: string, options: ChatOptions): Promise<void> {
+    const { conversationId } = options;
+    if (!conversationId) {
+      console.error('[ChatService] conversationId 是必填项');
+      return;
+    }
+
+    const session = this.getOrCreateSession(conversationId);
+
+    // 防止同一会话的并发请求
+    if (session.isProcessing) {
+      console.warn(`[ChatService] 会话 ${conversationId} 已有请求正在处理中`);
+      return;
+    }
+
+    session.isProcessing = true;
+
+    // 记录当前这一轮对话在列表一中的起始位置
+    session.currentTurnStartIndex = session.messages.length;
+
+    try {
+      // 1. 写入用户消息
+      const userMessage = this.createMessage(session, 'user', input);
+      userMessage.status = 'completed';
+      session.messages.push(userMessage);
+      this._onDidMessageUpdate.fire({
+        conversationId,
+        messages: [...session.messages]
+      });
+
+      // 2. 立即创建占位的 assistant 消息
+      const assistantPlaceholder = this.createMessage(session, 'assistant', '');
+      assistantPlaceholder.status = 'streaming';
+      session.messages.push(assistantPlaceholder);
+      this._onDidMessageUpdate.fire({
+        conversationId,
+        messages: [...session.messages]
+      });
+
+      console.log('[ChatService] 发送消息:', {
+        conversationId,
+        mode: options.mode,
+        modelId: options.modelId,
+        contextItemsCount: options.contextItems?.length || 0,
+        userMessageId: userMessage.id,
+        assistantPlaceholderId: assistantPlaceholder.id
+      });
+
+      // 生成列表二：历史上下文视图
+      const contextList = this.buildContextList(session.messages);
+
+      // 3. 执行 Agent 任务
+      session.currentLoop = await this.agentService.execute(
+        contextList,
+        {
+          modelId: options.modelId,
+          mode: options.mode,
+          contextItems: options.contextItems,
+          maxIterations: options.maxIterations ?? 10,
+          responseMessageId: assistantPlaceholder.id
+        }
+      );
+      
+      session.currentLoopId = session.currentLoop.id;
+      const loopId = session.currentLoop.id;
+
+      // 4. 监听 Loop 更新
+      session.currentLoop.onUpdate((updatedMessages) => {
+        if (session.currentLoopId !== loopId) {
+          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的更新事件`);
+          return;
+        }
+        session.messages = updatedMessages;
+        this._onDidMessageUpdate.fire({
+          conversationId,
+          messages: [...session.messages]
+        });
+        this.debouncedSaveMessages(session);
+      });
+
+      // 5. 监听 Loop 完成
+      session.currentLoop.onDone((finalMessages) => {
+        if (session.currentLoopId !== loopId) {
+          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的完成事件`);
+          return;
+        }
+        session.messages = finalMessages;
+        this._onDidMessageUpdate.fire({
+          conversationId,
+          messages: [...session.messages]
+        });
+        session.isProcessing = false;
+        session.currentTurnStartIndex = undefined;
+        
+        this.saveMessagesNow(session);
+        console.log(`[ChatService] 会话 ${conversationId} 对话完成`);
+      });
+
+      // 6. 监听 Loop 错误
+      session.currentLoop.onError((error) => {
+        if (session.currentLoopId !== loopId) {
+          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的错误事件`);
+          return;
+        }
+        console.error(`[ChatService] 会话 ${conversationId} Agent Loop 错误:`, error);
+        
+        const errorMessage = this.createMessage(session, 'assistant', `抱歉，发生了错误: ${error.message}`);
+        errorMessage.status = 'error';
+        session.messages.push(errorMessage);
+        this._onDidMessageUpdate.fire({
+          conversationId,
+          messages: [...session.messages]
+        });
+        
+        session.isProcessing = false;
+        session.currentTurnStartIndex = undefined;
+      });
+
+      // 7. 监听工具审批事件
+      session.currentLoop.onToolCallPending((event) => {
+        if (session.currentLoopId !== loopId) {
+          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的工具审批事件`);
+          return;
+        }
+        console.log(`[ChatService] 会话 ${conversationId} 工具调用待审批:`, event);
+        this._onDidToolCallPending.fire(event);
+      });
+
+    } catch (error) {
+      console.error(`[ChatService] 会话 ${conversationId} sendMessage error:`, error);
+      
+      const errorMessage = this.createMessage(session, 'assistant', '抱歉，发生了错误');
+      errorMessage.status = 'error';
+      errorMessage.error = error instanceof Error ? error.message : String(error);
+      session.messages.push(errorMessage);
+      this._onDidMessageUpdate.fire({
+        conversationId,
+        messages: [...session.messages]
+      });
+      
+      session.isProcessing = false;
+      session.currentTurnStartIndex = undefined;
+    }
+  }
+
+  /**
+   * 中断指定会话或所有会话的对话
+   */
+  abort(conversationId?: string): void {
+    if (conversationId) {
+      // 中断指定会话
+      const session = this.sessions.get(conversationId);
+      if (session) {
+        this.abortSession(session);
+      }
+    } else {
+      // 中断所有会话
+      for (const session of this.sessions.values()) {
+        if (session.isProcessing) {
+          this.abortSession(session);
+        }
+      }
+    }
+  }
+
+  /**
+   * 中断单个会话
+   */
+  private abortSession(session: SessionState): void {
+    console.log(`[ChatService] 中断会话 ${session.conversationId}`);
+    
+    if (session.currentLoop) {
+      console.log(`[ChatService] 中断 Loop: ${session.currentLoop.id}`);
+      session.currentLoop.abort();
+      session.currentLoop = undefined;
+      session.currentLoopId = undefined;
+    }
+
+    // 回滚当前这一轮对话
+    if (typeof session.currentTurnStartIndex === 'number') {
+      session.messages = session.messages.slice(0, session.currentTurnStartIndex);
+      session.currentTurnStartIndex = undefined;
+      this._onDidMessageUpdate.fire({
+        conversationId: session.conversationId,
+        messages: [...session.messages]
+      });
+    }
+
+    session.isProcessing = false;
+  }
+
+  /**
+   * 批准工具调用
+   */
+  async approveToolCall(conversationId: string, toolCallId: string): Promise<void> {
+    const session = this.sessions.get(conversationId);
+    if (!session?.currentLoop) {
+      console.warn(`[ChatService] 会话 ${conversationId} 未找到当前 Loop`);
+      return;
+    }
+
+    console.log(`[ChatService] 会话 ${conversationId} 批准工具调用:`, toolCallId);
+    
+    try {
+      await session.currentLoop.approveToolCall(toolCallId);
+    } catch (error) {
+      console.error(`[ChatService] 会话 ${conversationId} approveToolCall error:`, error);
+      
+      const errorMessage = this.createMessage(session, 'assistant', `工具执行失败: ${error}`);
+      errorMessage.status = 'error';
+      session.messages.push(errorMessage);
+      this._onDidMessageUpdate.fire({
+        conversationId,
+        messages: [...session.messages]
+      });
+    }
+  }
+
+  /**
+   * 拒绝工具调用
+   */
+  async rejectToolCall(conversationId: string, toolCallId: string): Promise<void> {
+    const session = this.sessions.get(conversationId);
+    if (!session?.currentLoop) {
+      console.warn(`[ChatService] 会话 ${conversationId} 未找到当前 Loop`);
+      return;
+    }
+
+    console.log(`[ChatService] 会话 ${conversationId} 拒绝工具调用:`, toolCallId);
+    
+    await session.currentLoop.rejectToolCall(toolCallId);
+    
+    // 添加拒绝消息
+    const rejectMessage = this.createMessage(session, 'assistant', '你已拒绝该操作。');
+    rejectMessage.status = 'completed';
+    session.messages.push(rejectMessage);
+    this._onDidMessageUpdate.fire({
+      conversationId,
+      messages: [...session.messages]
+    });
+  }
+
+  /**
+   * 获取指定会话的消息列表
+   */
+  getMessages(conversationId: string): ChatMessage[] {
+    const session = this.sessions.get(conversationId);
+    return session ? [...session.messages] : [];
+  }
+
+  /**
+   * 检查指定会话是否正在生成
+   */
+  isProcessing(conversationId: string): boolean {
+    const session = this.sessions.get(conversationId);
+    return session?.isProcessing ?? false;
+  }
+
+  /**
+   * 清空指定会话的消息
+   */
+  clearMessages(conversationId: string): void {
+    const session = this.sessions.get(conversationId);
+    if (session) {
+      session.messages = [];
+      session.messageIdCounter = 0;
+      this._onDidMessageUpdate.fire({
+        conversationId,
+        messages: []
+      });
+    }
   }
 
   /**
    * 释放资源
    */
   dispose(): void {
-    if (this._saveDebounceTimer) {
-      clearTimeout(this._saveDebounceTimer);
+    // 清理所有会话的定时器
+    for (const session of this.sessions.values()) {
+      if (session.saveDebounceTimer) {
+        clearTimeout(session.saveDebounceTimer);
+      }
     }
+    
     this._onDidMessageUpdate.dispose();
     this._onDidToolCallPending.dispose();
-    this._messages = [];
-    this._currentLoop = undefined;
+    this.sessions.clear();
   }
 }
 

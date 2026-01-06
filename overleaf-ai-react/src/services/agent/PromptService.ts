@@ -147,20 +147,7 @@ Here is the user's system information:
 Current time: ${timestamp}
 `;
 
-    // Gemini：很多 OpenAI 兼容网关不会返回 reasoning_content / extra_content 思考字段。
-    // 为了让 UI 的 thinking 区稳定可用，这里要求模型在正文前输出“思考摘要”（高层计划，而非逐步推理）。
-    if (modelInfo?.provider === 'gemini' && modelInfo?.capabilities?.supportsReasoning) {
-      basePrompt += `
 
-<thinking_summary>
-Before your final answer, output a short high-level plan wrapped in <thought>...</thought> tags.
-- Keep it brief (2-6 bullet points or short sentences).
-- Do NOT include detailed step-by-step reasoning, hidden chain-of-thought, or sensitive content.
-- After </thought>, output the normal answer.
-- Never start your answer with a comma.
-</thinking_summary>
-`;
-    }
 
     // 根据模式获取工具列表
     const tools = this.getToolsForMode(mode);

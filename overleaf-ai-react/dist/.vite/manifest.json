@@ -21,7 +21,7 @@
     "name": "modulepreload-polyfill"
   },
   "main.tsx-loader.js": {
-    "file": "assets/main.tsx-loader-CjR-lIQv.js",
+    "file": "assets/main.tsx-loader-DdzLYpzy.js",
     "src": "main.tsx-loader.js"
   },
   "node_modules/katex/dist/fonts/KaTeX_AMS-Regular.ttf": {
@@ -261,7 +261,7 @@
     "src": "node_modules/katex/dist/fonts/KaTeX_Typewriter-Regular.woff2"
   },
   "src/extension/content/main.tsx": {
-    "file": "assets/main.tsx-CkxUyBFa.js",
+    "file": "assets/main.tsx-DZLLpbCP.js",
     "name": "main.tsx",
     "src": "src/extension/content/main.tsx",
     "isEntry": true,
@@ -270,7 +270,7 @@
       "_StorageService-CnFXTPEB.js"
     ],
     "css": [
-      "assets/main-BNsE-vmV.css"
+      "assets/main-CVUXB31x.css"
     ],
     "assets": [
       "assets/KaTeX_AMS-Regular-BQhdFMY1.woff2",

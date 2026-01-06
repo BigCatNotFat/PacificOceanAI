@@ -50,8 +50,18 @@ export interface ChatOptions {
    * - 达到上限后会自动结束本轮对话
    */
   maxIterations?: number;
-  /** 会话 ID（可选，用于未来多会话支持） */
-  conversationId?: string;
+  /** 会话 ID（必填，用于多会话支持） */
+  conversationId: string;
+}
+
+/**
+ * 消息更新事件（用于多会话支持）
+ */
+export interface MessageUpdateEvent {
+  /** 会话 ID */
+  conversationId: string;
+  /** 更新后的消息列表 */
+  messages: ChatMessage[];
 }
 
 /**
@@ -111,42 +121,61 @@ export interface ToolCallPendingEvent {
 
 /**
  * IChatService - 对话编排服务接口
+ * 
+ * 支持多会话并行：每个会话独立维护消息列表和生成状态
  */
 export interface IChatService {
   /**
    * 发送消息
    * @param input - 用户输入的自然语言问题
-   * @param options - 聊天选项
+   * @param options - 聊天选项（必须包含 conversationId）
    * @returns Promise<void> - 不直接返回回答内容，通过事件推送状态
    */
   sendMessage(input: string, options: ChatOptions): Promise<void>;
 
   /**
-   * 中断当前正在进行的 LLM 流式生成
+   * 中断指定会话的 LLM 流式生成
+   * @param conversationId - 会话 ID，如果不传则中断所有会话
    */
-  abort(): void;
+  abort(conversationId?: string): void;
 
   /**
    * 批准工具调用
+   * @param conversationId - 会话 ID
    * @param toolCallId - 工具调用 ID
    */
-  approveToolCall(toolCallId: string): Promise<void>;
+  approveToolCall(conversationId: string, toolCallId: string): Promise<void>;
 
   /**
    * 拒绝工具调用
+   * @param conversationId - 会话 ID
    * @param toolCallId - 工具调用 ID
    */
-  rejectToolCall(toolCallId: string): Promise<void>;
+  rejectToolCall(conversationId: string, toolCallId: string): Promise<void>;
 
   /**
-   * 对话消息列表更新事件
+   * 获取指定会话的消息列表
+   * @param conversationId - 会话 ID
+   * @returns 消息列表
+   */
+  getMessages(conversationId: string): ChatMessage[];
+
+  /**
+   * 检查指定会话是否正在生成
+   * @param conversationId - 会话 ID
+   * @returns 是否正在生成
+   */
+  isProcessing(conversationId: string): boolean;
+
+  /**
+   * 对话消息列表更新事件（携带 conversationId）
    * 
    * 触发时机：
    * - 新的 user/assistant/tool 消息产生
    * - 流式生成过程中 assistant 消息内容发生变化
    * - thinking 内容更新
    */
-  onDidMessageUpdate: Event<ChatMessage[]>;
+  onDidMessageUpdate: Event<MessageUpdateEvent>;
 
   /**
    * 工具调用待审批事件

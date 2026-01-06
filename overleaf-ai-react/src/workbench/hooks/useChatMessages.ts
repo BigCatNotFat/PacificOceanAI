@@ -1,9 +1,8 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { ChatMessage } from '../types/chat';
 import { useService } from './useService';
-import { useServiceEvent } from './useServiceEvent';
 import { useUIStreamUpdates } from './useUIStreamUpdates';
-import type { IChatService, ChatMessage as ServiceChatMessage } from '../../platform/agent/IChatService';
+import type { IChatService, ChatMessage as ServiceChatMessage, MessageUpdateEvent } from '../../platform/agent/IChatService';
 import { IChatServiceId } from '../../platform/agent/IChatService';
 
 /**
@@ -66,7 +65,7 @@ function mapServiceMessageToUI(
     // 如果有活跃的工具调用或有 thinking 内容，不需要显示占位符
     // 工具调用块会展示当前进度
     if (hasActiveToolCalls || thinkingContent) {
-      // ✅ 关键：仍然需要一个“锚点消息”（id = message.id），否则 Sidebar 无法挂载工具调用块
+      // ✅ 关键：仍然需要一个"锚点消息"（id = message.id），否则 Sidebar 无法挂载工具调用块
       // 这个消息本身不展示正文，只用于承载 tool call 的 UI
       if (hasActiveToolCalls) {
         uiMessages.push({
@@ -102,13 +101,36 @@ function mapServiceMessageToUI(
 /**
  * 订阅 ChatService 的消息事件，并转换为 UI 可用的消息列表
  * 
- * This hook now integrates real-time streaming updates from UIStreamService
- * to provide a smooth, character-by-character streaming experience.
+ * 支持按 conversationId 过滤消息，用于多列并行对话
+ * 
+ * @param conversationId - 会话 ID，用于过滤只属于该会话的消息
+ * @param initialMessages - 初始消息列表
  */
-export function useChatMessages(initialMessages: ChatMessage[] = []) {
+export function useChatMessages(conversationId: string, initialMessages: ChatMessage[] = []) {
   const chatService = useService<IChatService>(IChatServiceId);
-  const serviceMessages = useServiceEvent<ServiceChatMessage[]>(chatService.onDidMessageUpdate, []);
   const { streamingBuffers } = useUIStreamUpdates();
+  
+  // 存储该 conversationId 的消息
+  const [serviceMessages, setServiceMessages] = useState<ServiceChatMessage[]>(() => {
+    // 初始化时尝试从 ChatService 获取已有消息
+    return chatService.getMessages(conversationId);
+  });
+
+  // 订阅消息更新事件，只处理匹配的 conversationId
+  useEffect(() => {
+    // 切换会话时必须覆盖旧状态：新会话可能还没有任何消息（空数组也要写回）
+    setServiceMessages(chatService.getMessages(conversationId));
+
+    const disposable = chatService.onDidMessageUpdate((event: MessageUpdateEvent) => {
+      if (event.conversationId === conversationId) {
+        setServiceMessages(event.messages);
+      }
+    });
+
+    return () => {
+      disposable.dispose();
+    };
+  }, [chatService, conversationId]);
 
   const messages = useMemo<ChatMessage[]>(() => {
     const uiMessages: ChatMessage[] = [...initialMessages];
@@ -138,4 +160,3 @@ export function useChatMessages(initialMessages: ChatMessage[] = []) {
 
   return { messages };
 }
-
