@@ -115,34 +115,53 @@ You should specify the following arguments before the others: [target_file]`,
       
       console.log('[EditFileTool] Current file:', currentFileName, 'Target:', targetBaseName, 'Is current:', isCurrentFile);
 
-      // 2. 获取当前文件内容
-      let originalContent: string;
-      
-      if (isCurrentFile) {
-        // 直接从编辑器获取当前打开文件的内容
-        console.log('[EditFileTool] Step 2: Getting content from editor (current file)');
-        originalContent = await overleafEditor.document.getText();
-      } else {
-        // 需要从服务器获取文件内容，但这样就无法直接编辑
-        // 因为 setDocContent 只能修改当前打开的编辑器
-        console.log('[EditFileTool] Step 2: Target file is not currently open');
-        const docId = await this.getDocIdByPath(args.target_file);
-        if (!docId) {
-          console.error('[EditFileTool] Failed to find docId for', args.target_file);
+      // 2. 如果不是当前文件，尝试切换
+      if (!isCurrentFile) {
+        console.log(`[EditFileTool] Target file "${targetBaseName}" is not active (current: "${currentFileName}"). Attempting to switch...`);
+        
+        // 尝试切换文件
+        const switchResult = await overleafEditor.file.switchFile(targetBaseName);
+        
+        if (!switchResult.success) {
+          console.error('[EditFileTool] Switch failed:', switchResult.error);
+          
+          // 如果切换失败，尝试回退到旧逻辑（检查是否在项目中但未打开）
+          const docId = await this.getDocIdByPath(args.target_file);
+          if (!docId) {
+            return {
+              success: false,
+              error: `无法找到文件 "${args.target_file}" 且自动切换失败。请确保文件存在于项目中。`,
+              duration: Date.now() - startTime
+            };
+          }
+          
           return {
             success: false,
-            error: `无法找到文件 "${args.target_file}" 的文档 ID。请确保文件路径正确，且文件存在于项目中。`,
+            error: `无法自动切换到文件 "${args.target_file}": ${switchResult.error}。请手动在 Overleaf 中打开该文件。`,
+            duration: Date.now() - startTime
+          };
+        }
+
+        console.log('[EditFileTool] Switch command sent. Waiting for editor to update...');
+        
+        // 等待文件切换完成
+        // 我们通过轮询当前文件名来确认切换是否成功
+        const switchSuccess = await this.waitForFileSwitch(targetBaseName);
+        
+        if (!switchSuccess) {
+          return {
+            success: false,
+            error: `已发送切换指令，但文件 "${args.target_file}" 似乎未能成功加载。请稍后重试或手动打开文件。`,
             duration: Date.now() - startTime
           };
         }
         
-        // 提示用户需要先打开目标文件
-        return {
-          success: false,
-          error: `目标文件 "${args.target_file}" 不是当前打开的文件。请先在 Overleaf 中打开该文件，然后再尝试编辑。当前打开的文件是: "${currentFileName}"`,
-          duration: Date.now() - startTime
-        };
+        console.log('[EditFileTool] File switched successfully.');
       }
+
+      // 3. 获取当前文件内容 (现在应该是目标文件了)
+      console.log('[EditFileTool] Step 2: Getting content from editor');
+      let originalContent = await overleafEditor.document.getText();
       console.log('[EditFileTool] Original content length:', originalContent.length);
 
       // 3. 清理编辑内容（移除代码块标记）
@@ -375,5 +394,21 @@ You should specify the following arguments before the others: [target_file]`,
     // Fallback: 从 DOM 获取
     const domMap = this.getDomFileIdMap();
     return domMap.get(baseName) ?? null;
+  }
+
+  /**
+   * 等待文件切换完成
+   * 轮询检查当前文件名是否与目标匹配
+   */
+  private async waitForFileSwitch(targetFileName: string, timeoutMs = 3000): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const current = await this.getCurrentFileName();
+      if (current === targetFileName || (current && targetFileName.endsWith(current))) {
+        return true;
+      }
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    return false;
   }
 }

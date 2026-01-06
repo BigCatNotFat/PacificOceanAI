@@ -399,6 +399,23 @@ const OptionsApp: React.FC = () => {
 
                 <div style={styles.settingRow}>
                   <div style={styles.settingInfo}>
+                    <div style={styles.settingName}>查询额度</div>
+                    <div style={styles.settingDescription}>
+                      查询启动码的剩余使用额度，请访问：
+                      <a 
+                        href="https://api.silicondream.top/query" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        style={styles.link}
+                      >
+                        https://api.silicondream.top/query
+                      </a>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={styles.settingRow}>
+                  <div style={styles.settingInfo}>
                     <div style={styles.settingName}>连接测试</div>
                     <div style={styles.settingDescription}>验证 API 配置是否正确并检测可用模型</div>
                   </div>
@@ -929,6 +946,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: '14px',
     backgroundColor: 'white',
     borderRadius: '8px',
+  },
+  link: {
+    color: '#4a90e2',
+    textDecoration: 'none',
+    fontWeight: '500',
+    marginLeft: '4px',
   },
 };
 
