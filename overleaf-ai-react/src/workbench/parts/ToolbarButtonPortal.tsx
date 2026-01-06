@@ -149,7 +149,7 @@ const ToolbarButtonPortal: React.FC<ToolbarButtonPortalProps> = ({ onClick }) =>
         >
           smart_toy
         </span>
-        <p className="toolbar-label">AI助手</p>
+        <p className="toolbar-label">PacificOceanAI</p>
       </button>,
       host
     );
@@ -168,7 +168,7 @@ const ToolbarButtonPortal: React.FC<ToolbarButtonPortalProps> = ({ onClick }) =>
       onClick={onClick}
     >
       <span className="button-content" style={{ fontWeight: 600 }}>
-        AI助手
+        PacificOceanAI
       </span>
     </button>,
     host

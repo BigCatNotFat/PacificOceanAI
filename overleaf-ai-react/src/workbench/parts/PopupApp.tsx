@@ -34,7 +34,7 @@ const PopupApp: React.FC = () => {
     <div className="popup-container">
       {/* Header */}
       <div className="popup-header">
-        <h1 className="popup-title">Overleaf AI Assistant</h1>
+        <h1 className="popup-title">PacificOceanAI</h1>
         <p className="popup-subtitle">智能写作助手</p>
       </div>
 

@@ -539,7 +539,7 @@ const OptionsApp: React.FC = () => {
     <div style={styles.container}>
       {/* Header */}
       <header style={styles.header}>
-        <h1 style={styles.title}>Overleaf AI Assistant</h1>
+        <h1 style={styles.title}>PacificOceanAI</h1>
         <div style={styles.headerActions}>
           <button
             onClick={saveSettings}

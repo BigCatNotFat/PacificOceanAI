@@ -269,7 +269,7 @@ export class ChatService implements IChatService {
           modelId: options.modelId,
           mode: options.mode,
           contextItems: options.contextItems,
-          maxIterations: options.maxIterations ?? 10,
+          maxIterations: options.maxIterations ?? 100,
           responseMessageId: assistantPlaceholder.id
         }
       );

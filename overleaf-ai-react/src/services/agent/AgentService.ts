@@ -188,7 +188,7 @@ export class AgentService implements IAgentService {
    */
   private async executeLoop(context: LoopContext): Promise<void> {
     try {
-      const maxIterations = context.options.maxIterations || 10;
+      const maxIterations = context.options.maxIterations || 100;
       const requestedMaxIterations = maxIterations;
 
       while (context.iteration < maxIterations && !context.aborted) {

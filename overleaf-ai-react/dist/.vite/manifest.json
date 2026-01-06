@@ -1,6 +1,6 @@
 {
   "../../../../../../../../../@crx/manifest": {
-    "file": "assets/crx-manifest.js-Bto1CE1x.js",
+    "file": "assets/crx-manifest.js-DEo-YzsJ.js",
     "name": "crx-manifest.js",
     "src": "../../../../../../../../../@crx/manifest",
     "isEntry": true
@@ -21,7 +21,7 @@
     "name": "modulepreload-polyfill"
   },
   "main.tsx-loader.js": {
-    "file": "assets/main.tsx-loader-DdzLYpzy.js",
+    "file": "assets/main.tsx-loader-i1QsXdzN.js",
     "src": "main.tsx-loader.js"
   },
   "node_modules/katex/dist/fonts/KaTeX_AMS-Regular.ttf": {
@@ -261,7 +261,7 @@
     "src": "node_modules/katex/dist/fonts/KaTeX_Typewriter-Regular.woff2"
   },
   "src/extension/content/main.tsx": {
-    "file": "assets/main.tsx-DZLLpbCP.js",
+    "file": "assets/main.tsx-D7uaQcpD.js",
     "name": "main.tsx",
     "src": "src/extension/content/main.tsx",
     "isEntry": true,
@@ -335,7 +335,7 @@
     ]
   },
   "src/extension/options/index.html": {
-    "file": "assets/index.html-BAyy4A0Y.js",
+    "file": "assets/index.html-_bls9R-5.js",
     "name": "index.html",
     "src": "src/extension/options/index.html",
     "isEntry": true,
@@ -346,7 +346,7 @@
     ]
   },
   "src/extension/popup/index.html": {
-    "file": "assets/index.html-BiZ4YPpU.js",
+    "file": "assets/index.html-0-QUZmc2.js",
     "name": "index.html",
     "src": "src/extension/popup/index.html",
     "isEntry": true,

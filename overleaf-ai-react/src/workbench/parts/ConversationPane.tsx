@@ -333,7 +333,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
         mode: chatMode,
         modelId: selectedModel,
         contextItems,
-        maxIterations: chatMode === 'agent' ? 25 : 10,
+        maxIterations: chatMode === 'agent' ? 100 : 10,
         conversationId: convId
       });
     } catch (error) {
@@ -566,7 +566,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
               <div className="ai-welcome-logo ai-welcome-logo-small">
                 <span className="material-symbols">smart_toy</span>
               </div>
-              <h2>Overleaf AI</h2>
+              <h2>PacificOceanAI</h2>
               <p>开始对话...</p>
             </div>
           </div>

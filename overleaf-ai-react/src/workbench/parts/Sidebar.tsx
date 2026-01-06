@@ -107,7 +107,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
           <div className="ai-header-left">
             <span className="ai-header-title">
               <span className="material-symbols">smart_toy</span>
-              Overleaf AI
+              PacificOceanAI
             </span>
           </div>
           <div className="ai-header-actions">

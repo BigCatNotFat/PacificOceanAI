@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "My Overleaf AI",
-  "version": "1.0",
-  "description": "测试 Overleaf 插件开发",
+  "name": "PacificOceanAI",
+  "version": "2.0",
+  "description": "PacificOceanAI Plugin",
   "permissions": [
     "storage"
   ],
@@ -14,12 +14,12 @@
   "options_page": "src/extension/options/index.html",
   "action": {
     "default_popup": "src/extension/popup/index.html",
-    "default_title": "Overleaf AI Assistant"
+    "default_title": "PacificOceanAI"
   },
   "content_scripts": [
     {
       "js": [
-        "assets/main.tsx-loader-DdzLYpzy.js"
+        "assets/main.tsx-loader-i1QsXdzN.js"
       ],
       "matches": [
         "https://www.overleaf.com/*",
@@ -103,7 +103,7 @@
         "assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf",
         "assets/client-CLze4-QF.js",
         "assets/StorageService-CnFXTPEB.js",
-        "assets/main.tsx-DZLLpbCP.js"
+        "assets/main.tsx-D7uaQcpD.js"
       ],
       "use_dynamic_url": false
     }
