@@ -105,7 +105,7 @@ export interface IPromptService {
   buildSystemPrompt(
     mode: ChatMode,
     modelId: ModelId
-  ): string;
+  ): Promise<string>;
 
   /**
    * 处理上下文条目，将其转换为可插入 prompt 的文本

@@ -22,6 +22,7 @@ import type { ModelId, IModelRegistryService } from '../../platform/llm/IModelRe
 import { IModelRegistryServiceId } from '../../platform/llm/IModelRegistryService';
 import type { IToolService } from '../../platform/agent/IToolService';
 import { IToolServiceId } from '../../platform/agent/IToolService';
+import { overleafEditor } from '../editor/OverleafEditor';
 
 /**
  * PromptService 实现
@@ -90,7 +91,7 @@ export class PromptService implements IPromptService {
     // 如果提供了自定义的 systemPromptOverride，则直接使用
     // 否则根据当前模式和模型ID动态构建 System Prompt（工具列表会在内部自动获取）
     const systemPrompt = options.systemPromptOverride || 
-      this.buildSystemPrompt(mode, options.modelId);
+      await this.buildSystemPrompt(mode, options.modelId);
     
     messages.push({
       role: 'system',
@@ -130,7 +131,7 @@ export class PromptService implements IPromptService {
   /**
    * 构建 System Prompt
    */
-  buildSystemPrompt(mode: ChatMode, modelId: ModelId): string {
+  async buildSystemPrompt(mode: ChatMode, modelId: ModelId): Promise<string> {
     const timestamp = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
 
     // 获取模型的知识截止日期
@@ -142,9 +143,6 @@ export class PromptService implements IPromptService {
 Knowledge cutoff: ${knowledgeCutoff}
 You are an AI paper writing assistant powered by ${modelInfo?.name || modelId}, specializing in LaTeX-based academic writing and typesetting. You operate in overleaf.
 You are pair paper-writing with a USER to solve their paper writing task. Each time the USER sends a message, we may automatically attach some information about their current state, such as what files they have open, where their cursor is, recently viewed files, edit history in their session so far, and more. This information may or may not be relevant to the paper writing task, it is up for you to decide.
-Here is the user's system information:
-
-Current time: ${timestamp}
 `;
 
 
@@ -154,10 +152,10 @@ Current time: ${timestamp}
 
     switch (mode) {
       case 'agent':
-        return this.buildAgentPrompt(basePrompt, tools);
+        return await this.buildAgentPrompt(basePrompt, tools);
       
       case 'chat':
-        return this.buildChatPrompt(basePrompt, tools);
+        return await this.buildChatPrompt(basePrompt, tools);
       
       case 'normal':
         return this.buildNormalPrompt(basePrompt);
@@ -458,9 +456,115 @@ ${text}
   // ==================== 聊天模式提示词 ====================
 
   /**
+   * 获取用户信息（当前网站、日期、项目名称）
+   */
+  private getUserInfo(): { website: string; date: string; projectName: string } {
+    // 获取当前网站
+    const website = typeof window !== 'undefined' ? window.location.origin : 'unknown';
+
+    // 获取当前日期（格式化为 "Tuesday Jan 6, 2026"）
+    const now = new Date();
+    const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const date = `${weekdays[now.getDay()]} ${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+
+    // 获取项目名称
+    let projectName = 'Unknown Project';
+    try {
+      const name = overleafEditor.project.getProjectName();
+      if (name) {
+        projectName = name;
+      }
+    } catch (error) {
+      console.warn('[PromptService] 无法获取项目名称:', error);
+    }
+
+    return { website, date, projectName };
+  }
+
+  /**
+   * 获取项目文件结构
+   */
+  private async getProjectLayout(): Promise<string> {
+    try {
+      const { entities } = await overleafEditor.project.getFileTree();
+      
+      // 获取文件统计信息
+      let statsMap = new Map<string, { lines: number; chars: number }>();
+      try {
+        const stats = await overleafEditor.project.getProjectFileStats();
+        if (stats) {
+          stats.forEach(s => statsMap.set(s.path, s));
+        }
+      } catch (e) {
+        console.warn('[PromptService] 获取文件统计信息失败:', e);
+      }
+      
+      // 构建文件树结构
+      const tree: Map<string, any[]> = new Map();
+      
+      // 将所有实体按路径分组
+      entities.forEach(entity => {
+        const pathParts = entity.path.split('/').filter(p => p);
+        const dirPath = pathParts.slice(0, -1).join('/');
+        const fileName = pathParts[pathParts.length - 1];
+        
+        if (!tree.has(dirPath)) {
+          tree.set(dirPath, []);
+        }
+        tree.get(dirPath)!.push({
+          name: fileName || entity.path,
+          type: entity.type,
+          fullPath: entity.path
+        });
+      });
+      
+      // 格式化输出
+      let output = '';
+      const sortedKeys = Array.from(tree.keys()).sort();
+      
+      for (const dirPath of sortedKeys) {
+        const items = tree.get(dirPath)!;
+        
+        // 添加目录标题（如果不是根目录）
+        if (dirPath) {
+          output += `./${dirPath}\n`;
+        } else {
+          output += '.\n';
+        }
+        
+        // 排序：文件夹在前，然后按名称排序
+        items.sort((a, b) => {
+          if (a.type === 'folder' && b.type !== 'folder') return -1;
+          if (a.type !== 'folder' && b.type === 'folder') return 1;
+          return a.name.localeCompare(b.name);
+        });
+        
+        // 添加文件和文件夹
+        for (const item of items) {
+          let lineInfo = '';
+          if (item.type === 'doc') {
+             const relativePath = item.fullPath.startsWith('/') ? item.fullPath.substring(1) : item.fullPath;
+             const stat = statsMap.get(relativePath);
+             if (stat) {
+               lineInfo = ` (${stat.lines} lines, ${stat.chars} chars)`;
+             }
+          }
+          output += `    ${item.name}${lineInfo}\n`;
+        }
+      }
+      
+      return output.trim();
+    } catch (error) {
+      console.warn('[PromptService] 无法获取项目文件结构:', error);
+      return 'Unable to retrieve project structure.';
+    }
+  }
+
+  /**
    * Agent 模式的 System Prompt
    */
-  private buildAgentPrompt(basePrompt: string, tools?: ToolDefinition[]): string {
+  private async buildAgentPrompt(basePrompt: string, tools?: ToolDefinition[]): Promise<string> {
     let prompt = `${basePrompt}
 You are an agent - please keep going until the user's query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved. Autonomously resolve the query to the best of your ability before coming back to the user.
 Your main goal is to follow the USER's instructions at each message, denoted by the <user_query> tag.
@@ -498,38 +602,29 @@ You have tools to search the paperbase and read files. Follow these rules regard
 2. If you need to read a file, prefer to read larger sections of the file at once over multiple smaller calls.
 3. If you have found a reasonable place to edit or answer, do not continue calling tools. Edit or answer from the information you have found.
 </searching_and_reading>
-
-<file_references>
-When the user's message contains a <context> block with <file_reference> tags, this represents ACTUAL content from the user's project files that they have explicitly selected and pasted.
-
-**CRITICAL: You MUST treat <file_reference> content as ground truth:**
-1. The content inside <file_reference> is the EXACT, VERBATIM content from the specified file at the specified line(s)
-2. The file attribute contains the REAL filename (e.g., "main.tex", "chapter1.tex")
-3. The line attribute(s) indicate the EXACT line number(s) in the file
-4. Do NOT question or verify the accuracy of this content - it comes directly from the user's editor
-5. When the user refers to "[filename:第X行]" or similar notation in their query, they are referencing the content provided in <file_reference>
-6. You can directly work with this content without needing to use read_file or other tools to verify it
-
-Example:
-<context>
-<file_reference file="main.tex" line 15>
-To configure the document language, simply edit the option provided to the babel package.
-</file_reference>
-</context>
-
-When the user says "优化 [main.tex:第15行]", you should directly work with the content "To configure the document language..." without any verification.
-</file_references>
 `;
 
     // 添加工具列表
     if (tools && tools.length > 0) {
       prompt += '\n\n' + this.formatToolsAsXML(tools);
     }
+
+    // 获取并添加用户信息
+    const userInfo = this.getUserInfo();
     prompt += `
 
 <user_info>
-The user's OS version is win32 10.0.26100. The absolute path of the user's workspace is /. 
+Current website: ${userInfo.website}
+Current Date: ${userInfo.date}
+Project name: ${userInfo.projectName}
+The absolute path of the user's workspace is /.
 </user_info>
+
+<project_layout>
+Below is a snapshot of the current workspace's file structure at the start of the conversation. This snapshot will NOT update during the conversation.
+
+${await this.getProjectLayout()}
+</project_layout>
 
 **Response Guidelines:**
 - For simple greetings, casual chat, or general knowledge questions: respond directly WITHOUT calling any tools.
@@ -546,7 +641,7 @@ The user's OS version is win32 10.0.26100. The absolute path of the user's works
   /**
    * Chat 模式的 System Prompt
    */
-  private buildChatPrompt(basePrompt: string, tools: ToolDefinition[]): string {
+  private async buildChatPrompt(basePrompt: string, tools: ToolDefinition[]): Promise<string> {
     let prompt = `${basePrompt}
 You are in CHAT mode, which is a conversational assistant mode with read-only access to the workspace.
 Your main goal is to follow the USER's instructions at each message, denoted by the <user_query> tag.
@@ -568,24 +663,15 @@ You have tools to search the paperbase and read files. Follow these rules regard
 2. If you need to read a file, prefer to read larger sections of the file at once over multiple smaller calls.
 3. If you have found a reasonable place to edit or answer, do not continue calling tools. Edit or answer from the information you have found.
 </searching_and_reading>
-
-<file_references>
-When the user's message contains a <context> block with <file_reference> tags, this represents ACTUAL content from the user's project files that they have explicitly selected and pasted.
-
-**CRITICAL: You MUST treat <file_reference> content as ground truth:**
-1. The content inside <file_reference> is the EXACT, VERBATIM content from the specified file at the specified line(s)
-2. The file attribute contains the REAL filename (e.g., "main.tex", "chapter1.tex")
-3. The line attribute(s) indicate the EXACT line number(s) in the file
-4. Do NOT question or verify the accuracy of this content - it comes directly from the user's editor
-5. When the user refers to "[filename:第X行]" or similar notation in their query, they are referencing the content provided in <file_reference>
-6. You can directly work with this content without needing to use read_file or other tools to verify it
-</file_references>
 `;
 
     // 添加只读工具列表
     if (tools.length > 0) {
       prompt += '\n\n' + this.formatToolsAsXML(tools);
     }
+
+    // 获取并添加用户信息
+    const userInfo = this.getUserInfo();
     prompt += `
 You MUST use the following format when citing latex regions or blocks:
 \`\`\`startLine:endLine:filepath
@@ -594,8 +680,17 @@ You MUST use the following format when citing latex regions or blocks:
 This is the ONLY acceptable format for latex citations. The format is \`\`\`startLine:endLine:filepath where startLine and endLine are line numbers.
 
 <user_info>
-The user's OS version is win32 10.0.26100. The absolute path of the user's workspace is /. 
+Current website: ${userInfo.website}
+Current Date: ${userInfo.date}
+Project name: ${userInfo.projectName}
+The absolute path of the user's workspace is /.
 </user_info>
+
+<project_layout>
+Below is a snapshot of the current workspace's file structure at the start of the conversation. This snapshot will NOT update during the conversation.
+
+${await this.getProjectLayout()}
+</project_layout>
 
 Answer the user's request using the relevant tool(s), if they are available. Check that all the required parameters for each tool call are provided or can reasonably be inferred from context. IF there are no relevant tools or there are missing values for required parameters, ask the user to supply these values; otherwise proceed with the tool calls. If the user provides a specific value for a parameter (for example provided in quotes), make sure to use that value EXACTLY. DO NOT make up values for or ask about optional parameters. Carefully analyze descriptive terms in the request as they may indicate required parameter values that should be included even if not explicitly quoted.
     

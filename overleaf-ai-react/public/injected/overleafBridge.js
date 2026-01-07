@@ -786,9 +786,25 @@ const methodHandlers = {
     };
   },
 
-  // 全局搜索
+  // 获取全局搜索
   searchProject: async function(pattern, options) {
     return await searchInternal(pattern, options);
+  },
+
+  // 获取项目文件统计信息（行数、字符数）
+  getProjectFileStats: async function() {
+    try {
+      const projectId = getProjectId();
+      const files = await getAllDocsWithContent(projectId);
+      return files.map(f => ({
+        path: f.path,
+        lines: f.content ? f.content.split('\n').length : 0,
+        chars: f.content ? f.content.length : 0
+      }));
+    } catch (e) {
+      console.error('[OverleafBridge] getProjectFileStats failed:', e);
+      return [];
+    }
   }
 };
 
