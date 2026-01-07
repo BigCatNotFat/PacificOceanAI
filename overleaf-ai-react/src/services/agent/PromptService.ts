@@ -88,10 +88,33 @@ export class PromptService implements IPromptService {
     const messages: LLMMessage[] = [];
 
     // 1. 构建 System Prompt
-    // 如果提供了自定义的 systemPromptOverride，则直接使用
-    // 否则根据当前模式和模型ID动态构建 System Prompt（工具列表会在内部自动获取）
-    const systemPrompt = options.systemPromptOverride || 
-      await this.buildSystemPrompt(mode, options.modelId);
+    // 优先级：
+    //   1) 如果提供了 systemPromptOverride，直接使用
+    //   2) 如果历史中已有系统提示词且未强制重建，使用历史中的
+    //   3) 否则根据当前模式和模型ID动态构建
+    let systemPrompt: string;
+    
+    if (options.systemPromptOverride) {
+      // 使用自定义覆盖
+      systemPrompt = options.systemPromptOverride;
+      console.log('[PromptService] 使用自定义系统提示词覆盖');
+    } else {
+      // 检查历史中是否已有系统提示词
+      const existingSystemMessage = history.find(m => m.role === 'system');
+      
+      if (existingSystemMessage && !options.forceRebuildSystemPrompt) {
+        // 复用历史中保存的系统提示词
+        systemPrompt = existingSystemMessage.content;
+        console.log('[PromptService] 复用历史中的系统提示词');
+      } else {
+        // 构建新的系统提示词
+        systemPrompt = await this.buildSystemPrompt(mode, options.modelId);
+        console.log('[PromptService] 构建新的系统提示词', {
+          hasExisting: !!existingSystemMessage,
+          forceRebuild: options.forceRebuildSystemPrompt
+        });
+      }
+    }
     
     messages.push({
       role: 'system',
@@ -104,7 +127,7 @@ export class PromptService implements IPromptService {
       contextText = await this.formatContext(context, 10000); // 限制上下文最大 10k tokens
     }
 
-    // 3. 转换历史消息
+    // 3. 转换历史消息（会自动跳过 system 消息，避免重复）
     const llmHistory = this.convertHistoryToLLMMessages(history, options.includeThinking);
     
     // 4. 将上下文合并到最后一条用户消息中（而不是作为单独的消息）

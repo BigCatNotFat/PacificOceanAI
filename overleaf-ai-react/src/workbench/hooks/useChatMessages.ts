@@ -29,6 +29,11 @@ function mapServiceMessageToUI(
 ): ChatMessage[] {
   const uiMessages: ChatMessage[] = [];
 
+  // 系统提示词消息：不在 UI 中显示（仅用于持久化和发送给 LLM）
+  if (message.role === 'system') {
+    return uiMessages;
+  }
+
   // 工具消息：展示为单独的工具调用折叠区域
   if (message.role === 'tool') {
     // 工具执行结果改由 Sidebar 中的流式 Tool 调用 UI 展示

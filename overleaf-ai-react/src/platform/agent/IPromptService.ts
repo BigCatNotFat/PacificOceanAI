@@ -71,6 +71,12 @@ export interface PromptBuildOptions {
   systemPromptOverride?: string;
   /** 是否包含思考内容（默认 false，只在调试时使用） */
   includeThinking?: boolean;
+  /** 
+   * 强制重建系统提示词（即使历史消息中已有）
+   * 默认 false：优先使用历史中保存的系统提示词
+   * 设为 true：忽略历史，重新构建系统提示词
+   */
+  forceRebuildSystemPrompt?: boolean;
 }
 
 // ==================== Service 接口 ====================

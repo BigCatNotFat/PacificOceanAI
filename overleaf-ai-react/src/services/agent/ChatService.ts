@@ -31,6 +31,8 @@ import type { IAgentService, AgentLoopController } from '../../platform/agent/IA
 import { IAgentServiceId } from '../../platform/agent/IAgentService';
 import type { IConversationService } from '../../platform/agent/IConversationService';
 import { IConversationServiceId } from '../../platform/agent/IConversationService';
+import type { IPromptService } from '../../platform/agent/IPromptService';
+import { IPromptServiceId } from '../../platform/agent/IPromptService';
 
 /**
  * 单个会话的状态
@@ -57,7 +59,7 @@ interface SessionState {
 /**
  * ChatService 实现 - 支持多会话并行
  */
-@injectable(IAgentServiceId, IConversationServiceId)
+@injectable(IAgentServiceId, IConversationServiceId, IPromptServiceId)
 export class ChatService implements IChatService {
   // ==================== 事件发射器 ====================
   private readonly _onDidMessageUpdate = new Emitter<MessageUpdateEvent>();
@@ -73,11 +75,13 @@ export class ChatService implements IChatService {
 
   constructor(
     private readonly agentService: IAgentService,
-    private readonly conversationService: IConversationService
+    private readonly conversationService: IConversationService,
+    private readonly promptService: IPromptService
   ) {
     console.log('[ChatService] 依赖注入成功', {
       hasAgentService: !!agentService,
-      hasConversationService: !!conversationService
+      hasConversationService: !!conversationService,
+      hasPromptService: !!promptService
     });
 
     // 监听对话切换事件，加载对应对话的消息到 session
@@ -232,7 +236,26 @@ export class ChatService implements IChatService {
     session.currentTurnStartIndex = session.messages.length;
 
     try {
-      // 1. 写入用户消息
+      // ========== 步骤 1：首次对话时插入系统提示词 ==========
+      if (session.messages.length === 0) {
+        try {
+          const systemPrompt = await this.promptService.buildSystemPrompt(
+            options.mode || 'agent',
+            options.modelId || 'gpt-4'
+          );
+          
+          const systemMessage = this.createMessage(session, 'system', systemPrompt);
+          systemMessage.status = 'completed';
+          session.messages.push(systemMessage);
+          
+          console.log('[ChatService] ✅ 插入系统提示词到对话开头');
+        } catch (error) {
+          console.error('[ChatService] 构建系统提示词失败:', error);
+          // 继续执行，不阻塞用户发消息
+        }
+      }
+
+      // ========== 步骤 2：添加用户消息 ==========
       const userMessage = this.createMessage(session, 'user', input);
       userMessage.status = 'completed';
       session.messages.push(userMessage);
@@ -241,7 +264,12 @@ export class ChatService implements IChatService {
         messages: [...session.messages]
       });
 
-      // 2. 立即创建占位的 assistant 消息
+      // ========== 步骤 3：立即保存到本地 ==========
+      // 确保用户消息和系统提示词立即持久化，防止刷新丢失
+      await this.saveMessagesNow(session);
+      console.log('[ChatService] ✅ 用户消息已保存到本地');
+
+      // ========== 步骤 4：创建 AI 响应占位符 ==========
       const assistantPlaceholder = this.createMessage(session, 'assistant', '');
       assistantPlaceholder.status = 'streaming';
       session.messages.push(assistantPlaceholder);
@@ -327,6 +355,9 @@ export class ChatService implements IChatService {
         
         session.isProcessing = false;
         session.currentTurnStartIndex = undefined;
+        
+        // 错误时也保存，确保错误状态被持久化
+        this.saveMessagesNow(session);
       });
 
       // 7. 监听工具审批事件

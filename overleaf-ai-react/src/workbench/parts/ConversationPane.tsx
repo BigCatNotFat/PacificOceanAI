@@ -200,7 +200,8 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   
   const {
     conversations,
-    createConversation
+    createConversation,
+    switchConversation
   } = useConversations();
 
   // 加载可用模型列表
@@ -466,9 +467,12 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
 
   // 切换对话
   const handleSwitchConversation = useCallback(async (newConvId: string) => {
+    // 先调用 switchConversation 加载对话数据，触发 ChatService 更新
+    await switchConversation(newConvId);
+    // 然后通知父组件更新 UI
     onConversationChange(newConvId);
     setIsConversationMenuOpen(false);
-  }, [onConversationChange]);
+  }, [switchConversation, onConversationChange]);
 
   // 创建新对话
   const handleCreateConversation = useCallback(async () => {
