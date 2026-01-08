@@ -4,60 +4,31 @@
  * 功能：对现有文件进行编辑修改
  * 类型：write（写操作，需要用户审批）
  * 
- * 使用 Google 的 diff-match-patch 库来智能应用编辑
+ * 简化版：使用简单的字符串替换
  */
 
 import { BaseTool } from '../base/BaseTool';
 import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
-import { diffMatchPatchService } from '../utils/DiffMatchPatchService';
 
 /**
  * 编辑文件工具
  * 
- * 支持两种编辑模式：
- * 1. 带有 `// ... existing latex ...` 占位符的增量编辑
- * 2. 全量替换编辑
+ * 使用 search & replace 模式
  */
 export class EditFileTool extends BaseTool {
   protected metadata: ToolMetadata = {
     name: 'edit_file',
-    description: `Use this tool to edit an existing LaTeX file.
+    description: `Modify a file by replacing a specific text segment.
 
-**CRITICAL**: The \`latex_edit\` parameter must contain the MODIFIED/NEW content, NOT the original unchanged text. The system locates where to apply changes using anchor lines.
+Usage:
+1. Provide the \`target_file\` path.
+2. Provide the \`old_string\` which must be the EXACT text to be replaced (including indentation and newlines).
+3. Provide the \`new_string\` which is the text to replace it with.
+4. Provide \`instructions\` explaining the change.
 
-**How it works**:
-1. Include 1-2 lines of UNCHANGED original text at the START as anchor (must exist verbatim in original)
-2. Include your MODIFIED/NEW content 
-3. Include 1-2 lines of UNCHANGED original text at the END as anchor (must exist verbatim in original)
-4. Use \`// ... existing latex codes...\` to skip large unchanged sections
-
-**Example**: To change "This is old text" to "This is NEW text":
-
-Original file content:
-\`\`\`
-\\section{Title}
-This is old text
-\\section{Next}
-\`\`\`
-
-Your latex_edit should be:
-\`\`\`
-// ... existing latex codes...
-\\section{Title}
-This is NEW text
-\\section{Next}
-// ... existing latex codes...
-\`\`\`
-
-**Key Rules**:
-- FIRST non-placeholder line = start anchor (MUST exist in original file)
-- LAST non-placeholder line = end anchor (MUST exist in original file)
-- Content between anchors gets REPLACED with your edit
-- When modifying text, keep surrounding unchanged lines as anchors
-- NEVER pass unchanged original text without modifications - that causes "no changes" error
-
-You should specify the following arguments before the others: [target_file]`,
+This tool performs a simple string replacement (replacing the first occurrence of old_string).
+Ensure you have read the file content to get the exact \`old_string\`.`,
     parameters: {
       type: 'object',
       properties: {
@@ -65,16 +36,20 @@ You should specify the following arguments before the others: [target_file]`,
           type: 'string',
           description: 'The target file to modify. Always specify the target file as the first argument.'
         },
+        old_string: {
+          type: 'string',
+          description: 'The exact original text to be replaced. Must match content in the file exactly.'
+        },
+        new_string: {
+          type: 'string',
+          description: 'The new text to replace the original text with.'
+        },
         instructions: {
           type: 'string',
-          description: "A single sentence describing what change you are making. Use first person (e.g., 'I am changing X to Y')."
-        },
-        latex_edit: {
-          type: 'string',
-          description: 'The MODIFIED content with anchors. Structure: (1) `// ... existing latex codes...`, (2) 1-2 unchanged lines as START anchor, (3) your NEW/MODIFIED content, (4) 1-2 unchanged lines as END anchor, (5) `// ... existing latex codes...`. Anchors must match original file exactly. The middle content is what replaces the original.'
+          description: "A single sentence describing what change you are making."
         }
       },
-      required: ['target_file', 'instructions', 'latex_edit']
+      required: ['target_file', 'old_string', 'new_string', 'instructions']
     },
     needApproval: false,
     modes: ['agent']
@@ -85,8 +60,9 @@ You should specify the following arguments before the others: [target_file]`,
    */
   async execute(args: {
     target_file: string;
+    old_string: string;
+    new_string: string;
     instructions: string;
-    latex_edit: string;
   }): Promise<ToolExecutionResult> {
     const startTime = Date.now();
     
@@ -94,13 +70,14 @@ You should specify the following arguments before the others: [target_file]`,
       console.log('[EditFileTool] execute called with:', {
         target_file: args.target_file,
         instructions: args.instructions,
-        latex_edit_length: args.latex_edit?.length
+        old_string_len: args.old_string?.length,
+        new_string_len: args.new_string?.length
       });
 
       if (!this.validate(args)) {
         return {
           success: false,
-          error: 'Missing required parameters: target_file, instructions, latex_edit',
+          error: 'Missing required parameters',
           duration: Date.now() - startTime
         };
       }
@@ -145,7 +122,6 @@ You should specify the following arguments before the others: [target_file]`,
         console.log('[EditFileTool] Switch command sent. Waiting for editor to update...');
         
         // 等待文件切换完成
-        // 我们通过轮询当前文件名来确认切换是否成功
         const switchSuccess = await this.waitForFileSwitch(targetBaseName);
         
         if (!switchSuccess) {
@@ -159,41 +135,37 @@ You should specify the following arguments before the others: [target_file]`,
         console.log('[EditFileTool] File switched successfully.');
       }
 
-      // 3. 获取当前文件内容 (现在应该是目标文件了)
+      // 3. 获取当前文件内容
       console.log('[EditFileTool] Step 2: Getting content from editor');
       let originalContent = await overleafEditor.document.getText();
-      console.log('[EditFileTool] Original content length:', originalContent.length);
-
-      // 3. 清理编辑内容（移除代码块标记）
-      console.log('[EditFileTool] Step 3: Cleaning edit content');
-      const cleanedEdit = this.cleanEditContent(args.latex_edit);
-      console.log('[EditFileTool] Cleaned edit:', cleanedEdit.substring(0, 200) + '...');
-
-      // 4. 使用 DiffMatchPatchService 应用编辑
-      console.log('[EditFileTool] Step 4: Applying edit with DiffMatchPatchService');
-      const applyResult = diffMatchPatchService.applyEdit(originalContent, cleanedEdit);
-      console.log('[EditFileTool] Apply result:', {
-        success: applyResult.success,
-        changesApplied: applyResult.changesApplied,
-        error: applyResult.error,
-        newContentLength: applyResult.newContent?.length,
-        debugInfo: applyResult.debugInfo
-      });
-
-      if (!applyResult.success) {
-        return {
-          success: false,
-          error: applyResult.error || '编辑应用失败',
-          duration: Date.now() - startTime,
-          data: {
-            file: args.target_file,
-            debugInfo: applyResult.debugInfo
-          }
-        };
+      
+      // 4. 执行替换
+      console.log('[EditFileTool] Step 3: Performing replacement');
+      
+      // 检查 old_string 是否存在
+      if (originalContent.indexOf(args.old_string) === -1) {
+        // 尝试进行一些基本的清理（例如标准化换行符）再试一次
+        const normalizedContent = originalContent.replace(/\r\n/g, '\n');
+        const normalizedOld = args.old_string.replace(/\r\n/g, '\n');
+        
+        if (normalizedContent.indexOf(normalizedOld) === -1) {
+            return {
+                success: false,
+                error: `Could not find exact match for old_string in file. Please read the file content again and ensure exact match (including whitespace).`,
+                duration: Date.now() - startTime,
+                data: {
+                  file: args.target_file,
+                  found: false
+                }
+            };
+        }
       }
 
+      // 执行替换 (只替换第一个匹配项)
+      const newContent = originalContent.replace(args.old_string, args.new_string);
+
       // 5. 检查内容是否真的有变化
-      if (applyResult.newContent === originalContent) {
+      if (newContent === originalContent) {
         console.log('[EditFileTool] No changes detected');
         return {
           success: true,
@@ -210,7 +182,7 @@ You should specify the following arguments before the others: [target_file]`,
 
       // 6. 应用编辑到编辑器
       console.log('[EditFileTool] Step 5: Setting document content');
-      const setResult = await overleafEditor.editor.setDocContent(applyResult.newContent);
+      const setResult = await overleafEditor.editor.setDocContent(newContent);
       console.log('[EditFileTool] Set result:', setResult);
 
       if (!setResult.success) {
@@ -230,13 +202,9 @@ You should specify the following arguments before the others: [target_file]`,
           instructions: args.instructions,
           applied: true,
           message: `成功编辑文件 ${args.target_file}`,
-          changesApplied: applyResult.changesApplied,
+          changesApplied: 1,
           oldLength: setResult.oldLength,
-          newLength: setResult.newLength,
-          diff: {
-            added: setResult.newLength - setResult.oldLength,
-            linesChanged: this.countLineChanges(originalContent, applyResult.newContent)
-          }
+          newLength: setResult.newLength
         },
         duration: Date.now() - startTime
       };
@@ -261,56 +229,6 @@ You should specify the following arguments before the others: [target_file]`,
     instructions: string;
   }): string {
     return `编辑文件 ${args.target_file}: ${args.instructions}`;
-  }
-
-  /**
-   * 清理编辑内容
-   * 移除可能的代码块标记（```latex 或 ```）
-   * 修复反斜杠转义问题（AI 可能会在 JSON 中过度转义）
-   */
-  private cleanEditContent(editContent: string): string {
-    let content = editContent.trim();
-    
-    // 移除开头的代码块标记
-    const codeBlockStart = /^```(\w+)?\s*\n?/;
-    content = content.replace(codeBlockStart, '');
-    
-    // 移除结尾的代码块标记
-    const codeBlockEnd = /\n?```\s*$/;
-    content = content.replace(codeBlockEnd, '');
-    
-    // 修复反斜杠转义问题
-    // AI 在 JSON 中可能会将 \command 写成 \\command
-    // 需要将 \\ 后面跟着字母的情况转换为单个 \
-    // 注意：保留 LaTeX 换行符 \\ (后面通常跟空格、换行或行尾)
-    content = this.normalizeLatexBackslashes(content);
-    
-    return content;
-  }
-
-  /**
-   * 规范化 LaTeX 反斜杠
-   * 将过度转义的双反斜杠 (\\command) 转换为单反斜杠 (\command)
-   * 但保留 LaTeX 换行符 (\\)
-   */
-  private normalizeLatexBackslashes(content: string): string {
-    // 匹配 \\ 后面紧跟字母的情况（这是错误的转义）
-    // 例如：\\subsection -> \subsection
-    // 但不匹配：\\ (换行) 或 \\[ (显示数学环境)
-    
-    // 策略：将 \\ 后面紧跟 a-zA-Z 的情况替换为单个 \
-    // 这样 \\subsection 变成 \subsection
-    // 而 \\ 或 \\[ 保持不变
-    return content.replace(/\\\\([a-zA-Z])/g, '\\$1');
-  }
-
-  /**
-   * 计算行变化数量
-   */
-  private countLineChanges(oldContent: string, newContent: string): number {
-    const oldLines = oldContent.split('\n').length;
-    const newLines = newContent.split('\n').length;
-    return Math.abs(newLines - oldLines);
   }
 
   /**

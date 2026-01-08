@@ -28,10 +28,7 @@ When using this tool to gather information, it's your responsibility to ensure y
 1) Assess if the contents you viewed are sufficient to proceed with your task.
 2) Take note of where there are lines not shown.
 3) If the file contents you have viewed are insufficient, and you suspect they may be in lines not shown, proactively call the tool again to view those lines.
-4) When in doubt, call this tool again to gather more information. Remember that partial file views may miss critical dependencies, imports, or functionality.
-
-In some cases, if reading a range of lines is not enough, you may choose to read the entire file.
-Reading entire files is often wasteful and slow, especially for large files (i.e. more than a few hundred lines). So you should use this option sparingly！！！`,
+4) When in doubt, call this tool again to gather more information. Remember that partial file views may miss critical dependencies, imports, or functionality.`,
     parameters: {
       type: 'object',
       properties: {
@@ -43,10 +40,6 @@ Reading entire files is often wasteful and slow, especially for large files (i.e
           type: 'string',
           description: 'The path of the file to read. Currently reads the active file in Overleaf editor.'
         },
-        should_read_entire_file: {
-          type: 'boolean',
-          description: 'Whether to read the entire file. Defaults to false. be careful when using this option sparingly！！！'
-        },
         start_line_one_indexed: {
           type: 'integer',
           description: 'The one-indexed line number to start reading from (inclusive).'
@@ -56,7 +49,7 @@ Reading entire files is often wasteful and slow, especially for large files (i.e
           description: 'The one-indexed line number to end reading at (inclusive).'
         }
       },
-      required: ['target_file', 'should_read_entire_file', 'start_line_one_indexed', 'end_line_one_indexed_inclusive']
+      required: ['target_file', 'start_line_one_indexed', 'end_line_one_indexed_inclusive']
     },
     needApproval: false,
     modes: ['agent', 'chat']
@@ -72,7 +65,6 @@ Reading entire files is often wasteful and slow, especially for large files (i.e
    */
   async execute(args: {
     target_file: string;
-    should_read_entire_file: boolean;
     start_line_one_indexed: number;
     end_line_one_indexed_inclusive: number;
     explanation?: string;
@@ -83,7 +75,7 @@ Reading entire files is often wasteful and slow, especially for large files (i.e
       if (!this.validate(args)) {
         return {
           success: false,
-          error: 'Missing required parameters: target_file, should_read_entire_file, start_line_one_indexed, end_line_one_indexed_inclusive',
+          error: 'Missing required parameters: target_file, start_line_one_indexed, end_line_one_indexed_inclusive',
           duration: Date.now() - startTime
         };
       }
@@ -104,18 +96,13 @@ Reading entire files is often wasteful and slow, especially for large files (i.e
 
       let result: ReadFileResult;
 
-      if (args.should_read_entire_file) {
-        // 读取整个文件
-        result = await this.readEntireFile(args.target_file, docId);
-      } else {
-        // 读取指定行范围
-        result = await this.readLineRange(
-          args.target_file,
-          docId,
-          args.start_line_one_indexed,
-          args.end_line_one_indexed_inclusive
-        );
-      }
+      // 读取指定行范围
+      result = await this.readLineRange(
+        args.target_file,
+        docId,
+        args.start_line_one_indexed,
+        args.end_line_one_indexed_inclusive
+      );
 
       return {
         success: true,
@@ -128,45 +115,6 @@ Reading entire files is often wasteful and slow, especially for large files (i.e
         duration: Date.now() - startTime
       };
     }
-  }
-
-  /**
-   * 读取整个文件
-   */
-  private async readEntireFile(targetFile: string, docId: string): Promise<ReadFileResult> {
-    this.log('读取整个文件');
-
-    const content = await overleafEditor.document.getDocContent(docId);
-    const totalCharacters = content.length;
-    const lines = content.split('\n').map((text, index) => ({
-      lineNumber: index + 1,
-      text
-    }));
-    
-    const { lines: truncatedLines, truncated, truncatedAtLine } = this.truncateByCharacters(lines);
-    
-    const formattedContent = this.formatLinesWithNumbers(truncatedLines);
-    const displayedCharacters = truncatedLines.reduce((sum, line) => sum + line.text.length + 1, 0);
-    
-    const totalLines = lines.length;
-    const actualEndLine = truncated ? truncatedAtLine! : totalLines;
-    let message = `Successfully read entire file (${totalLines} lines, ${totalCharacters} characters)`;
-    if (truncated) {
-      message += ` [TRUNCATED at line ${truncatedAtLine} due to ${this.MAX_CHARACTERS} character limit, showing ${displayedCharacters} characters]`;
-    }
-    
-    return {
-      file: targetFile,
-      totalLines,
-      totalCharacters,
-      startLine: 1,
-      endLine: actualEndLine,
-      content: formattedContent,
-      rawContent: truncated ? undefined : content,
-      truncated,
-      truncatedAtLine,
-      message
-    };
   }
 
   /**
@@ -363,13 +311,9 @@ Reading entire files is often wasteful and slow, especially for large files (i.e
    */
   getSummary(args: {
     target_file: string;
-    should_read_entire_file: boolean;
     start_line_one_indexed: number;
     end_line_one_indexed_inclusive: number;
   }): string {
-    if (args.should_read_entire_file) {
-      return `读取整个文件: ${args.target_file}`;
-    }
     return `读取文件 ${args.target_file} 的第 ${args.start_line_one_indexed} - ${args.end_line_one_indexed_inclusive} 行`;
   }
 }

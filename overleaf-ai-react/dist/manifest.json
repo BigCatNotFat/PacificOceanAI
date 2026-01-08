@@ -19,7 +19,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/main.tsx-loader-DVFtJtFK.js"
+        "assets/main.tsx-loader-BfKf8jt2.js"
       ],
       "matches": [
         "https://www.overleaf.com/*",
@@ -105,7 +105,7 @@
         "assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf",
         "assets/client-CLze4-QF.js",
         "assets/StorageService-CZysl31p.js",
-        "assets/main.tsx-CBgTuAaN.js"
+        "assets/main.tsx-Dd4E-Wdf.js"
       ],
       "use_dynamic_url": false
     }
