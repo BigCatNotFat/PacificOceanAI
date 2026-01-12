@@ -109,6 +109,11 @@ export interface IConfigurationService {
   testConnectivity(apiKey: string, baseUrl: string): Promise<ConnectivityTestResult>;
 
   /**
+   * 根据连通性测试结果同步模型列表
+   */
+  syncModelsFromConnectivityResult(availableModels: string[]): Promise<{ added: number; enabled: number; disabled: number }>;
+
+  /**
    * 获取默认配置
    */
   getDefaultConfig(): APIConfig;

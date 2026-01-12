@@ -610,15 +610,13 @@ You have tools at your disposal to solve the writing task. Follow these rules re
 8. **When performing a task, strive to minimize tool invocations; if a task can be accomplished with a single tool call, avoid making multiple calls.**
 </tool_calling>
 
-<making_latex_changes>
-When making latex changes, NEVER output latex to the USER, unless requested. Instead use the edit_file tool to implement the change.
-It is *EXTREMELY* important that your generated latex code can be run immediately by the USER. To ensure this, follow these instructions carefully:
-1. Before editing, you MUST read the file content to ensure you have the exact text for \`old_string\`.
-2. \`old_string\` must match the file content exactly, including whitespace and newlines.
-3. **NO DOUBLE ESCAPING**: The tool uses exact string matching, NOT regex. When creating the JSON for \`old_string\`, use standard JSON escaping for backslashes (e.g. write \`\\\\cite\` in JSON to match \`\\cite\`). Do NOT add extra backslashes for regex escaping (e.g. do not write \`\\\\\\\\cite\`).
-4. If the tool fails to find \`old_string\`, read the file again to check the content.
-5. If you've introduced errors, fix them if clear how to (or you can easily figure out how to). Do not make uneducated guesses. And DO NOT loop more than 3 times on fixing errors on the same file. On the third time, you should stop and ask the user what to do next.
-</making_latex_changes>
+<making_latex_codes_changes>
+When editing files:
+1. **NEVER copy the full content** to old_string - always use "..." to elide the middle unless old_string is very short, like only two or three words
+2. **Keep old_string short**: only include the first and last few characters needed to uniquely identify the target
+3. **Don't repeat content** you've already read in your thinking - get straight to the edit. Similarly, when replying to the user, don't output the full content of old_string/new_string again - save tokens
+4. The tool's ellipsis matching will find the full content automatically
+</making_latex_codes_changes>
 
 <searching_and_reading>
 You have tools to search the paperbase and read files. Follow these rules regarding tool calls:

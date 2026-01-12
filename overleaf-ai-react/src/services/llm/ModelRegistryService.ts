@@ -30,11 +30,14 @@ const DEFAULT_CAPABILITIES: ModelCapabilities = {
 
 /**
  * 默认模型配置
+ * 
+ * 注意：maxTokens 对支持 thinking/reasoning 的模型尤其重要
+ * 因为思考过程会消耗大量 token，4096 可能导致响应被截断
  */
 const DEFAULT_MODEL_CONFIG: Omit<ModelConfig, 'modelId'> = {
   temperature: 1.0,
   topP: 1.0,
-  maxTokens: 4096,
+  maxTokens: 16384,  // 增加默认值，避免思考过程被截断
   maxTokensParamName: 'max_tokens'
 };
 
@@ -210,7 +213,7 @@ export class ModelRegistryService implements IModelRegistryService {
         modelId: 'claude-3.5-sonnet',
         temperature: 1.0,
         topP: 1.0,
-        maxTokens: 4096
+        maxTokens: 8192  // 增加到模型最大输出能力
       },
       knowledgeCutoff: '2024-04'
     });
@@ -224,14 +227,14 @@ export class ModelRegistryService implements IModelRegistryService {
         supportsTools: true,
         supportsReasoning: true,
         maxContextTokens: 200000,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 16384,  // 支持推理的模型需要更多输出空间
         supportsVision: true,
         supportsSystemPrompt: true,
         supportsStreaming: true
       },
       defaultConfig: {
         modelId: 'claude-haiku-4-5-20251001',
-        maxTokens: 4096
+        maxTokens: 16384  // 增加以支持完整的思考过程
       },
       knowledgeCutoff: '2024-07'
     });
@@ -268,7 +271,7 @@ export class ModelRegistryService implements IModelRegistryService {
         supportsTools: true,
         supportsReasoning: true,
         maxContextTokens: 2000000,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 65536,  // Gemini 2.5 Pro 支持更大的输出
         supportsVision: true,
         supportsSystemPrompt: true,
         supportsStreaming: true
@@ -277,7 +280,7 @@ export class ModelRegistryService implements IModelRegistryService {
         modelId: 'gemini-2.5-pro',
         temperature: 1.0,
         topP: 0.95,
-        maxTokens: 4096
+        maxTokens: 32768  // 增加以支持完整的思考过程
       },
       knowledgeCutoff: '2024-11'
     });
@@ -292,7 +295,7 @@ export class ModelRegistryService implements IModelRegistryService {
         supportsTools: true,
         supportsReasoning: true,  // 支持 thinking_config
         maxContextTokens: 1000000,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 65536,  // 支持更大的输出
         supportsVision: true,
         supportsSystemPrompt: true,
         supportsStreaming: true
@@ -301,7 +304,7 @@ export class ModelRegistryService implements IModelRegistryService {
         modelId: 'gemini-2.5-flash',
         temperature: 1.0,
         topP: 0.95,
-        maxTokens: 4096
+        maxTokens: 32768  // 增加以支持完整的思考过程
       },
       knowledgeCutoff: '2024-11'
     });
@@ -315,7 +318,7 @@ export class ModelRegistryService implements IModelRegistryService {
         supportsTools: true,
         supportsReasoning: true,
         maxContextTokens: 2000000,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 65536,  // 支持更大的输出
         supportsVision: true,
         supportsSystemPrompt: true,
         supportsStreaming: true
@@ -324,7 +327,29 @@ export class ModelRegistryService implements IModelRegistryService {
         modelId: 'gemini-3-pro-preview',
         temperature: 1.0,
         topP: 0.95,
-        maxTokens: 4096
+        maxTokens: 32768  // 增加以支持完整的思考过程
+      }
+    });
+
+    this.registerModel({
+      id: 'gemini-3-flash-preview',
+      name: 'Gemini 3 Flash Preview',
+      provider: 'gemini',
+      description: 'Google 最新 Flash 预览版模型',
+      capabilities: {
+        supportsTools: true,
+        supportsReasoning: true,
+        maxContextTokens: 1000000,
+        maxOutputTokens: 65536,  // 支持更大的输出
+        supportsVision: true,
+        supportsSystemPrompt: true,
+        supportsStreaming: true
+      },
+      defaultConfig: {
+        modelId: 'gemini-3-flash-preview',
+        temperature: 1.0,
+        topP: 0.95,
+        maxTokens: 32768  // 增加以支持完整的思考过程
       }
     });
     // DeepSeek 系列
@@ -351,7 +376,7 @@ export class ModelRegistryService implements IModelRegistryService {
         supportsTools: true,
         supportsReasoning: true,
         maxContextTokens: 64000,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 16384,  // 推理模式需要更多输出空间
         supportsVision: false,
         supportsSystemPrompt: true,
         supportsStreaming: true
@@ -359,8 +384,8 @@ export class ModelRegistryService implements IModelRegistryService {
       defaultConfig: {
         // 实际调用底层 deepseek-chat 模型
         modelId: 'deepseek-chat',
-        temperature: 1.0,
-        maxTokens: 8192,
+        temperature: 0.1,
+        maxTokens: 16384,  // 增加以支持完整的思考过程
         // 启用 DeepSeek v3.2 推理能力
         thinking: {
           type: 'enabled'

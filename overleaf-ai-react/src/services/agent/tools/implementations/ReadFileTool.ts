@@ -22,7 +22,7 @@ export class ReadFileTool extends BaseTool {
   protected metadata: ToolMetadata = {
     name: 'read_file',
     description: `Read the contents of a file in the Overleaf project. The output will be the 1-indexed file contents from start_line_one_indexed to end_line_one_indexed_inclusive, together with a summary of the lines outside that range.
-Note that this call can view at most 100 lines at a time for performance reasons.
+Note that this call can view at most 300 lines at a time for performance reasons.
 
 When using this tool to gather information, it's your responsibility to ensure you have the COMPLETE context. Specifically, each time you call this command you should:
 1) Assess if the contents you viewed are sufficient to proceed with your task.
@@ -56,7 +56,7 @@ When using this tool to gather information, it's your responsibility to ensure y
   };
 
   // 最大单次读取行数
-  private readonly MAX_LINES_PER_READ = 100;
+  private readonly MAX_LINES_PER_READ = 300;
   // 最大字符数限制
   private readonly MAX_CHARACTERS = 50000;
 

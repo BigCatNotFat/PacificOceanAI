@@ -49,6 +49,64 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
   }
 
   /**
+   * 根据连通性测试结果同步模型列表
+   */
+  async syncModelsFromConnectivityResult(availableModels: string[]): Promise<{ added: number; enabled: number; disabled: number }> {
+    let added = 0;
+    let enabled = 0;
+    let disabled = 0;
+
+    if (!availableModels || availableModels.length === 0) {
+      return { added, enabled, disabled };
+    }
+
+    const currentConfig = await this.getAPIConfig();
+    if (!currentConfig) {
+      return { added, enabled, disabled };
+    }
+
+    const availableModelSet = new Set(availableModels);
+    const existingModelIds = new Set(currentConfig.models.map(m => m.id));
+    let configChanged = false;
+
+    // 1. 添加新检测到的模型（设为启用）
+    for (const modelId of availableModels) {
+      if (!existingModelIds.has(modelId)) {
+        currentConfig.models.push({
+          id: modelId,
+          name: modelId,
+          description: '自动检测的模型',
+          enabled: true
+        });
+        added++;
+        configChanged = true;
+      }
+    }
+
+    // 2. 更新所有模型的启用状态
+    for (let i = 0; i < currentConfig.models.length; i++) {
+      const model = currentConfig.models[i];
+      const shouldBeEnabled = availableModelSet.has(model.id);
+
+      if (model.enabled !== shouldBeEnabled) {
+        currentConfig.models[i] = { ...model, enabled: shouldBeEnabled };
+        if (shouldBeEnabled) {
+          enabled++;
+        } else {
+          disabled++;
+        }
+        configChanged = true;
+      }
+    }
+
+    if (configChanged) {
+      await this.setAPIConfig(currentConfig);
+    }
+
+    return { added, enabled, disabled };
+  }
+
+  /**
    * 获取默认配置
    */
   getDefaultConfig(): APIConfig {

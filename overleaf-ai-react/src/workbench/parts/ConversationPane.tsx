@@ -205,31 +205,48 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   } = useConversations();
 
   // 加载可用模型列表
-  useEffect(() => {
-    const loadModels = async () => {
-      try {
-        const models = await configService.getModels();
-        const enabledModels = models.filter(m => m.enabled);
-        setAvailableModels(enabledModels);
-        if (!selectedModel) {
-          const preferred = enabledModels.find(m => m.id === 'deepseek-reasoner');
-          setSelectedModel(preferred ? preferred.id : (enabledModels[0]?.id ?? ''));
+  const loadModels = useCallback(async () => {
+    try {
+      const models = await configService.getModels();
+      const enabledModels = models.filter(m => m.enabled);
+      setAvailableModels(enabledModels);
+      
+      // 如果当前没有选中模型，或者选中的模型不再可用列表里，则重新选择
+      if (!selectedModel || !enabledModels.find(m => m.id === selectedModel)) {
+        const preferred = enabledModels.find(m => m.id === 'deepseek-reasoner');
+        const defaultModel = preferred ? preferred.id : (enabledModels[0]?.id ?? '');
+        if (defaultModel) {
+          setSelectedModel(defaultModel);
         }
-      } catch (error) {
-        console.error('Failed to load models:', error);
       }
-    };
-    loadModels();
+    } catch (error) {
+      console.error('Failed to load models:', error);
+    }
   }, [configService, selectedModel]);
+
+  // 初始加载及监听配置变化
+  useEffect(() => {
+    loadModels();
+
+    const disposable = configService.onDidChangeConfiguration(() => {
+      loadModels();
+    });
+
+    return () => disposable.dispose();
+  }, [configService, loadModels]);
 
   // 检查是否配置了 API Key
   useEffect(() => {
     const checkApiKey = async () => {
-      setIsCheckingApiKey(true);
+      // setIsCheckingApiKey(true); // 移除这行，避免不必要的重新渲染
       try {
-        const models = await configService.getModels();
-        const hasConfiguredModel = models.some(m => m.enabled);
-        setHasApiKey(hasConfiguredModel);
+        const config = await configService.getAPIConfig();
+        // 只要有 apiKey 且 models 列表不为空，就认为已配置
+        // 我们不强求 model.enabled，因为用户可能手动禁用了所有模型但 key 是有效的
+        // 何况上面 loadModels 会处理默认选中逻辑
+        const hasValidConfig = !!(config?.apiKey && config?.models?.length > 0);
+        
+        setHasApiKey(hasValidConfig);
       } catch (error) {
         console.error('[ConversationPane] 检查 API Key 失败:', error);
         setHasApiKey(false);
@@ -237,7 +254,14 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
         setIsCheckingApiKey(false);
       }
     };
+
     checkApiKey();
+
+    const disposable = configService.onDidChangeConfiguration(() => {
+      checkApiKey();
+    });
+
+    return () => disposable.dispose();
   }, [configService]);
 
   // 监听 thinking 流式更新

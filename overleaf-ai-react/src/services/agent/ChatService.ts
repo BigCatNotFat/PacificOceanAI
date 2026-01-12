@@ -345,6 +345,13 @@ export class ChatService implements IChatService {
         }
         console.error(`[ChatService] 会话 ${conversationId} Agent Loop 错误:`, error);
         
+        // 尝试找到并更新正在流式的消息状态，避免 UI 一直 loading
+        const streamingMsg = session.messages.find(m => m.role === 'assistant' && m.status === 'streaming');
+        if (streamingMsg) {
+          streamingMsg.status = 'error';
+          streamingMsg.error = error instanceof Error ? error.message : String(error);
+        }
+
         const errorMessage = this.createMessage(session, 'assistant', `抱歉，发生了错误: ${error.message}`);
         errorMessage.status = 'error';
         session.messages.push(errorMessage);

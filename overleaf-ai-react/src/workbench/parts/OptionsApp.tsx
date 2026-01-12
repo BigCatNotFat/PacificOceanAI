@@ -34,6 +34,9 @@ const OptionsApp: React.FC = () => {
   // 当前选中的设置分类
   const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'ai'>('general');
 
+  // 是否显示启动码
+  const [showApiKey, setShowApiKey] = useState(false);
+
   // 加载保存的设置
   useEffect(() => {
     chrome.storage.sync.get(['settings'], (result) => {
@@ -106,63 +109,13 @@ const OptionsApp: React.FC = () => {
         let disabledCount = 0;
         
         if (result.availableModels && result.availableModels.length > 0) {
-          const availableModelSet = new Set(result.availableModels);
-          
-          console.log('[测试连通性] 检测到的可用模型:', result.availableModels);
-          console.log('[测试连通性] 当前配置的模型:', apiConfig.models.map(m => `${m.id} (${m.enabled ? '启用' : '禁用'})`));
-          
-          const existingModelIds = new Set(apiConfig.models.map(m => m.id));
-          
-          // 1. 添加新检测到的模型（设为启用）
-          for (const modelId of result.availableModels) {
-            if (!existingModelIds.has(modelId)) {
-              try {
-                await configService.addModel({
-                  id: modelId,
-                  name: modelId,
-                  description: '自动检测的模型',
-                  enabled: true
-                });
-                addedCount++;
-                console.log(`[测试连通性] 添加新模型: ${modelId}`);
-              } catch (error) {
-                console.warn(`Failed to add model ${modelId}:`, error);
-              }
-            }
-          }
-          
-          // 2. 重新加载配置（包含新添加的模型）
-          let currentConfig = await configService.getAPIConfig();
-          if (!currentConfig) return;
-          
-          console.log('[测试连通性] 重新加载后的模型:', currentConfig.models.map(m => `${m.id} (${m.enabled ? '启用' : '禁用'})`));
-          
-          // 3. 更新所有模型的启用状态
-          for (const model of currentConfig.models) {
-            const shouldBeEnabled = availableModelSet.has(model.id);
-            
-            console.log(`[测试连通性] 检查模型 ${model.id}: 当前=${model.enabled}, 应为=${shouldBeEnabled}`);
-            
-            // 只在状态需要改变时才更新
-            if (model.enabled !== shouldBeEnabled) {
-              try {
-                await configService.updateModel(model.id, { enabled: shouldBeEnabled });
-                if (shouldBeEnabled) {
-                  enabledCount++;
-                  console.log(`[测试连通性] ✓ 启用模型: ${model.id}`);
-                } else {
-                  disabledCount++;
-                  console.log(`[测试连通性] ✗ 禁用模型: ${model.id}`);
-                }
-              } catch (error) {
-                console.warn(`Failed to update model ${model.id}:`, error);
-              }
-            } else if (shouldBeEnabled) {
-              enabledCount++;
-              console.log(`[测试连通性] = 模型已是正确状态(启用): ${model.id}`);
-            } else {
-              console.log(`[测试连通性] = 模型已是正确状态(禁用): ${model.id}`);
-            }
+          try {
+            const syncResult = await configService.syncModelsFromConnectivityResult(result.availableModels);
+            addedCount = syncResult.added;
+            enabledCount = syncResult.enabled;
+            disabledCount = syncResult.disabled;
+          } catch (err) {
+            console.error('Failed to sync models:', err);
           }
           
           // 4. 再次加载配置以显示最终状态
@@ -174,8 +127,6 @@ const OptionsApp: React.FC = () => {
             updatedConfig.baseUrl = currentBaseUrl;
             updatedConfig.isVerified = true;  // 测试成功，标记为已验证
             setApiConfig(updatedConfig);
-            
-            console.log('[测试连通性] 最终状态:', updatedConfig.models.map(m => `${m.id} (${m.enabled ? '启用' : '禁用'})`));
             
             // 5. 自动保存 API 配置（包含 API Key 和 Base URL）
             await configService.setAPIConfig(updatedConfig);
@@ -384,17 +335,36 @@ const OptionsApp: React.FC = () => {
                     <div style={styles.settingName}>启动码</div>
                     <div style={styles.settingDescription}>请输入获取的启动码以使用 AI 服务（修改后需重新测试）</div>
                   </div>
-                  <input
-                    type="password"
-                    value={apiConfig.apiKey}
-                    onChange={(e) => setApiConfig({ 
-                      ...apiConfig, 
-                      apiKey: e.target.value,
-                      isVerified: false  // 修改后需要重新验证
-                    })}
-                    placeholder="请输入启动码"
-                    style={styles.textInput}
-                  />
+                  <div style={styles.inputWithButton}>
+                    <input
+                      type={showApiKey ? "text" : "password"}
+                      value={apiConfig.apiKey}
+                      onChange={(e) => setApiConfig({ 
+                        ...apiConfig, 
+                        apiKey: e.target.value,
+                        isVerified: false  // 修改后需要重新验证
+                      })}
+                      placeholder="请输入启动码"
+                      style={{...styles.textInput, width: '100%', paddingRight: '40px'}}
+                    />
+                    <button
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      style={styles.visibilityButton}
+                      title={showApiKey ? "隐藏启动码" : "显示启动码"}
+                    >
+                      {showApiKey ? (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                          <line x1="1" y1="1" x2="23" y2="23"></line>
+                        </svg>
+                      ) : (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                          <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 <div style={styles.settingRow}>
@@ -768,6 +738,25 @@ const styles: { [key: string]: React.CSSProperties } = {
     border: '1px solid #ddd',
     borderRadius: '6px',
     boxSizing: 'border-box',
+  },
+  inputWithButton: {
+    position: 'relative' as const,
+    minWidth: '300px',
+  },
+  visibilityButton: {
+    position: 'absolute' as const,
+    right: '8px',
+    top: '50%',
+    transform: 'translateY(-50%)',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    color: '#888',
+    display: 'flex',
+    alignItems: 'center',
+    padding: '4px',
+    borderRadius: '4px',
+    zIndex: 1,
   },
   numberInput: {
     width: '100px',

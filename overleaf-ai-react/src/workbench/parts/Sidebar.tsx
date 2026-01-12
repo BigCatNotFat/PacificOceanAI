@@ -64,14 +64,25 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
       const result = await configService.testConnectivity(code, 'https://api.silicondream.top/v1');
       
       if (result.success) {
-        // 验证成功，保存配置（包含 isVerified: true）
-        const config = await configService.getAPIConfig();
+        // 验证成功，先保存基本配置
+        let config = await configService.getAPIConfig();
         if (config) {
           await configService.setAPIConfig({
             ...config,
             apiKey: code,
             isVerified: true  // 标记为已验证
           });
+
+          // 同步模型列表（这会根据最新的 apiKey 获取并更新模型）
+          if (result.availableModels && result.availableModels.length > 0) {
+            try {
+              const syncResult = await configService.syncModelsFromConnectivityResult(result.availableModels);
+              console.log('[Sidebar] Models synced:', syncResult);
+            } catch (err) {
+              console.error('[Sidebar] Failed to sync models:', err);
+            }
+          }
+
           setIsActivationModalOpen(false);
           
           // 同步激活状态到注入脚本

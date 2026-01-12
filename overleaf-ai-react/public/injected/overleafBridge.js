@@ -1369,6 +1369,20 @@ function handleCustomRequest() {
   console.log('[OverleafBridge] Custom request:', customPrompt, 'model:', selectedModel, 
     hasSelection ? '(有选中文本)' : '(无选中文本，将在光标处插入)');
   
+  // 获取选区上下文（用于提高准确性）
+  let contextBefore = '';
+  let contextAfter = '';
+  try {
+    const view = getEditorView();
+    if (view) {
+      const context = getSelectionContext(view, selectionData.from, selectionData.to);
+      contextBefore = context.contextBefore;
+      contextAfter = context.contextAfter;
+    }
+  } catch (e) {
+    console.error('[OverleafBridge] Failed to get context for custom request:', e);
+  }
+
   // 发送自定义操作请求到 content script
   // 如果没有选中文本，text 为空，from 和 to 相同（光标位置）
   window.postMessage({
@@ -1380,7 +1394,9 @@ function handleCustomRequest() {
       from: selectionData.from,
       to: selectionData.to,
       modelId: selectedModel,
-      insertMode: !hasSelection  // 标记是否为插入模式（无选中文本）
+      insertMode: !hasSelection,  // 标记是否为插入模式（无选中文本）
+      contextBefore: contextBefore,
+      contextAfter: contextAfter
     }
   }, '*');
   
@@ -1500,10 +1516,10 @@ function getCurrentSelection() {
  * @param {Object} view EditorView 实例
  * @param {number} from 选区起始位置
  * @param {number} to 选区结束位置
- * @param {number} contextLines 上下文行数（默认5行）
+ * @param {number} contextLines 上下文行数（默认15行）
  * @returns {{ contextBefore: string, contextAfter: string }}
  */
-function getSelectionContext(view, from, to, contextLines = 5) {
+function getSelectionContext(view, from, to, contextLines = 15) {
   try {
     const doc = view.state.doc;
     
@@ -1862,9 +1878,10 @@ function showInsertOnlyMode() {
   }
   
   // 隐藏模型选择器（简化界面）
+  // 注意：用户请求在快捷键菜单中始终显示模型选择功能，所以这里不再隐藏
   var modelSelector = selectionTooltipEl.querySelector('#ol-ai-model-selector');
   if (modelSelector) {
-    modelSelector.style.display = 'none';
+    modelSelector.style.display = 'flex';
   }
   
   // 更新输入框 placeholder
@@ -2015,20 +2032,21 @@ function createPreviewOverlay() {
   const overlay = document.createElement('div');
   overlay.id = 'ol-ai-preview-overlay';
   overlay.style.position = 'absolute';
-  overlay.style.zIndex = '9998';
-  overlay.style.background = 'rgba(255, 255, 255, 0.98)';
-  overlay.style.border = '2px solid #3b82f6';
-  overlay.style.borderRadius = '8px';
-  overlay.style.padding = '12px';
-  overlay.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.15)';
+  overlay.style.zIndex = '2147483647';
+  overlay.style.background = '#ffffff';
+  overlay.style.border = '1px solid #e2e8f0';
+  overlay.style.borderRadius = '12px';
+  overlay.style.padding = '16px';
+  overlay.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0,0,0,0.05)';
   overlay.style.display = 'none';
   overlay.style.maxWidth = '600px';
-  overlay.style.minWidth = '300px';
-  overlay.style.fontFamily = 'monospace';
-  overlay.style.fontSize = '13px';
-  overlay.style.lineHeight = '1.5';
+  overlay.style.minWidth = '320px';
+  overlay.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+  overlay.style.fontSize = '14px';
+  overlay.style.lineHeight = '1.6';
   overlay.style.whiteSpace = 'pre-wrap';
   overlay.style.wordBreak = 'break-word';
+  overlay.style.color = '#1e293b';
   
   // 标题栏容器（包含标题和关闭按钮，可拖拽）
   const titleBar = document.createElement('div');
@@ -2108,20 +2126,19 @@ function createPreviewOverlay() {
   const title = document.createElement('div');
   title.id = 'ol-ai-preview-title';
   title.style.fontWeight = '600';
-  title.style.color = '#1e3a5f';
-  title.style.fontSize = '12px';
-  title.style.textTransform = 'uppercase';
-  title.style.letterSpacing = '0.5px';
+  title.style.color = '#475569';
+  title.style.fontSize = '13px';
+  title.style.letterSpacing = '0.01em';
   title.textContent = '📝 预览更改';
   titleBar.appendChild(title);
   
   // 关闭按钮
   const closeBtn = document.createElement('button');
-  closeBtn.textContent = '✕';
+  closeBtn.textContent = '×';
   closeBtn.style.background = 'transparent';
   closeBtn.style.border = 'none';
-  closeBtn.style.color = '#6b7280';
-  closeBtn.style.fontSize = '16px';
+  closeBtn.style.color = '#94a3b8';
+  closeBtn.style.fontSize = '20px';
   closeBtn.style.cursor = 'pointer';
   closeBtn.style.padding = '2px 6px';
   closeBtn.style.borderRadius = '4px';
@@ -2155,74 +2172,79 @@ function createPreviewOverlay() {
   const originalContainer = document.createElement('div');
   originalContainer.id = 'ol-ai-preview-original';
   originalContainer.style.textDecoration = 'line-through';
-  originalContainer.style.color = '#dc2626';
-  originalContainer.style.background = 'rgba(254, 202, 202, 0.3)';
-  originalContainer.style.padding = '8px';
-  originalContainer.style.borderRadius = '4px';
-  originalContainer.style.marginBottom = '8px';
-  originalContainer.style.borderLeft = '3px solid #dc2626';
+  originalContainer.style.color = '#991b1b'; // darker red
+  originalContainer.style.background = '#fef2f2'; // very light red
+  originalContainer.style.padding = '12px';
+  originalContainer.style.borderRadius = '8px';
+  originalContainer.style.marginBottom = '12px';
+  originalContainer.style.border = '1px solid #fee2e2';
+  originalContainer.style.fontSize = '13px';
   overlay.appendChild(originalContainer);
   
   // 箭头指示
   const arrow = document.createElement('div');
   arrow.id = 'ol-ai-preview-arrow';
   arrow.style.textAlign = 'center';
-  arrow.style.color = '#6b7280';
-  arrow.style.margin = '4px 0';
-  arrow.textContent = '↓';
+  arrow.style.color = '#94a3b8';
+  arrow.style.margin = '4px 0 12px 0';
+  arrow.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg>';
   overlay.appendChild(arrow);
   
   // 新文本容器
   const newContainer = document.createElement('div');
   newContainer.id = 'ol-ai-preview-new';
   newContainer.style.color = '#166534';
-  newContainer.style.background = 'rgba(167, 243, 208, 0.3)';
-  newContainer.style.padding = '8px';
-  newContainer.style.borderRadius = '4px';
-  newContainer.style.borderLeft = '3px solid #059669';
+  newContainer.style.background = '#f0fdf4';
+  newContainer.style.padding = '12px';
+  newContainer.style.borderRadius = '8px';
+  newContainer.style.border = '1px solid #bbf7d0';
   newContainer.style.maxHeight = '300px';
   newContainer.style.overflowY = 'auto';
+  newContainer.style.fontSize = '13px';
   overlay.appendChild(newContainer);
   
   // 内置确认按钮区域
   const confirmContainer = document.createElement('div');
   confirmContainer.id = 'ol-ai-inline-confirm';
   confirmContainer.style.display = 'none';
-  confirmContainer.style.marginTop = '12px';
-  confirmContainer.style.paddingTop = '10px';
-  confirmContainer.style.borderTop = '1px solid rgba(0,0,0,0.1)';
+  confirmContainer.style.marginTop = '16px';
+  confirmContainer.style.paddingTop = '12px';
+  confirmContainer.style.borderTop = '1px solid #f1f5f9';
   confirmContainer.style.flexDirection = 'row';
-  confirmContainer.style.gap = '10px';
+  confirmContainer.style.gap = '12px';
   confirmContainer.style.alignItems = 'center';
   confirmContainer.style.justifyContent = 'flex-end';
   
   // 提示文字
   const confirmHint = document.createElement('span');
   confirmHint.id = 'ol-ai-inline-confirm-hint';
-  confirmHint.style.color = '#6b7280';
-  confirmHint.style.fontSize = '12px';
+  confirmHint.style.color = '#64748b';
+  confirmHint.style.fontSize = '13px';
   confirmHint.style.marginRight = 'auto';
   confirmHint.textContent = '是否接受更改？';
   confirmContainer.appendChild(confirmHint);
   
   // 接受按钮
   const inlineAcceptBtn = document.createElement('button');
-  inlineAcceptBtn.textContent = '✓ 接受';
+  inlineAcceptBtn.textContent = '接受';
   inlineAcceptBtn.style.background = '#10b981';
   inlineAcceptBtn.style.color = 'white';
   inlineAcceptBtn.style.border = 'none';
-  inlineAcceptBtn.style.padding = '6px 16px';
-  inlineAcceptBtn.style.borderRadius = '4px';
+  inlineAcceptBtn.style.padding = '8px 20px';
+  inlineAcceptBtn.style.borderRadius = '6px';
   inlineAcceptBtn.style.cursor = 'pointer';
-  inlineAcceptBtn.style.fontSize = '12px';
+  inlineAcceptBtn.style.fontSize = '13px';
   inlineAcceptBtn.style.fontWeight = '500';
   inlineAcceptBtn.style.transition = 'all 0.2s ease';
+  inlineAcceptBtn.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
   
   inlineAcceptBtn.onmouseenter = function() {
     this.style.background = '#059669';
+    this.style.transform = 'translateY(-1px)';
   };
   inlineAcceptBtn.onmouseleave = function() {
     this.style.background = '#10b981';
+    this.style.transform = 'translateY(0)';
   };
   inlineAcceptBtn.onclick = function(e) {
     e.stopPropagation();
@@ -2232,22 +2254,24 @@ function createPreviewOverlay() {
   
   // 拒绝按钮
   const inlineRejectBtn = document.createElement('button');
-  inlineRejectBtn.textContent = '✗ 拒绝';
-  inlineRejectBtn.style.background = '#ef4444';
-  inlineRejectBtn.style.color = 'white';
-  inlineRejectBtn.style.border = 'none';
-  inlineRejectBtn.style.padding = '6px 16px';
-  inlineRejectBtn.style.borderRadius = '4px';
+  inlineRejectBtn.textContent = '拒绝';
+  inlineRejectBtn.style.background = 'white';
+  inlineRejectBtn.style.color = '#ef4444';
+  inlineRejectBtn.style.border = '1px solid #fecaca';
+  inlineRejectBtn.style.padding = '8px 16px';
+  inlineRejectBtn.style.borderRadius = '6px';
   inlineRejectBtn.style.cursor = 'pointer';
-  inlineRejectBtn.style.fontSize = '12px';
+  inlineRejectBtn.style.fontSize = '13px';
   inlineRejectBtn.style.fontWeight = '500';
   inlineRejectBtn.style.transition = 'all 0.2s ease';
   
   inlineRejectBtn.onmouseenter = function() {
-    this.style.background = '#dc2626';
+    this.style.background = '#fef2f2';
+    this.style.borderColor = '#fca5a5';
   };
   inlineRejectBtn.onmouseleave = function() {
-    this.style.background = '#ef4444';
+    this.style.background = 'white';
+    this.style.borderColor = '#fecaca';
   };
   inlineRejectBtn.onclick = function(e) {
     e.stopPropagation();
@@ -2289,7 +2313,7 @@ function createPreviewConfirmMenu() {
   const menu = document.createElement('div');
   menu.id = 'ol-ai-preview-confirm';
   menu.style.position = 'absolute';
-  menu.style.zIndex = '9999';
+  menu.style.zIndex = '2147483647';
   menu.style.background = 'linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%)';
   menu.style.padding = '8px 12px';
   menu.style.borderRadius = '8px';
