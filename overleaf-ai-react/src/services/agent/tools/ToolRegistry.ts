@@ -22,6 +22,8 @@ import { ReapplyTool } from './implementations/ReapplyTool';
 import { WebSearchTool } from './implementations/WebSearchTool';
 import { DiffHistoryTool } from './implementations/DiffHistoryTool';
 import { LatexCodebaseSearchTool } from './implementations/LatexCodeBaseSearch';
+import { PaperSemanticSearchTool } from './implementations/PaperSemanticSearchTool';
+import { PaperBooleanSearchTool } from './implementations/PaperBooleanSearchTool';
 
 /**
  * 工具注册表
@@ -44,6 +46,9 @@ export class ToolRegistry {
     // new LatexCodebaseSearchTool(),
     // new WebSearchTool(),
     // new DiffHistoryTool(),
+    // 论文搜索工具
+    new PaperSemanticSearchTool(),
+    new PaperBooleanSearchTool(),
     // 写入类工具
     new EditFileTool(),
     new DeleteFileTool(),

@@ -35,6 +35,8 @@ old_string = "\\begin{Introduction}\\n随着6G技术的不断发展\\cite{6G}...
 old_string = "\\cite{10244}. Deep learning has achieved...stronger generalization ability"
 old_string = "I like to eat apple"
 
+INCORRECT examples:
+old_string = "regularization is a crucial technique..."
 `,
 
     parameters: {
@@ -46,7 +48,7 @@ old_string = "I like to eat apple"
         },
         old_string: {
           type: 'string',
-          description: 'The text to be replaced, with the middle section elided using "..."'
+          description: 'The text to be replaced, with the middle section elided using "...". IMPORTANT: When using "...", the content before and after must contain content.'
         },
         new_string: {
           type: 'string',

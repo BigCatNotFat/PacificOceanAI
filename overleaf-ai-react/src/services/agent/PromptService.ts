@@ -166,6 +166,7 @@ export class PromptService implements IPromptService {
 Knowledge cutoff: ${knowledgeCutoff}
 You are an AI paper writing assistant powered by ${modelInfo?.name || modelId}, specializing in LaTeX-based academic writing and typesetting. You operate in overleaf.
 You are pair paper-writing with a USER to solve their paper writing task. Each time the USER sends a message, we may automatically attach some information about their current state, such as what files they have open, where their cursor is, recently viewed files, edit history in their session so far, and more. This information may or may not be relevant to the paper writing task, it is up for you to decide.
+**Most Important:** You should aim to help the user complete their task with as few tool calls as possible, since each tool call doubles the cost. For example, read an entire file at once instead of making multiple read_file calls.
 `;
 
 
@@ -624,6 +625,33 @@ You have tools to search the paperbase and read files. Follow these rules regard
 2. If you need to read a file, prefer to read larger sections of the file at once over multiple smaller calls.
 3. If you have found a reasonable place to edit or answer, do not continue calling tools. Edit or answer from the information you have found.
 </searching_and_reading>
+
+<paper_search_tools>
+You have access to two powerful academic paper search tools for finding relevant literature:
+
+**1. paper_semantic_search** - Use for natural language queries
+   - Best for: exploratory searches, finding papers about a general topic
+   - Input: Plain text query describing what you're looking for
+   - Example: "self supervised learning in wireless communication"
+   - ⚠️ Important: Replace hyphens with spaces (e.g., "self supervised" not "self-supervised")
+   - Results are ranked by semantic relevance
+
+**2. paper_boolean_search** - Use for precise keyword matching
+   - Best for: specific keyword combinations, exclusions, exact phrases
+   - Supports boolean operators: AND, OR, NOT
+   - Supports advanced matching:
+     - "..." for exact phrase match (e.g., "generative adversarial")
+     - "*" for wildcard/prefix match (e.g., "comput*")
+     - "()" for grouping (e.g., "(AI OR ML) AND ethics")
+     - "~N" for fuzzy/proximity search
+   - Supports sorting by: paperId, publicationDate, citationCount
+   - Example: "movable antenna AND (security OR secrecy) NOT MIMO"
+
+**Pagination:** Both tools return paginated results. Use the 'cursor' parameter from the previous response to get the next page of results.
+
+**⚠️ IMPORTANT:** Call only ONE paper search tool at a time. Wait for the result before deciding whether to call the other tool. Do NOT call paper_semantic_search and paper_boolean_search in parallel.
+
+</paper_search_tools>
 `;
 
     // 添加工具列表
@@ -685,6 +713,33 @@ You have tools to search the paperbase and read files. Follow these rules regard
 2. If you need to read a file, prefer to read larger sections of the file at once over multiple smaller calls.
 3. If you have found a reasonable place to edit or answer, do not continue calling tools. Edit or answer from the information you have found.
 </searching_and_reading>
+
+<paper_search_tools>
+You have access to two powerful academic paper search tools for finding relevant literature:
+
+**1. paper_semantic_search** - Use for natural language queries
+   - Best for: exploratory searches, finding papers about a general topic
+   - Input: Plain text query describing what you're looking for
+   - Example: "self supervised learning in wireless communication"
+   - ⚠️ Important: Replace hyphens with spaces (e.g., "self supervised" not "self-supervised")
+   - Results are ranked by semantic relevance
+
+**2. paper_boolean_search** - Use for precise keyword matching
+   - Best for: specific keyword combinations, exclusions, exact phrases
+   - Supports boolean operators: AND, OR, NOT
+   - Supports advanced matching:
+     - "..." for exact phrase match (e.g., "generative adversarial")
+     - "*" for wildcard/prefix match (e.g., "comput*")
+     - "()" for grouping (e.g., "(AI OR ML) AND ethics")
+     - "~N" for fuzzy/proximity search
+   - Supports sorting by: paperId, publicationDate, citationCount
+   - Example: "movable antenna" AND (security OR secrecy) NOT MIMO
+
+**Pagination:** Both tools return paginated results. Use the 'cursor' parameter from the previous response to get the next page of results.
+
+**⚠️ IMPORTANT:** Call only ONE paper search tool at a time. Wait for the result before deciding whether to call the other tool. Do NOT call paper_semantic_search and paper_boolean_search in parallel.
+
+</paper_search_tools>
 `;
 
     // 添加只读工具列表
@@ -695,12 +750,6 @@ You have tools to search the paperbase and read files. Follow these rules regard
     // 获取并添加用户信息
     const userInfo = this.getUserInfo();
     prompt += `
-You MUST use the following format when citing latex regions or blocks:
-\`\`\`startLine:endLine:filepath
-// ... existing latex ...
-\`\`\`
-This is the ONLY acceptable format for latex citations. The format is \`\`\`startLine:endLine:filepath where startLine and endLine are line numbers.
-
 <user_info>
 Current website: ${userInfo.website}
 Current Date: ${userInfo.date}
@@ -715,7 +764,6 @@ ${await this.getProjectLayout()}
 </project_layout>
 
 Answer the user's request using the relevant tool(s), if they are available. Check that all the required parameters for each tool call are provided or can reasonably be inferred from context. IF there are no relevant tools or there are missing values for required parameters, ask the user to supply these values; otherwise proceed with the tool calls. If the user provides a specific value for a parameter (for example provided in quotes), make sure to use that value EXACTLY. DO NOT make up values for or ask about optional parameters. Carefully analyze descriptive terms in the request as they may indicate required parameter values that should be included even if not explicitly quoted.
-    
     `;
     return prompt;
   }
