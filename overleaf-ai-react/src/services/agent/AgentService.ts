@@ -495,12 +495,26 @@ export class AgentService implements IAgentService {
           console.log(`│ ✅ 工具执行成功: ${toolName}`.padEnd(79) + '│');
           console.log('├' + '─'.repeat(78) + '┤');
           console.log('│ 📥 执行结果:'.padEnd(79) + '│');
-          const resultStr = JSON.stringify(result.data || result, null, 2);
+          
+          // 提取 preview 字段单独处理，避免被截断
+          const data = result.data || result;
+          const preview = data?.preview;
+          const displayData = preview ? { ...data, preview: '(见下方详细预览)' } : data;
+          
+          const resultStr = JSON.stringify(displayData, null, 2);
           resultStr.split('\n').forEach(line => {
             const truncated = line.length > 76 ? line.substring(0, 73) + '...' : line;
             console.log(`│ ${truncated}`.padEnd(79) + '│');
           });
           console.log('└' + '─'.repeat(78) + '┘');
+          
+          // 单独打印 preview 内容（不截断）
+          if (preview) {
+            console.log('\n📝 替换预览:');
+            console.log('─'.repeat(40));
+            console.log(preview);
+            console.log('─'.repeat(40));
+          }
           console.log('');
           
           // 通知 UI：工具执行完成

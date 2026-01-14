@@ -16,7 +16,8 @@ import type { ITool, ToolMetadata } from './base/ITool';
 import { ReadFileTool } from './implementations/ReadFileTool';
 import { ListDirTool } from './implementations/ListDirTool';
 import { GrepSearchTool } from './implementations/GrepSearchTool';
-import { EditFileTool } from './implementations/EditFileTool';
+import { ReplaceLinesTool } from './implementations/ReplaceLinesTool';
+import { SearchReplaceTool } from './implementations/SearchReplaceTool';
 import { DeleteFileTool } from './implementations/DeleteFileTool';
 import { ReapplyTool } from './implementations/ReapplyTool';
 import { WebSearchTool } from './implementations/WebSearchTool';
@@ -50,7 +51,8 @@ export class ToolRegistry {
     new PaperSemanticSearchTool(),
     new PaperBooleanSearchTool(),
     // 写入类工具
-    new EditFileTool(),
+    new ReplaceLinesTool(),    // 行号替换（大段内容）
+    new SearchReplaceTool(),   // 字符串替换（小范围修改）
     new DeleteFileTool(),
     // new ReapplyTool(),
     // 👇 新增工具在这里添加，每个工具一行
