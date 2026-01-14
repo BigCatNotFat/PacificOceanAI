@@ -66,8 +66,26 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
     }
 
     const availableModelSet = new Set(availableModels);
+    
+    // 先对现有模型列表去重（修复历史数据中可能存在的重复）
+    const seenIds = new Set<string>();
+    const deduplicatedModels: AIModelConfig[] = [];
+    for (const model of currentConfig.models) {
+      if (!seenIds.has(model.id)) {
+        seenIds.add(model.id);
+        deduplicatedModels.push(model);
+      }
+    }
+    
+    // 如果去重后数量变少了，说明有重复数据
+    const hadDuplicates = deduplicatedModels.length < currentConfig.models.length;
+    if (hadDuplicates) {
+      console.log(`[ConfigurationService] Removed ${currentConfig.models.length - deduplicatedModels.length} duplicate models`);
+    }
+    currentConfig.models = deduplicatedModels;
+    
     const existingModelIds = new Set(currentConfig.models.map(m => m.id));
-    let configChanged = false;
+    let configChanged = hadDuplicates;  // 如果有去重，标记为已变更
 
     // 1. 添加新检测到的模型（设为启用）
     for (const modelId of availableModels) {
@@ -78,6 +96,7 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
           description: '自动检测的模型',
           enabled: true
         });
+        existingModelIds.add(modelId);  // 同步更新 Set，防止在同一次调用中重复添加
         added++;
         configChanged = true;
       }
@@ -210,11 +229,23 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
   }
 
   /**
-   * 获取所有模型
+   * 获取所有模型（已去重）
    */
   async getModels(): Promise<AIModelConfig[]> {
     const config = await this.getAPIConfig();
-    return config?.models || [];
+    const models = config?.models || [];
+    
+    // 去重：根据 id 保留第一个出现的模型
+    const seen = new Set<string>();
+    const uniqueModels: AIModelConfig[] = [];
+    for (const model of models) {
+      if (!seen.has(model.id)) {
+        seen.add(model.id);
+        uniqueModels.push(model);
+      }
+    }
+    
+    return uniqueModels;
   }
 
   /**
