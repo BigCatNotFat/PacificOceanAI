@@ -2998,6 +2998,34 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
       display: none;
     }
     
+    /* 导航模式（当前文件无建议） */
+    #diff-control-bar.diff-control-bar-navigate-mode .diff-counter {
+      cursor: pointer;
+      padding: 4px 12px;
+      background: rgba(76, 175, 80, 0.15);
+      border-radius: 4px;
+      border: 1px solid rgba(76, 175, 80, 0.3);
+      transition: all 0.2s;
+    }
+    
+    #diff-control-bar.diff-control-bar-navigate-mode .diff-counter:hover {
+      background: rgba(76, 175, 80, 0.25);
+      border-color: rgba(76, 175, 80, 0.5);
+    }
+    
+    .diff-nav-btn.diff-nav-btn-go {
+      width: auto;
+      padding: 4px 12px;
+      background: #4caf50;
+      color: #fff;
+      font-weight: 500;
+      font-size: 12px;
+    }
+    
+    .diff-nav-btn.diff-nav-btn-go:hover {
+      background: #43a047;
+    }
+    
     /* 导航箭头 */
     .diff-nav-btn {
       width: 28px;
@@ -3109,13 +3137,209 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
   `;
   document.head.appendChild(diffStyle);
   
-  // Diff 建议存储
-  var diffSuggestions = new Map();
+  // Diff 建议存储 - 支持跨文件
+  var diffSuggestionsByFile = new Map();  // Map<fileName, Map<id, suggestion>>
   var diffSuggestionId = 0;
-  var diffCurrentIndex = 0;
+  var diffCurrentIndex = 0;  // 全局索引（跨所有文件）
   var diffCodeMirror = null;
   var diffCurrentView = null;
   var diffControlBar = null;
+  var diffCurrentFileName = null;  // 当前文件名
+  var diffFileCheckInterval = null;  // 文件切换检测定时器
+  
+  // 获取当前文件的建议 Map
+  function getCurrentFileSuggestions() {
+    if (!diffCurrentFileName) return new Map();
+    if (!diffSuggestionsByFile.has(diffCurrentFileName)) {
+      diffSuggestionsByFile.set(diffCurrentFileName, new Map());
+    }
+    return diffSuggestionsByFile.get(diffCurrentFileName);
+  }
+  
+  // 获取所有文件的建议列表（扁平化，带文件信息）
+  function getAllSuggestionsFlat() {
+    var result = [];
+    for (var entry of diffSuggestionsByFile) {
+      var fileName = entry[0];
+      var suggestions = entry[1];
+      for (var suggEntry of suggestions) {
+        var id = suggEntry[0];
+        var config = suggEntry[1];
+        result.push({
+          id: id,
+          fileName: fileName,
+          config: config
+        });
+      }
+    }
+    return result;
+  }
+  
+  // 获取所有有建议的文件列表（不包括当前文件）
+  function getFilesWithSuggestions() {
+    var filesWithSuggestions = [];
+    var totalChanges = 0;
+    for (var entry of diffSuggestionsByFile) {
+      var fileName = entry[0];
+      var suggestions = entry[1];
+      if (suggestions.size > 0 && fileName !== diffCurrentFileName) {
+        filesWithSuggestions.push({
+          fileName: fileName,
+          count: suggestions.size
+        });
+        totalChanges += suggestions.size;
+      }
+    }
+    // 按文件名排序，确保一致的顺序
+    filesWithSuggestions.sort(function(a, b) {
+      return a.fileName.localeCompare(b.fileName);
+    });
+    return {
+      files: filesWithSuggestions,
+      totalFiles: filesWithSuggestions.length,
+      totalChanges: totalChanges,
+      nextFile: filesWithSuggestions.length > 0 ? filesWithSuggestions[0] : null
+    };
+  }
+  
+  // 获取下一个有建议的文件（向后兼容）
+  function getNextFileWithSuggestions() {
+    var result = getFilesWithSuggestions();
+    return result.nextFile;
+  }
+  
+  // 跳转到下一个有建议的文件
+  function jumpToNextFileWithSuggestions() {
+    var nextFile = getNextFileWithSuggestions();
+    if (!nextFile) {
+      console.log('[DiffAPI] 没有其他文件有建议');
+      return false;
+    }
+    
+    console.log('[DiffAPI] 跳转到文件:', nextFile.fileName, '(' + nextFile.count + '个建议)');
+    methodHandlers.switchFile(nextFile.fileName);
+    
+    // 切换后更新索引到该文件的第一个建议
+    setTimeout(function() {
+      var sortedList = getSortedSuggestionsAcrossFiles();
+      for (var i = 0; i < sortedList.length; i++) {
+        if (sortedList[i].fileName === nextFile.fileName) {
+          diffCurrentIndex = i;
+          var item = sortedList[i];
+          scrollToSuggestion(item.id, item.config);
+          updateDiffControlBar();
+          break;
+        }
+      }
+    }, 500);
+    
+    return true;
+  }
+  
+  // 获取所有建议的总数
+  function getTotalSuggestionsCount() {
+    var count = 0;
+    for (var entry of diffSuggestionsByFile) {
+      count += entry[1].size;
+    }
+    return count;
+  }
+  
+  // 检测并处理文件切换
+  function checkFileChange() {
+    try {
+      var currentFile = methodHandlers.getCurrentFile();
+      var newFileName = currentFile ? currentFile.name : null;
+      
+      if (newFileName && newFileName !== diffCurrentFileName) {
+        console.log('[DiffAPI] 检测到文件切换:', diffCurrentFileName, '->', newFileName);
+        onFileChanged(diffCurrentFileName, newFileName);
+        diffCurrentFileName = newFileName;
+      }
+    } catch (e) {
+      // 忽略错误
+    }
+  }
+  
+  // 文件切换时的处理
+  function onFileChanged(oldFileName, newFileName) {
+    // 清除当前编辑器中的装饰（StateField 会自动处理）
+    // 如果有新文件的建议，需要重新应用到编辑器
+    setTimeout(function() {
+      restoreSuggestionsForCurrentFile();
+    }, 300);  // 等待编辑器加载新文件
+  }
+  
+  // 恢复当前文件的建议到编辑器
+  function restoreSuggestionsForCurrentFile() {
+    if (!diffCurrentView || !diffCurrentFileName) {
+      updateDiffControlBar();  // 即使没有 view，也要更新控制栏
+      return;
+    }
+    var suggestions = getCurrentFileSuggestions();
+    var effects = window._diffSuggestionEffects;
+    
+    // 如果当前文件没有建议或没有 effects，仍然需要更新控制栏（可能显示导航模式）
+    if (!effects) {
+      updateDiffControlBar();
+      return;
+    }
+    
+    // 先清除所有装饰
+    try {
+      diffCurrentView.dispatch({ effects: effects.clearDiffSuggestionsEffect.of(null) });
+    } catch (e) {}
+    
+    // 如果当前文件没有建议，直接更新控制栏
+    if (suggestions.size === 0) {
+      console.log('[DiffAPI] 当前文件无建议:', diffCurrentFileName);
+      updateDiffControlBar();
+      return;
+    }
+    
+    console.log('[DiffAPI] 恢复文件建议:', diffCurrentFileName, '共', suggestions.size, '个');
+    
+    // 重新应用建议（需要重新计算位置）
+    var toRemove = [];
+    for (var entry of suggestions) {
+      var id = entry[0];
+      var config = entry[1];
+      try {
+        // 重新计算位置
+        var lineStart = diffCurrentView.state.doc.line(config.startLine);
+        var lineEnd = diffCurrentView.state.doc.line(config.endLine);
+        config.lineFrom = lineStart.from;
+        config.lineTo = lineEnd.to;
+        config.widgetPos = lineEnd.to;
+        diffCurrentView.dispatch({ effects: effects.addDiffSuggestionEffect.of(config) });
+      } catch (e) {
+        console.warn('[DiffAPI] 恢复建议失败，可能行号已变化:', id, e);
+        toRemove.push(id);
+      }
+    }
+    
+    // 移除无法恢复的建议
+    for (var i = 0; i < toRemove.length; i++) {
+      suggestions.delete(toRemove[i]);
+    }
+    
+    updateDiffControlBar();
+  }
+  
+  // 启动文件切换监听
+  function startFileChangeListener() {
+    if (diffFileCheckInterval) return;
+    
+    // 初始化当前文件名
+    try {
+      var currentFile = methodHandlers.getCurrentFile();
+      diffCurrentFileName = currentFile ? currentFile.name : null;
+      console.log('[DiffAPI] 初始文件:', diffCurrentFileName);
+    } catch (e) {}
+    
+    // 定期检查文件是否切换
+    diffFileCheckInterval = setInterval(checkFileChange, 500);
+  }
   
   // 创建底部控制栏
   function createDiffControlBar() {
@@ -3144,6 +3368,15 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
       if (window.diffAPI) window.diffAPI.next();
     });
     
+    // Counter 点击事件（在导航模式下跳转到下一个文件）
+    document.getElementById('diff-counter').addEventListener('click', function() {
+      var currentFileCount = getCurrentFileSuggestions().size;
+      if (currentFileCount === 0) {
+        // 导航模式：点击跳转到下一个文件
+        jumpToNextFileWithSuggestions();
+      }
+    });
+    
     document.getElementById('diff-reject-all-btn').addEventListener('click', function() {
       if (window.diffAPI) window.diffAPI.rejectAll();
     });
@@ -3169,66 +3402,176 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
     return null;
   }
   
-  // 获取按位置排序的建议 ID 列表（从上到下）
-  function getSortedSuggestionIds() {
-    var ids = Array.from(diffSuggestions.keys());
-    if (!diffCurrentView) return ids;
+  // 获取跨文件排序的建议列表（按文件名 + 位置排序）
+  function getSortedSuggestionsAcrossFiles() {
+    var result = [];
     
-    // 获取每个建议的最新位置并排序
-    var idsWithPos = ids.map(function(id) {
-      var latest = getLatestSuggestionPosition(id);
-      var pos = latest ? latest.lineFrom : (diffSuggestions.get(id).lineFrom || 0);
-      return { id: id, pos: pos };
+    for (var entry of diffSuggestionsByFile) {
+      var fileName = entry[0];
+      var suggestions = entry[1];
+      var isCurrentFile = (fileName === diffCurrentFileName);
+      
+      for (var suggEntry of suggestions) {
+        var id = suggEntry[0];
+        var config = suggEntry[1];
+        // 如果是当前文件，获取最新位置
+        var pos = config.lineFrom || 0;
+        if (isCurrentFile) {
+          var latest = getLatestSuggestionPosition(id);
+          if (latest) pos = latest.lineFrom;
+        }
+        result.push({
+          id: id,
+          fileName: fileName,
+          config: config,
+          pos: pos,
+          isCurrentFile: isCurrentFile
+        });
+      }
+    }
+    
+    // 排序：先按文件名，再按位置
+    result.sort(function(a, b) {
+      if (a.fileName !== b.fileName) {
+        return a.fileName.localeCompare(b.fileName);
+      }
+      return a.pos - b.pos;
     });
     
-    // 按位置从小到大排序（从上到下）
-    idsWithPos.sort(function(a, b) { return a.pos - b.pos; });
-    
-    return idsWithPos.map(function(item) { return item.id; });
+    return result;
   }
   
   // 更新控制栏
   function updateDiffControlBar() {
     if (!diffControlBar) return;
     
-    var count = diffSuggestions.size;
+    var totalCount = getTotalSuggestionsCount();
     var counter = document.getElementById('diff-counter');
     var prevBtn = document.getElementById('diff-prev-btn');
     var nextBtn = document.getElementById('diff-next-btn');
+    var acceptAllBtn = document.getElementById('diff-accept-all-btn');
+    var rejectAllBtn = document.getElementById('diff-reject-all-btn');
     
-    if (count === 0) {
+    // 获取当前文件的建议数量
+    var currentFileSuggestions = getCurrentFileSuggestions();
+    var currentFileCount = currentFileSuggestions.size;
+    
+    if (totalCount === 0) {
       diffControlBar.classList.add('hidden');
+      diffControlBar.classList.remove('diff-control-bar-navigate-mode');
     } else {
       diffControlBar.classList.remove('hidden');
-      counter.textContent = (diffCurrentIndex + 1) + ' of ' + count;
-      // 只要有建议就启用按钮（点击可以定位到当前建议）
-      prevBtn.disabled = false;
-      nextBtn.disabled = false;
+      
+      // 如果当前文件没有建议，但其他文件有建议，进入"导航模式"
+      if (currentFileCount === 0) {
+        var filesInfo = getFilesWithSuggestions();
+        if (filesInfo.nextFile) {
+          diffControlBar.classList.add('diff-control-bar-navigate-mode');
+          
+          // 显示详细信息：下一个文件 + 总文件数
+          var displayText = '📁 ' + filesInfo.nextFile.fileName;
+          if (filesInfo.totalFiles > 1) {
+            // 多个文件有建议，显示更详细信息
+            displayText += ' (' + filesInfo.totalChanges + ' changes in ' + filesInfo.totalFiles + ' files)';
+          } else {
+            // 只有一个文件有建议
+            displayText += ' (' + filesInfo.nextFile.count + ' changes)';
+          }
+          counter.textContent = displayText;
+          
+          // 设置 tooltip 显示所有文件列表
+          var tooltipLines = ['点击跳转到有建议的文件:'];
+          for (var i = 0; i < filesInfo.files.length && i < 10; i++) {
+            tooltipLines.push('  • ' + filesInfo.files[i].fileName + ' (' + filesInfo.files[i].count + ')');
+          }
+          if (filesInfo.files.length > 10) {
+            tooltipLines.push('  ... 还有 ' + (filesInfo.files.length - 10) + ' 个文件');
+          }
+          counter.title = tooltipLines.join('\n');
+          
+          // 隐藏 prev 按钮，修改 next 按钮为 "Go" 样式
+          prevBtn.style.display = 'none';
+          nextBtn.textContent = 'Go →';
+          nextBtn.title = '跳转到 ' + filesInfo.nextFile.fileName;
+          nextBtn.disabled = false;
+          nextBtn.classList.add('diff-nav-btn-go');
+          
+          // 隐藏 Accept/Reject 按钮
+          if (acceptAllBtn) acceptAllBtn.style.display = 'none';
+          if (rejectAllBtn) rejectAllBtn.style.display = 'none';
+        }
+      } else {
+        // 正常模式：当前文件有建议
+        diffControlBar.classList.remove('diff-control-bar-navigate-mode');
+        
+        // 恢复按钮样式
+        prevBtn.style.display = '';
+        prevBtn.textContent = '‹';
+        nextBtn.textContent = '›';
+        nextBtn.title = '下一个';
+        nextBtn.classList.remove('diff-nav-btn-go');
+        if (acceptAllBtn) acceptAllBtn.style.display = '';
+        if (rejectAllBtn) rejectAllBtn.style.display = '';
+        
+        // 显示当前位置和总数，如果有多个文件显示文件数
+        var fileCount = diffSuggestionsByFile.size;
+        if (fileCount > 1) {
+          counter.textContent = (diffCurrentIndex + 1) + ' of ' + totalCount + ' (' + fileCount + ' files)';
+        } else {
+          counter.textContent = (diffCurrentIndex + 1) + ' of ' + totalCount;
+        }
+        counter.title = '';
+        
+        // 只要有建议就启用按钮
+        prevBtn.disabled = false;
+        nextBtn.disabled = false;
+      }
     }
   }
   
-  // 跳转到指定建议
+  // 跳转到指定建议（支持跨文件）
   function jumpToDiffSuggestion(index) {
-    var ids = getSortedSuggestionIds();  // 使用排序后的列表
-    if (index < 0 || index >= ids.length) return;
+    var sortedList = getSortedSuggestionsAcrossFiles();
+    if (index < 0 || index >= sortedList.length) return;
     
     diffCurrentIndex = index;
-    var id = ids[index];
+    var item = sortedList[index];
     
-    // 使用最新位置进行滚动
-    var latest = getLatestSuggestionPosition(id);
-    var config = latest || diffSuggestions.get(id);
-    
-    if (config && diffCurrentView) {
-      // 滚动到该位置
-      // 注意：scrollIntoView 是 EditorView 的静态方法，需要通过 constructor 访问
-      var EditorView = diffCurrentView.constructor;
-      diffCurrentView.dispatch({
-        effects: EditorView.scrollIntoView(config.lineFrom, { y: 'center' })
-      });
+    // 如果目标建议不在当前文件，需要先切换文件
+    if (item.fileName !== diffCurrentFileName) {
+      console.log('[DiffAPI] 跨文件跳转:', diffCurrentFileName, '->', item.fileName);
+      methodHandlers.switchFile(item.fileName);
+      
+      // 延迟后滚动到目标位置
+      setTimeout(function() {
+        scrollToSuggestion(item.id, item.config);
+      }, 500);
+    } else {
+      // 同文件内跳转
+      scrollToSuggestion(item.id, item.config);
     }
     
     updateDiffControlBar();
+  }
+  
+  // 滚动到指定建议
+  function scrollToSuggestion(suggestionId, config) {
+    if (!diffCurrentView) return;
+    
+    // 使用最新位置进行滚动
+    var latest = getLatestSuggestionPosition(suggestionId);
+    var targetConfig = latest || config;
+    
+    if (targetConfig) {
+      try {
+        var EditorView = diffCurrentView.constructor;
+        diffCurrentView.dispatch({
+          effects: EditorView.scrollIntoView(targetConfig.lineFrom, { y: 'center' })
+        });
+      } catch (e) {
+        console.warn('[DiffAPI] 滚动失败:', e);
+      }
+    }
   }
   
   // 创建 Widget 类
@@ -3428,6 +3771,7 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
         console.log('[DiffAPI] 编辑器视图已获取');
         createDiffControlBar();
         setupDiffAPI();
+        startFileChangeListener();  // 启动文件切换监听
       } else {
         console.warn('[DiffAPI] 无法获取编辑器视图，稍后重试');
         // 延迟重试
@@ -3439,6 +3783,7 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
             console.log('[DiffAPI] 编辑器视图已获取（重试）');
             createDiffControlBar();
             setupDiffAPI();
+            startFileChangeListener();  // 启动文件切换监听
           }
         }, 2000);
       }
@@ -3461,57 +3806,72 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
           var line = diffCurrentView.state.doc.line(lineNum);
           var id = 'suggestion-' + (diffSuggestionId++);
           var oldContent = line.text;
+          var fileName = diffCurrentFileName;  // 记录创建时的文件名
           
           var config = {
             id: id,
+            fileName: fileName,
             lineNum: lineNum,
+            startLine: lineNum,
+            endLine: lineNum,
             oldContent: oldContent,
             newContent: newContent,
             lineFrom: line.from,
             lineTo: line.to,
             widgetPos: line.to,
             onAccept: function(view, suggestionId) {
-              var suggestion = diffSuggestions.get(suggestionId);
+              var currentEffects = window._diffSuggestionEffects;  // 使用最新的 effects
+              var fileSuggestions = diffSuggestionsByFile.get(fileName);
+              var suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
               // 获取最新位置（文档可能已变化）
               var latest = getLatestSuggestionPosition(suggestionId);
-              var from = latest ? latest.lineFrom : suggestion.lineFrom;
-              var to = latest ? latest.lineTo : suggestion.lineTo;
-              if (suggestion) {
+              var from = latest ? latest.lineFrom : (suggestion ? suggestion.lineFrom : 0);
+              var to = latest ? latest.lineTo : (suggestion ? suggestion.lineTo : 0);
+              if (suggestion && currentEffects) {
                 view.dispatch({
                   changes: { from: from, to: to, insert: suggestion.newContent },
-                  effects: effects.removeDiffSuggestionEffect.of(suggestionId)
+                  effects: currentEffects.removeDiffSuggestionEffect.of(suggestionId)
                 });
                 // 通知 Content Script
                 window.postMessage({
                   type: 'DIFF_SUGGESTION_RESOLVED',
                   data: { id: suggestionId, accepted: true, oldContent: suggestion.oldContent, newContent: suggestion.newContent }
                 }, '*');
-                diffSuggestions.delete(suggestionId);
-                if (diffCurrentIndex >= diffSuggestions.size) diffCurrentIndex = Math.max(0, diffSuggestions.size - 1);
+                fileSuggestions.delete(suggestionId);
+                var totalCount = getTotalSuggestionsCount();
+                if (diffCurrentIndex >= totalCount) diffCurrentIndex = Math.max(0, totalCount - 1);
                 updateDiffControlBar();
                 console.log('[DiffAPI] 已接受建议:', suggestionId);
                 if (callbacks.onAccept) callbacks.onAccept(oldContent, newContent);
               }
             },
             onReject: function(view, suggestionId) {
-              view.dispatch({ effects: effects.removeDiffSuggestionEffect.of(suggestionId) });
+              var currentEffects = window._diffSuggestionEffects;  // 使用最新的 effects
+              if (currentEffects) {
+                view.dispatch({ effects: currentEffects.removeDiffSuggestionEffect.of(suggestionId) });
+              }
               // 通知 Content Script
               window.postMessage({
                 type: 'DIFF_SUGGESTION_RESOLVED',
                 data: { id: suggestionId, accepted: false }
               }, '*');
-              diffSuggestions.delete(suggestionId);
-              if (diffCurrentIndex >= diffSuggestions.size) diffCurrentIndex = Math.max(0, diffSuggestions.size - 1);
+              var fileSuggestions = diffSuggestionsByFile.get(fileName);
+              if (fileSuggestions) fileSuggestions.delete(suggestionId);
+              var totalCount = getTotalSuggestionsCount();
+              if (diffCurrentIndex >= totalCount) diffCurrentIndex = Math.max(0, totalCount - 1);
               updateDiffControlBar();
               console.log('[DiffAPI] 已拒绝建议:', suggestionId);
               if (callbacks.onReject) callbacks.onReject(oldContent, newContent);
             }
           };
           
-          diffSuggestions.set(id, config);
-          diffCurrentView.dispatch({ effects: effects.addDiffSuggestionEffect.of(config) });
+          getCurrentFileSuggestions().set(id, config);
+          var currentEffectsForAdd = window._diffSuggestionEffects;
+          if (currentEffectsForAdd) {
+            diffCurrentView.dispatch({ effects: currentEffectsForAdd.addDiffSuggestionEffect.of(config) });
+          }
           updateDiffControlBar();
-          console.log('[DiffAPI] 建议已创建:', id, '第', lineNum, '行');
+          console.log('[DiffAPI] 建议已创建:', id, '第', lineNum, '行', '文件:', fileName);
           return id;
         } catch (e) {
           console.error('[DiffAPI] 创建建议失败:', e);
@@ -3527,9 +3887,11 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
           var lineEnd = diffCurrentView.state.doc.line(endLine);
           var id = 'suggestion-' + (diffSuggestionId++);
           var oldContent = diffCurrentView.state.doc.sliceString(lineStart.from, lineEnd.to);
+          var fileName = diffCurrentFileName;  // 记录创建时的文件名
           
           var config = {
             id: id,
+            fileName: fileName,
             startLine: startLine,
             endLine: endLine,
             oldContent: oldContent,
@@ -3538,45 +3900,56 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
             lineTo: lineEnd.to,
             widgetPos: lineEnd.to,
             onAccept: function(view, suggestionId) {
-              var suggestion = diffSuggestions.get(suggestionId);
+              var currentEffects = window._diffSuggestionEffects;  // 使用最新的 effects
+              var fileSuggestions = diffSuggestionsByFile.get(fileName);
+              var suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
               // 获取最新位置（文档可能已变化）
               var latest = getLatestSuggestionPosition(suggestionId);
-              var from = latest ? latest.lineFrom : suggestion.lineFrom;
-              var to = latest ? latest.lineTo : suggestion.lineTo;
-              if (suggestion) {
+              var from = latest ? latest.lineFrom : (suggestion ? suggestion.lineFrom : 0);
+              var to = latest ? latest.lineTo : (suggestion ? suggestion.lineTo : 0);
+              if (suggestion && currentEffects) {
                 view.dispatch({
                   changes: { from: from, to: to, insert: suggestion.newContent },
-                  effects: effects.removeDiffSuggestionEffect.of(suggestionId)
+                  effects: currentEffects.removeDiffSuggestionEffect.of(suggestionId)
                 });
                 // 通知 Content Script
                 window.postMessage({
                   type: 'DIFF_SUGGESTION_RESOLVED',
                   data: { id: suggestionId, accepted: true, oldContent: suggestion.oldContent, newContent: suggestion.newContent }
                 }, '*');
-                diffSuggestions.delete(suggestionId);
-                if (diffCurrentIndex >= diffSuggestions.size) diffCurrentIndex = Math.max(0, diffSuggestions.size - 1);
+                fileSuggestions.delete(suggestionId);
+                var totalCount = getTotalSuggestionsCount();
+                if (diffCurrentIndex >= totalCount) diffCurrentIndex = Math.max(0, totalCount - 1);
                 updateDiffControlBar();
                 if (callbacks.onAccept) callbacks.onAccept();
               }
             },
             onReject: function(view, suggestionId) {
-              view.dispatch({ effects: effects.removeDiffSuggestionEffect.of(suggestionId) });
+              var currentEffects = window._diffSuggestionEffects;  // 使用最新的 effects
+              if (currentEffects) {
+                view.dispatch({ effects: currentEffects.removeDiffSuggestionEffect.of(suggestionId) });
+              }
               // 通知 Content Script
               window.postMessage({
                 type: 'DIFF_SUGGESTION_RESOLVED',
                 data: { id: suggestionId, accepted: false }
               }, '*');
-              diffSuggestions.delete(suggestionId);
-              if (diffCurrentIndex >= diffSuggestions.size) diffCurrentIndex = Math.max(0, diffSuggestions.size - 1);
+              var fileSuggestions = diffSuggestionsByFile.get(fileName);
+              if (fileSuggestions) fileSuggestions.delete(suggestionId);
+              var totalCount = getTotalSuggestionsCount();
+              if (diffCurrentIndex >= totalCount) diffCurrentIndex = Math.max(0, totalCount - 1);
               updateDiffControlBar();
               if (callbacks.onReject) callbacks.onReject();
             }
           };
           
-          diffSuggestions.set(id, config);
-          diffCurrentView.dispatch({ effects: effects.addDiffSuggestionEffect.of(config) });
+          getCurrentFileSuggestions().set(id, config);
+          var currentEffectsForAdd = window._diffSuggestionEffects;
+          if (currentEffectsForAdd) {
+            diffCurrentView.dispatch({ effects: currentEffectsForAdd.addDiffSuggestionEffect.of(config) });
+          }
           updateDiffControlBar();
-          console.log('[DiffAPI] 建议已创建:', id, '第', startLine, '-', endLine, '行');
+          console.log('[DiffAPI] 建议已创建:', id, '第', startLine, '-', endLine, '行', '文件:', fileName);
           return id;
         } catch (e) {
           console.error('[DiffAPI] 创建建议失败:', e);
@@ -3591,9 +3964,11 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
           var lineStart = diffCurrentView.state.doc.line(startLine);
           var lineEnd = diffCurrentView.state.doc.line(endLine);
           var oldContent = diffCurrentView.state.doc.sliceString(lineStart.from, lineEnd.to);
+          var fileName = diffCurrentFileName;  // 记录创建时的文件名
           
           var config = {
             id: externalId,
+            fileName: fileName,
             startLine: startLine,
             endLine: endLine,
             oldContent: oldContent,
@@ -3602,45 +3977,56 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
             lineTo: lineEnd.to,
             widgetPos: lineEnd.to,
             onAccept: function(view, suggestionId) {
-              var suggestion = diffSuggestions.get(suggestionId);
+              var currentEffects = window._diffSuggestionEffects;  // 使用最新的 effects
+              var fileSuggestions = diffSuggestionsByFile.get(fileName);
+              var suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
               // 获取最新位置（文档可能已变化）
               var latest = getLatestSuggestionPosition(suggestionId);
-              var from = latest ? latest.lineFrom : suggestion.lineFrom;
-              var to = latest ? latest.lineTo : suggestion.lineTo;
-              if (suggestion) {
+              var from = latest ? latest.lineFrom : (suggestion ? suggestion.lineFrom : 0);
+              var to = latest ? latest.lineTo : (suggestion ? suggestion.lineTo : 0);
+              if (suggestion && currentEffects) {
                 view.dispatch({
                   changes: { from: from, to: to, insert: suggestion.newContent },
-                  effects: effects.removeDiffSuggestionEffect.of(suggestionId)
+                  effects: currentEffects.removeDiffSuggestionEffect.of(suggestionId)
                 });
                 // 通知 Content Script
                 window.postMessage({
                   type: 'DIFF_SUGGESTION_RESOLVED',
                   data: { id: suggestionId, accepted: true, oldContent: suggestion.oldContent, newContent: suggestion.newContent }
                 }, '*');
-                diffSuggestions.delete(suggestionId);
-                if (diffCurrentIndex >= diffSuggestions.size) diffCurrentIndex = Math.max(0, diffSuggestions.size - 1);
+                fileSuggestions.delete(suggestionId);
+                var totalCount = getTotalSuggestionsCount();
+                if (diffCurrentIndex >= totalCount) diffCurrentIndex = Math.max(0, totalCount - 1);
                 updateDiffControlBar();
                 if (callbacks.onAccept) callbacks.onAccept();
               }
             },
             onReject: function(view, suggestionId) {
-              view.dispatch({ effects: effects.removeDiffSuggestionEffect.of(suggestionId) });
+              var currentEffects = window._diffSuggestionEffects;  // 使用最新的 effects
+              if (currentEffects) {
+                view.dispatch({ effects: currentEffects.removeDiffSuggestionEffect.of(suggestionId) });
+              }
               // 通知 Content Script
               window.postMessage({
                 type: 'DIFF_SUGGESTION_RESOLVED',
                 data: { id: suggestionId, accepted: false }
               }, '*');
-              diffSuggestions.delete(suggestionId);
-              if (diffCurrentIndex >= diffSuggestions.size) diffCurrentIndex = Math.max(0, diffSuggestions.size - 1);
+              var fileSuggestions = diffSuggestionsByFile.get(fileName);
+              if (fileSuggestions) fileSuggestions.delete(suggestionId);
+              var totalCount = getTotalSuggestionsCount();
+              if (diffCurrentIndex >= totalCount) diffCurrentIndex = Math.max(0, totalCount - 1);
               updateDiffControlBar();
               if (callbacks.onReject) callbacks.onReject();
             }
           };
           
-          diffSuggestions.set(externalId, config);
-          diffCurrentView.dispatch({ effects: effects.addDiffSuggestionEffect.of(config) });
+          getCurrentFileSuggestions().set(externalId, config);
+          var currentEffectsForAdd = window._diffSuggestionEffects;
+          if (currentEffectsForAdd) {
+            diffCurrentView.dispatch({ effects: currentEffectsForAdd.addDiffSuggestionEffect.of(config) });
+          }
           updateDiffControlBar();
-          console.log('[DiffAPI] 建议已创建（外部ID）:', externalId, '第', startLine, '-', endLine, '行');
+          console.log('[DiffAPI] 建议已创建（外部ID）:', externalId, '第', startLine, '-', endLine, '行', '文件:', fileName);
           return externalId;
         } catch (e) {
           console.error('[DiffAPI] 创建建议失败:', e);
@@ -3650,7 +4036,17 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
       
       // 导航
       prev: function() {
-        if (diffSuggestions.size === 0) return;
+        var totalCount = getTotalSuggestionsCount();
+        if (totalCount === 0) return;
+        
+        // 检查是否在导航模式（当前文件没有建议）
+        var currentFileCount = getCurrentFileSuggestions().size;
+        if (currentFileCount === 0) {
+          // 导航模式：跳转到上一个有建议的文件
+          jumpToNextFileWithSuggestions();
+          return;
+        }
+        
         if (diffCurrentIndex > 0) {
           jumpToDiffSuggestion(diffCurrentIndex - 1);
         } else {
@@ -3660,8 +4056,18 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
       },
       
       next: function() {
-        if (diffSuggestions.size === 0) return;
-        if (diffCurrentIndex < diffSuggestions.size - 1) {
+        var totalCount = getTotalSuggestionsCount();
+        if (totalCount === 0) return;
+        
+        // 检查是否在导航模式（当前文件没有建议）
+        var currentFileCount = getCurrentFileSuggestions().size;
+        if (currentFileCount === 0) {
+          // 导航模式：跳转到下一个有建议的文件
+          jumpToNextFileWithSuggestions();
+          return;
+        }
+        
+        if (diffCurrentIndex < totalCount - 1) {
           jumpToDiffSuggestion(diffCurrentIndex + 1);
         } else {
           // 已经是最后一个，重新定位到当前建议
@@ -3675,54 +4081,57 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
       
       // 接受当前
       acceptCurrent: function() {
-        var ids = Array.from(diffSuggestions.keys());
-        if (ids[diffCurrentIndex]) {
-          var config = diffSuggestions.get(ids[diffCurrentIndex]);
-          if (config && config.onAccept) {
-            config.onAccept(diffCurrentView, ids[diffCurrentIndex]);
+        var sortedList = getSortedSuggestionsAcrossFiles();
+        if (sortedList[diffCurrentIndex]) {
+          var item = sortedList[diffCurrentIndex];
+          if (item.config && item.config.onAccept) {
+            item.config.onAccept(diffCurrentView, item.id);
           }
         }
       },
       
       // 拒绝当前
       rejectCurrent: function() {
-        var ids = Array.from(diffSuggestions.keys());
-        if (ids[diffCurrentIndex]) {
-          var config = diffSuggestions.get(ids[diffCurrentIndex]);
-          if (config && config.onReject) {
-            config.onReject(diffCurrentView, ids[diffCurrentIndex]);
+        var sortedList = getSortedSuggestionsAcrossFiles();
+        if (sortedList[diffCurrentIndex]) {
+          var item = sortedList[diffCurrentIndex];
+          if (item.config && item.config.onReject) {
+            item.config.onReject(diffCurrentView, item.id);
           }
         }
       },
       
-      // 接受所有
+      // 接受当前文件所有建议
       acceptAll: function() {
-        var ids = Array.from(diffSuggestions.keys());
+        var fileSuggestions = getCurrentFileSuggestions();
+        var ids = Array.from(fileSuggestions.keys());
         // 从后往前接受，避免位置偏移问题
         for (var i = ids.length - 1; i >= 0; i--) {
-          var config = diffSuggestions.get(ids[i]);
+          var config = fileSuggestions.get(ids[i]);
           if (config && config.onAccept) {
             config.onAccept(diffCurrentView, ids[i]);
           }
         }
-        console.log('[DiffAPI] 已接受所有建议');
+        console.log('[DiffAPI] 已接受当前文件所有建议');
       },
       
-      // 拒绝所有
+      // 拒绝当前文件所有建议
       rejectAll: function() {
-        var ids = Array.from(diffSuggestions.keys());
+        var fileSuggestions = getCurrentFileSuggestions();
+        var ids = Array.from(fileSuggestions.keys());
         for (var j = 0; j < ids.length; j++) {
-          var config = diffSuggestions.get(ids[j]);
+          var config = fileSuggestions.get(ids[j]);
           if (config && config.onReject) {
             config.onReject(diffCurrentView, ids[j]);
           }
         }
-        console.log('[DiffAPI] 已拒绝所有建议');
+        console.log('[DiffAPI] 已拒绝当前文件所有建议');
       },
       
-      // 清除所有
+      // 清除当前文件所有建议
       clearAll: function() {
-        var ids = Array.from(diffSuggestions.keys());
+        var fileSuggestions = getCurrentFileSuggestions();
+        var ids = Array.from(fileSuggestions.keys());
         for (var k = 0; k < ids.length; k++) {
           // 通知 Content Script 建议被清除（视为拒绝）
           window.postMessage({
@@ -3730,24 +4139,60 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
             data: { id: ids[k], accepted: false }
           }, '*');
         }
-        diffSuggestions.clear();
-        diffCurrentIndex = 0;
-        diffCurrentView.dispatch({ effects: effects.clearDiffSuggestionsEffect.of(null) });
+        fileSuggestions.clear();
+        var totalCount = getTotalSuggestionsCount();
+        if (diffCurrentIndex >= totalCount) diffCurrentIndex = Math.max(0, totalCount - 1);
+        var currentEffectsForClear = window._diffSuggestionEffects;
+        if (currentEffectsForClear) {
+          diffCurrentView.dispatch({ effects: currentEffectsForClear.clearDiffSuggestionsEffect.of(null) });
+        }
         updateDiffControlBar();
-        console.log('[DiffAPI] 所有建议已清除');
+        console.log('[DiffAPI] 当前文件所有建议已清除');
       },
       
-      // 列出所有建议
+      // 清除所有文件的建议
+      clearAllFiles: function() {
+        for (var entry of diffSuggestionsByFile) {
+          var suggestions = entry[1];
+          for (var suggEntry of suggestions) {
+            window.postMessage({
+              type: 'DIFF_SUGGESTION_RESOLVED',
+              data: { id: suggEntry[0], accepted: false }
+            }, '*');
+          }
+        }
+        diffSuggestionsByFile.clear();
+        diffCurrentIndex = 0;
+        var currentEffectsForClear = window._diffSuggestionEffects;
+        if (currentEffectsForClear) {
+          diffCurrentView.dispatch({ effects: currentEffectsForClear.clearDiffSuggestionsEffect.of(null) });
+        }
+        updateDiffControlBar();
+        console.log('[DiffAPI] 所有文件的建议已清除');
+      },
+      
+      // 列出所有建议（跨文件）
       list: function() {
-        console.log('[DiffAPI] 修改建议 (' + diffSuggestions.size + '个):');
-        diffSuggestions.forEach(function(config, id) {
-          console.log('  -', id, ': 第', config.lineNum || config.startLine, '行');
-        });
+        var totalCount = getTotalSuggestionsCount();
+        console.log('[DiffAPI] 修改建议 (' + totalCount + '个，' + diffSuggestionsByFile.size + '个文件):');
+        for (var entry of diffSuggestionsByFile) {
+          var fileName = entry[0];
+          var suggestions = entry[1];
+          console.log('  文件:', fileName, '(' + suggestions.size + '个)');
+          suggestions.forEach(function(config, id) {
+            console.log('    -', id, ': 第', config.lineNum || config.startLine, '行');
+          });
+        }
       },
       
       // 获取建议数量
       count: function() {
-        return diffSuggestions.size;
+        return getTotalSuggestionsCount();
+      },
+      
+      // 获取当前文件建议数量
+      countCurrentFile: function() {
+        return getCurrentFileSuggestions().size;
       },
       
       // 测试
@@ -3797,10 +4242,17 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
     // 接受指定建议
     else if (data.type === 'DIFF_ACCEPT') {
       var acceptId = data.data.id;
-      if (window.diffAPI && diffSuggestions.has(acceptId)) {
-        var config = diffSuggestions.get(acceptId);
-        if (config && config.onAccept) {
-          config.onAccept(diffCurrentView, acceptId);
+      if (window.diffAPI) {
+        // 在所有文件中查找建议
+        for (var acceptEntry of diffSuggestionsByFile) {
+          var acceptSuggestions = acceptEntry[1];
+          if (acceptSuggestions.has(acceptId)) {
+            var acceptConfig = acceptSuggestions.get(acceptId);
+            if (acceptConfig && acceptConfig.onAccept) {
+              acceptConfig.onAccept(diffCurrentView, acceptId);
+            }
+            break;
+          }
         }
       }
     }
@@ -3808,10 +4260,17 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
     // 拒绝指定建议
     else if (data.type === 'DIFF_REJECT') {
       var rejectId = data.data.id;
-      if (window.diffAPI && diffSuggestions.has(rejectId)) {
-        var config = diffSuggestions.get(rejectId);
-        if (config && config.onReject) {
-          config.onReject(diffCurrentView, rejectId);
+      if (window.diffAPI) {
+        // 在所有文件中查找建议
+        for (var rejectEntry of diffSuggestionsByFile) {
+          var rejectSuggestions = rejectEntry[1];
+          if (rejectSuggestions.has(rejectId)) {
+            var rejectConfig = rejectSuggestions.get(rejectId);
+            if (rejectConfig && rejectConfig.onReject) {
+              rejectConfig.onReject(diffCurrentView, rejectId);
+            }
+            break;
+          }
         }
       }
     }
