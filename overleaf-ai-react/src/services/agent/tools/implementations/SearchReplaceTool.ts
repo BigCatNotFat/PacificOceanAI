@@ -10,16 +10,34 @@
  * - 替换引用 \cite{xxx}
  * - 小范围文本调整
  * - 批量替换变量名、引用等
+ * 
+ * 审批模式：
+ * - 创建 diff 建议而不是直接修改
+ * - 用户可以逐个或批量接受/拒绝
+ * - 不阻塞 AI 的运行
  */
 
 import { BaseTool } from '../base/BaseTool';
 import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
+import { diffSuggestionService } from '../../../editor/DiffSuggestionService';
+import type { CreateSuggestionInput } from '../../../../platform/editor/IDiffSuggestionService';
+
+/**
+ * 匹配位置信息
+ */
+interface MatchInfo {
+  index: number;
+  startLine: number;
+  endLine: number;
+  oldContent: string;
+}
 
 /**
  * 字符串搜索替换工具
  * 
  * 通过精确匹配 old_string 来替换为 new_string，支持替换所有匹配项
+ * 修改会以 diff 建议的形式显示，用户可以选择接受或拒绝
  */
 export class SearchReplaceTool extends BaseTool {
   // 预览配置
@@ -33,6 +51,7 @@ export class SearchReplaceTool extends BaseTool {
 1. Use a COMPLETE sentence as \`old_string\` to ensure unique matching.
 2. Do NOT use fragments that might match multiple places (e.g., "the" or "is").
 3. Set \`replace_all=true\` to replace ALL occurrences (useful for renaming variables, updating citations).
+4. Changes will be shown as diff suggestions. Users can accept or reject each change individually.
 
 Good examples:
 - old_string: "This is the first sentence of this paragraph."
@@ -66,7 +85,7 @@ Good examples:
       },
       required: ['target_file', 'old_string', 'new_string', 'explanation']
     },
-    needApproval: false,
+    needApproval: false, // 使用新的 diff 建议机制，不使用旧的审批流程
     modes: ['agent']
   };
 
@@ -81,7 +100,7 @@ Good examples:
   }
 
   /**
-   * 获取文本所在的行号
+   * 获取文本所在的行号（1-indexed）
    */
   private getLineNumber(content: string, index: number): number {
     const beforeText = content.substring(0, index);
@@ -89,24 +108,45 @@ Good examples:
   }
 
   /**
-   * 获取所有匹配位置
+   * 获取匹配文本的行范围
    */
-  private findAllMatches(content: string, searchStr: string): number[] {
-    const indices: number[] = [];
+  private getLineRange(content: string, matchIndex: number, matchText: string): { startLine: number; endLine: number } {
+    const startLine = this.getLineNumber(content, matchIndex);
+    const endIndex = matchIndex + matchText.length;
+    const endLine = this.getLineNumber(content, endIndex - 1); // -1 因为我们要包含最后一个字符所在的行
+    return { startLine, endLine };
+  }
+
+  /**
+   * 获取所有匹配位置及其行号信息
+   */
+  private findAllMatchesWithInfo(content: string, searchStr: string): MatchInfo[] {
+    const matches: MatchInfo[] = [];
     let currentIndex = 0;
     
     while (true) {
       const index = content.indexOf(searchStr, currentIndex);
       if (index === -1) break;
-      indices.push(index);
+      
+      const { startLine, endLine } = this.getLineRange(content, index, searchStr);
+      
+      matches.push({
+        index,
+        startLine,
+        endLine,
+        oldContent: searchStr
+      });
+      
       currentIndex = index + 1;
     }
     
-    return indices;
+    return matches;
   }
 
   /**
    * 执行搜索替换
+   * 
+   * 创建 diff 建议而不是直接修改，用户可以选择接受或拒绝
    */
   async execute(args: {
     target_file: string;
@@ -116,6 +156,8 @@ Good examples:
     explanation: string;
   }): Promise<ToolExecutionResult> {
     const startTime = Date.now();
+    // 生成一个工具调用 ID
+    const toolCallId = `search_replace_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     try {
       const replaceAll = args.replace_all ?? false;
@@ -184,16 +226,16 @@ Good examples:
       // 2. 获取当前文件内容
       const originalContent = await overleafEditor.document.getText();
 
-      // 3. 查找所有匹配
-      const matchIndices = this.findAllMatches(originalContent, oldString);
+      // 3. 查找所有匹配及其位置信息
+      let matches = this.findAllMatchesWithInfo(originalContent, oldString);
 
-      if (matchIndices.length === 0) {
+      if (matches.length === 0) {
         // 尝试标准化换行符后匹配
         const normalizedContent = originalContent.replace(/\r\n/g, '\n');
         const normalizedOld = oldString.replace(/\r\n/g, '\n');
-        const normalizedIndices = this.findAllMatches(normalizedContent, normalizedOld);
+        matches = this.findAllMatchesWithInfo(normalizedContent, normalizedOld);
 
-        if (normalizedIndices.length === 0) {
+        if (matches.length === 0) {
           return {
             success: false,
             error: `Could not find exact match for old_string in file.`,
@@ -208,38 +250,24 @@ Good examples:
       }
 
       // 4. 如果不是 replace_all 且有多个匹配，返回错误
-      if (!replaceAll && matchIndices.length > 1) {
-        const lineNumbers = matchIndices.map(idx => this.getLineNumber(originalContent, idx));
+      if (!replaceAll && matches.length > 1) {
+        const lineNumbers = matches.map(m => m.startLine);
         return {
           success: false,
-          error: `Found ${matchIndices.length} matches for old_string at lines: ${lineNumbers.join(', ')}. Use replace_all=true to replace all, or use a more unique text.`,
+          error: `Found ${matches.length} matches for old_string at lines: ${lineNumbers.join(', ')}. Use replace_all=true to replace all, or use a more unique text.`,
           duration: Date.now() - startTime,
           data: {
             file: args.target_file,
             found: true,
-            matchCount: matchIndices.length,
+            matchCount: matches.length,
             matchLines: lineNumbers,
             hint: 'Set replace_all=true or include more context to make old_string unique.'
           }
         };
       }
 
-      // 5. 执行替换
-      let newContent: string;
-      let replacedCount: number;
-      
-      if (replaceAll) {
-        // 替换所有匹配
-        newContent = originalContent.split(oldString).join(newString);
-        replacedCount = matchIndices.length;
-      } else {
-        // 只替换第一个匹配
-        newContent = originalContent.replace(oldString, newString);
-        replacedCount = 1;
-      }
-
-      // 6. 检查内容是否有变化
-      if (newContent === originalContent) {
+      // 5. 检查内容是否有变化
+      if (oldString === newString) {
         return {
           success: true,
           data: {
@@ -251,43 +279,58 @@ Good examples:
         };
       }
 
-      // 7. 应用编辑到编辑器
-      console.log('[SearchReplaceTool] Applying changes...');
-      const setResult = await overleafEditor.editor.setDocContent(newContent);
+      // 6. 准备创建 diff 建议
+      // 如果不是 replace_all，只处理第一个匹配
+      const matchesToProcess = replaceAll ? matches : [matches[0]];
+      
+      const suggestionInputs: CreateSuggestionInput[] = [];
+      const previewLines: string[] = [];
 
-      if (!setResult.success) {
-        return {
-          success: false,
-          error: '无法将编辑应用到编辑器',
-          duration: Date.now() - startTime
-        };
+      for (const match of matchesToProcess) {
+        suggestionInputs.push({
+          toolCallId,
+          targetFile: targetBaseName,
+          startLine: match.startLine,
+          endLine: match.endLine,
+          oldContent: match.oldContent,
+          newContent: newString
+        });
+
+        const truncatedOld = this.truncatePreview(oldString);
+        const truncatedNew = this.truncatePreview(newString);
+        previewLines.push(`第 ${match.startLine} 行: "${truncatedOld}" → "${truncatedNew}"`);
       }
+
+      // 7. 批量创建 diff 建议
+      console.log('[SearchReplaceTool] Creating diff suggestions...');
+      const suggestionIds = await diffSuggestionService.createBatchSuggestions(suggestionInputs);
+
+      console.log(`[SearchReplaceTool] Created ${suggestionIds.length} diff suggestions:`, suggestionIds);
 
       // 8. 生成预览
-      const lineNumbers = matchIndices.slice(0, 5).map(idx => this.getLineNumber(originalContent, idx));
-      const truncatedNew = this.truncatePreview(newString);
-      
+      const lineNumbers = matchesToProcess.map(m => m.startLine);
       let preview: string;
-      if (replaceAll && replacedCount > 1) {
-        const shownLines = lineNumbers.join(', ');
-        const moreLines = replacedCount > 5 ? ` ... 等 ${replacedCount} 处` : '';
-        preview = `替换了 ${replacedCount} 处 (第 ${shownLines}${moreLines} 行)\n新内容: "${truncatedNew}"`;
+      if (replaceAll && matchesToProcess.length > 1) {
+        const shownLines = lineNumbers.slice(0, 5).join(', ');
+        const moreLines = matchesToProcess.length > 5 ? ` ... 等 ${matchesToProcess.length} 处` : '';
+        preview = `📝 已创建 ${matchesToProcess.length} 个修改建议 (第 ${shownLines}${moreLines} 行)\n` + previewLines.slice(0, 5).join('\n');
+        if (previewLines.length > 5) {
+          preview += `\n... 还有 ${previewLines.length - 5} 处`;
+        }
       } else {
-        preview = `替换了第 ${lineNumbers[0]} 行\n新内容: "${truncatedNew}"`;
+        preview = `📝 已创建修改建议:\n${previewLines[0]}`;
       }
-
-      console.log(`[SearchReplaceTool] Success: ${replacedCount} replacement(s), ${setResult.oldLength} -> ${setResult.newLength}`);
 
       return {
         success: true,
         data: {
           file: args.target_file,
-          applied: true,
-          message: `成功替换 ${replacedCount} 处`,
-          replacedCount,
+          applied: false, // 未直接应用，而是创建了建议
+          pending_approval: true,
+          message: `已创建 ${suggestionIds.length} 个修改建议，等待用户确认。用户可以逐个或批量接受/拒绝修改。`,
+          suggestionIds,
+          replacedCount: matchesToProcess.length,
           lineNumbers,
-          oldLength: setResult.oldLength,
-          newLength: setResult.newLength,
           preview
         },
         duration: Date.now() - startTime

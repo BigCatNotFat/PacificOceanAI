@@ -10,11 +10,18 @@
  * - 重写某个 section
  * - 删除多行内容
  * - 一次性修改文件中的多个位置
+ * 
+ * 审批模式：
+ * - 创建 diff 建议而不是直接修改
+ * - 用户可以逐个或批量接受/拒绝
+ * - 不阻塞 AI 的运行
  */
 
 import { BaseTool } from '../base/BaseTool';
 import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
+import { diffSuggestionService } from '../../../editor/DiffSuggestionService';
+import type { CreateSuggestionInput } from '../../../../platform/editor/IDiffSuggestionService';
 
 /**
  * 单个替换操作的接口
@@ -29,6 +36,7 @@ interface Replacement {
  * 行号替换工具
  * 
  * 通过指定起始行号和结束行号来替换内容，支持批量替换多个区域
+ * 修改会以 diff 建议的形式显示，用户可以选择接受或拒绝
  */
 export class ReplaceLinesTool extends BaseTool {
   protected metadata: ToolMetadata = {
@@ -40,7 +48,7 @@ Usage:
 2. Provide a \`replacements\` array, each item contains: start_line, end_line, new_content.
 3. To replace a single line, set start_line and end_line to the same value.
 4. Multiple replacements will be applied automatically from bottom to top to avoid line number shifts.！！注意不用考虑行号的改变，因为该工具在实现时是从后往前替换的，所以你只需要考虑替换的内容。！！
-5. 使用这个工具后你能看到修改后的内容预览，他和调用read_file工具后看到的预览是一样的，请仔细检查预览是否正确。
+5. Changes will be shown as diff suggestions. Users can accept or reject each change individually.
 Examples:
 - Single replacement: replacements=[{start_line:207, end_line:218, new_content:"..."}]
 - Multiple replacements: replacements=[{start_line:10, end_line:15, new_content:"..."}, {start_line:50, end_line:55, new_content:"..."}]
@@ -82,7 +90,7 @@ Examples:
       },
       required: ['target_file', 'replacements', 'explanation']
     },
-    needApproval: false,
+    needApproval: false, // 使用新的 diff 建议机制，不使用旧的审批流程
     modes: ['agent']
   };
 
@@ -101,7 +109,7 @@ Examples:
   }
 
   /**
-   * 生成单个替换区域的 Diff 预览
+   * 生成单个替换区域的 Diff 预览（用于日志）
    */
   private generateDiffPreview(
     fileName: string,
@@ -143,7 +151,7 @@ Examples:
     // Summary/Warning
     const deletedCount = originalLines.length;
     const addedCount = newLines.length;
-    previewLines.push(`⚠️ 警告: 删除了 ${deletedCount} 行，新增了 ${addedCount} 行。`);
+    previewLines.push(`⚠️ 建议: 删除 ${deletedCount} 行，新增 ${addedCount} 行。等待用户确认。`);
 
     return previewLines.join('\n');
   }
@@ -170,6 +178,8 @@ Examples:
 
   /**
    * 执行行号替换（支持批量）
+   * 
+   * 创建 diff 建议而不是直接修改，用户可以选择接受或拒绝
    */
   async execute(args: {
     target_file: string;
@@ -177,6 +187,8 @@ Examples:
     explanation: string;
   }): Promise<ToolExecutionResult> {
     const startTime = Date.now();
+    // 生成一个工具调用 ID
+    const toolCallId = `replace_lines_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     try {
       console.log('[ReplaceLinesTool] execute called with:', {
@@ -255,7 +267,7 @@ Examples:
 
       // 2. 获取当前文件内容
       const originalContent = await overleafEditor.document.getText();
-      let lines = originalContent.split('\n');
+      const lines = originalContent.split('\n');
       const totalLines = lines.length;
 
       // 3. 验证所有行号范围
@@ -270,35 +282,25 @@ Examples:
         }
       }
 
-      // 4. 按 start_line 降序排序（从后往前替换，避免行号偏移）
-      const sortedReplacements = [...args.replacements].sort(
-        (a, b) => b.start_line - a.start_line
-      );
-
-      console.log('[ReplaceLinesTool] Sorted replacements (bottom to top):', 
-        sortedReplacements.map(r => `${r.start_line}-${r.end_line}`));
-
-      // 5. 执行批量替换
-      let totalLinesReplaced = 0;
-      let totalNewLines = 0;
+      // 4. 准备创建 diff 建议
+      const suggestionInputs: CreateSuggestionInput[] = [];
       const previewBlocks: string[] = [];
 
-      for (const replacement of sortedReplacements) {
+      for (const replacement of args.replacements) {
         const { start_line, end_line, new_content } = replacement;
         
         // 预处理 LaTeX 转义
         const processedContent = this.preprocessLatex(new_content);
         
-        // 执行单次替换
+        // 获取原始内容
         const startIdx = start_line - 1; // 转为 0-indexed
         const endIdx = end_line; // slice 的 end 是 exclusive
-        
-        // 获取原始内容用于预览
         const originalSegment = lines.slice(startIdx, endIdx);
-
+        const oldContent = originalSegment.join('\n');
+        
         const newContentLines = processedContent ? processedContent.split('\n') : [];
         
-        // 生成预览块
+        // 生成预览块（用于日志）
         const previewBlock = this.generateDiffPreview(
             targetBaseName,
             start_line,
@@ -308,62 +310,37 @@ Examples:
         );
         previewBlocks.push(previewBlock);
 
-        lines = [
-          ...lines.slice(0, startIdx),
-          ...newContentLines,
-          ...lines.slice(endIdx)
-        ];
+        // 准备建议输入
+        suggestionInputs.push({
+          toolCallId,
+          targetFile: targetBaseName,
+          startLine: start_line,
+          endLine: end_line,
+          oldContent,
+          newContent: processedContent
+        });
 
-        const linesReplaced = end_line - start_line + 1;
-        totalLinesReplaced += linesReplaced;
-        totalNewLines += newContentLines.length;
-
-        console.log(`[ReplaceLinesTool] Replaced lines ${start_line}-${end_line} (${linesReplaced} lines) with ${newContentLines.length} lines`);
+        console.log(`[ReplaceLinesTool] Prepared suggestion for lines ${start_line}-${end_line}`);
       }
 
-      const newContent = lines.join('\n');
+      // 5. 批量创建 diff 建议
+      console.log('[ReplaceLinesTool] Creating diff suggestions...');
+      const suggestionIds = await diffSuggestionService.createBatchSuggestions(suggestionInputs);
 
-      // 6. 检查内容是否有变化
-      if (newContent === originalContent) {
-        return {
-          success: true,
-          data: {
-            file: args.target_file,
-            applied: false,
-            message: '替换内容与原文相同，无需修改'
-          },
-          duration: Date.now() - startTime
-        };
-      }
+      console.log(`[ReplaceLinesTool] Created ${suggestionIds.length} diff suggestions:`, suggestionIds);
 
-      // 7. 应用编辑到编辑器
-      console.log('[ReplaceLinesTool] Applying changes...');
-      const setResult = await overleafEditor.editor.setDocContent(newContent);
-
-      if (!setResult.success) {
-        return {
-          success: false,
-          error: '无法将编辑应用到编辑器',
-          duration: Date.now() - startTime
-        };
-      }
-
-      console.log(`[ReplaceLinesTool] Success: ${args.replacements.length} replacements applied`);
-
-      // 8. 组合预览（反转顺序使其从上到下显示）
-      const finalPreview = "📝 替换执行报告:\n" + previewBlocks.reverse().join('\n\n');
+      // 6. 组合预览（用于返回给 AI）
+      const finalPreview = "📝 已创建修改建议（等待用户确认）:\n" + previewBlocks.join('\n\n');
 
       return {
         success: true,
         data: {
           file: args.target_file,
-          applied: true,
-          message: `成功执行 ${args.replacements.length} 处替换，共替换 ${totalLinesReplaced} 行为 ${totalNewLines} 行`,
+          applied: false, // 未直接应用，而是创建了建议
+          pending_approval: true,
+          message: `已创建 ${suggestionIds.length} 个修改建议，等待用户确认。用户可以逐个或批量接受/拒绝修改。`,
+          suggestionIds,
           replacementsCount: args.replacements.length,
-          totalLinesReplaced,
-          totalNewLines,
-          oldLength: setResult.oldLength,
-          newLength: setResult.newLength,
           preview: finalPreview
         },
         duration: Date.now() - startTime

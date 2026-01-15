@@ -2859,3 +2859,983 @@ setTimeout(requestModelList, 100);
 
 // 标记脚本已加载
 console.log('[OverleafBridge] Injected script loaded with selection tooltip and preview feature');
+
+// ============ Diff 建议系统 ============
+
+/**
+ * Diff 建议系统
+ * 用于显示代码修改建议，支持逐个或批量接受/拒绝
+ */
+(function() {
+  'use strict';
+  
+  console.log('[OverleafBridge] 初始化 Diff 建议系统...');
+  
+  // 移除旧样式和控制栏
+  const oldDiffStyle = document.getElementById('diff-suggestion-styles');
+  if (oldDiffStyle) oldDiffStyle.remove();
+  const oldDiffBar = document.getElementById('diff-control-bar');
+  if (oldDiffBar) oldDiffBar.remove();
+  
+  // 注入样式
+  const diffStyle = document.createElement('style');
+  diffStyle.id = 'diff-suggestion-styles';
+  diffStyle.textContent = `
+    /* 原始内容 - 浅红色背景，黑色删除线 */
+    .diff-line-deleted {
+      background: rgba(255, 0, 0, 0.08) !important;
+      text-decoration: line-through !important;
+      text-decoration-color: #000000 !important;
+      color: #000000 !important;
+      position: relative !important;
+    }
+    
+    .diff-line-deleted::before {
+      content: '−';
+      position: absolute;
+      left: -20px;
+      color: #c62828;
+      font-weight: bold;
+    }
+    
+    /* 替换内容块 - 浅绿色背景，黑色文字 */
+    .diff-suggestion-block {
+      position: relative;
+      margin: 0;
+      padding: 0;
+    }
+    
+    .diff-new-content {
+      background: rgba(76, 175, 80, 0.1);
+      padding: 8px 16px;
+      padding-right: 180px;
+      border-left: 3px solid #81c784;
+      margin: 2px 0;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      position: relative;
+      border-radius: 0 4px 4px 0;
+    }
+    
+    .diff-new-content::before {
+      content: '+';
+      position: absolute;
+      left: 5px;
+      color: #4caf50;
+      font-weight: bold;
+    }
+    
+    .diff-new-label {
+      color: #4caf50;
+      font-weight: 600;
+      margin-right: 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .diff-new-text {
+      color: #000000 !important;
+    }
+    
+    /* 行内按钮容器 */
+    .diff-buttons {
+      position: absolute;
+      right: 8px;
+      bottom: 6px;
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+    
+    .diff-btn {
+      padding: 5px 14px;
+      border: none;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    }
+    
+    .diff-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+    
+    .diff-btn-accept { background: #66bb6a; color: white; }
+    .diff-btn-accept:hover { background: #4caf50; }
+    .diff-btn-reject { background: #ef5350; color: white; }
+    .diff-btn-reject:hover { background: #f44336; }
+    
+    /* ===== 底部固定控制栏 ===== */
+    #diff-control-bar {
+      position: fixed;
+      bottom: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: #2d2d2d;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      color: #fff;
+    }
+    
+    #diff-control-bar.hidden {
+      display: none;
+    }
+    
+    /* 导航箭头 */
+    .diff-nav-btn {
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: transparent;
+      color: #aaa;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      font-size: 18px;
+      transition: all 0.15s;
+    }
+    
+    .diff-nav-btn:hover {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+    }
+    
+    .diff-nav-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+    
+    /* 计数器 */
+    .diff-counter {
+      color: #aaa;
+      font-size: 13px;
+      min-width: 60px;
+      text-align: center;
+    }
+    
+    /* 分隔线 */
+    .diff-separator {
+      width: 1px;
+      height: 24px;
+      background: #555;
+      margin: 0 8px;
+    }
+    
+    /* 控制栏按钮 */
+    .diff-bar-btn {
+      padding: 6px 16px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: transparent;
+      color: #ddd;
+    }
+    
+    .diff-bar-btn:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: #777;
+    }
+    
+    .diff-bar-btn-reject {
+      color: #ff8a80;
+      border-color: #ff8a80;
+    }
+    
+    .diff-bar-btn-reject:hover {
+      background: rgba(255,138,128,0.15);
+    }
+    
+    .diff-bar-btn-accept {
+      background: #4caf50;
+      border-color: #4caf50;
+      color: white;
+    }
+    
+    .diff-bar-btn-accept:hover {
+      background: #43a047;
+      border-color: #43a047;
+    }
+    
+    /* 快捷键提示 */
+    .diff-shortcut {
+      font-size: 11px;
+      color: #888;
+      margin-left: 4px;
+    }
+    
+    /* 动画 */
+    @keyframes diff-highlight {
+      0% { opacity: 0; transform: translateX(-10px); }
+      100% { opacity: 1; transform: translateX(0); }
+    }
+    
+    .diff-suggestion-block {
+      animation: diff-highlight 0.3s ease-out;
+    }
+    
+    @keyframes diff-bar-slide-up {
+      0% { opacity: 0; transform: translate(-50%, 20px); }
+      100% { opacity: 1; transform: translate(-50%, 0); }
+    }
+    
+    #diff-control-bar {
+      animation: diff-bar-slide-up 0.3s ease-out;
+    }
+  `;
+  document.head.appendChild(diffStyle);
+  
+  // Diff 建议存储
+  var diffSuggestions = new Map();
+  var diffSuggestionId = 0;
+  var diffCurrentIndex = 0;
+  var diffCodeMirror = null;
+  var diffCurrentView = null;
+  var diffControlBar = null;
+  
+  // 创建底部控制栏
+  function createDiffControlBar() {
+    if (diffControlBar) return diffControlBar;
+    
+    diffControlBar = document.createElement('div');
+    diffControlBar.id = 'diff-control-bar';
+    diffControlBar.className = 'hidden';
+    
+    diffControlBar.innerHTML = 
+      '<button class="diff-nav-btn" id="diff-prev-btn" title="上一个">‹</button>' +
+      '<span class="diff-counter" id="diff-counter">0 of 0</span>' +
+      '<button class="diff-nav-btn" id="diff-next-btn" title="下一个">›</button>' +
+      '<div class="diff-separator"></div>' +
+      '<button class="diff-bar-btn diff-bar-btn-reject" id="diff-reject-all-btn">Undo File</button>' +
+      '<button class="diff-bar-btn diff-bar-btn-accept" id="diff-accept-all-btn">Keep File <span class="diff-shortcut">Ctrl+S</span></button>';
+    
+    document.body.appendChild(diffControlBar);
+    
+    // 绑定事件
+    document.getElementById('diff-prev-btn').addEventListener('click', function() {
+      if (window.diffAPI) window.diffAPI.prev();
+    });
+    
+    document.getElementById('diff-next-btn').addEventListener('click', function() {
+      if (window.diffAPI) window.diffAPI.next();
+    });
+    
+    document.getElementById('diff-reject-all-btn').addEventListener('click', function() {
+      if (window.diffAPI) window.diffAPI.rejectAll();
+    });
+    
+    document.getElementById('diff-accept-all-btn').addEventListener('click', function() {
+      if (window.diffAPI) window.diffAPI.acceptAll();
+    });
+    
+    return diffControlBar;
+  }
+  
+  // 从 StateField 获取最新的建议位置（文档变化后位置会自动映射）
+  function getLatestSuggestionPosition(suggestionId) {
+    if (!diffCurrentView) return null;
+    try {
+      var field = diffCurrentView.state.field(window._diffSuggestionField);
+      if (field && field.suggestions) {
+        return field.suggestions.get(suggestionId);
+      }
+    } catch (e) {
+      console.warn('[DiffAPI] 获取最新位置失败:', e);
+    }
+    return null;
+  }
+  
+  // 获取按位置排序的建议 ID 列表（从上到下）
+  function getSortedSuggestionIds() {
+    var ids = Array.from(diffSuggestions.keys());
+    if (!diffCurrentView) return ids;
+    
+    // 获取每个建议的最新位置并排序
+    var idsWithPos = ids.map(function(id) {
+      var latest = getLatestSuggestionPosition(id);
+      var pos = latest ? latest.lineFrom : (diffSuggestions.get(id).lineFrom || 0);
+      return { id: id, pos: pos };
+    });
+    
+    // 按位置从小到大排序（从上到下）
+    idsWithPos.sort(function(a, b) { return a.pos - b.pos; });
+    
+    return idsWithPos.map(function(item) { return item.id; });
+  }
+  
+  // 更新控制栏
+  function updateDiffControlBar() {
+    if (!diffControlBar) return;
+    
+    var count = diffSuggestions.size;
+    var counter = document.getElementById('diff-counter');
+    var prevBtn = document.getElementById('diff-prev-btn');
+    var nextBtn = document.getElementById('diff-next-btn');
+    
+    if (count === 0) {
+      diffControlBar.classList.add('hidden');
+    } else {
+      diffControlBar.classList.remove('hidden');
+      counter.textContent = (diffCurrentIndex + 1) + ' of ' + count;
+      // 只要有建议就启用按钮（点击可以定位到当前建议）
+      prevBtn.disabled = false;
+      nextBtn.disabled = false;
+    }
+  }
+  
+  // 跳转到指定建议
+  function jumpToDiffSuggestion(index) {
+    var ids = getSortedSuggestionIds();  // 使用排序后的列表
+    if (index < 0 || index >= ids.length) return;
+    
+    diffCurrentIndex = index;
+    var id = ids[index];
+    
+    // 使用最新位置进行滚动
+    var latest = getLatestSuggestionPosition(id);
+    var config = latest || diffSuggestions.get(id);
+    
+    if (config && diffCurrentView) {
+      // 滚动到该位置
+      // 注意：scrollIntoView 是 EditorView 的静态方法，需要通过 constructor 访问
+      var EditorView = diffCurrentView.constructor;
+      diffCurrentView.dispatch({
+        effects: EditorView.scrollIntoView(config.lineFrom, { y: 'center' })
+      });
+    }
+    
+    updateDiffControlBar();
+  }
+  
+  // 创建 Widget 类
+  function createDiffSuggestionWidgetClass(CM) {
+    var WidgetType = CM.WidgetType;
+    
+    return class DiffSuggestionWidget extends WidgetType {
+      constructor(config) {
+        super();
+        this.config = config;
+      }
+      
+      toDOM(view) {
+        var config = this.config;
+        var id = config.id;
+        var newContent = config.newContent;
+        var onAccept = config.onAccept;
+        var onReject = config.onReject;
+        
+        var container = document.createElement('div');
+        container.className = 'diff-suggestion-block';
+        container.dataset.suggestionId = id;
+        
+        var newContentDiv = document.createElement('div');
+        newContentDiv.className = 'diff-new-content';
+        
+        var label = document.createElement('span');
+        label.className = 'diff-new-label';
+        label.textContent = '→ New:';
+        
+        var text = document.createElement('span');
+        text.className = 'diff-new-text';
+        text.textContent = newContent;
+        
+        newContentDiv.appendChild(label);
+        newContentDiv.appendChild(text);
+        
+        var buttons = document.createElement('div');
+        buttons.className = 'diff-buttons';
+        
+        var rejectBtn = document.createElement('button');
+        rejectBtn.className = 'diff-btn diff-btn-reject';
+        rejectBtn.innerHTML = '✕ Reject';
+        rejectBtn.type = 'button';
+        rejectBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+        rejectBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (onReject) onReject(view, id);
+        });
+        
+        var acceptBtn = document.createElement('button');
+        acceptBtn.className = 'diff-btn diff-btn-accept';
+        acceptBtn.innerHTML = '✓ Accept';
+        acceptBtn.type = 'button';
+        acceptBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+        acceptBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (onAccept) onAccept(view, id);
+        });
+        
+        buttons.appendChild(rejectBtn);
+        buttons.appendChild(acceptBtn);
+        newContentDiv.appendChild(buttons);
+        container.appendChild(newContentDiv);
+        
+        return container;
+      }
+      
+      eq(other) {
+        return this.config.id === other.config.id &&
+               this.config.newContent === other.config.newContent;
+      }
+      
+      ignoreEvent(event) {
+        return event.type !== 'mousedown' && event.type !== 'mouseup';
+      }
+    };
+  }
+  
+  // 创建扩展
+  function createDiffSuggestionExtension(CM) {
+    var StateEffect = CM.StateEffect;
+    var StateField = CM.StateField;
+    var EditorView = CM.EditorView;
+    var Decoration = CM.Decoration;
+    var DiffSuggestionWidget = createDiffSuggestionWidgetClass(CM);
+    
+    var addDiffSuggestionEffect = StateEffect.define();
+    var removeDiffSuggestionEffect = StateEffect.define();
+    var clearDiffSuggestionsEffect = StateEffect.define();
+    
+    var diffSuggestionField = StateField.define({
+      create: function() {
+        return { suggestions: new Map() };
+      },
+      update: function(value, tr) {
+        var suggestions = value.suggestions;
+        suggestions = new Map(suggestions);
+        
+        if (tr.docChanged) {
+          for (var entry of suggestions) {
+            var id = entry[0];
+            var config = entry[1];
+            suggestions.set(id, {
+              ...config,
+              lineFrom: tr.changes.mapPos(config.lineFrom, 1),
+              lineTo: tr.changes.mapPos(config.lineTo, 1),
+              widgetPos: tr.changes.mapPos(config.widgetPos, 1)
+            });
+          }
+        }
+        
+        for (var effect of tr.effects) {
+          if (effect.is(addDiffSuggestionEffect)) {
+            suggestions.set(effect.value.id, effect.value);
+          } else if (effect.is(removeDiffSuggestionEffect)) {
+            suggestions.delete(effect.value);
+          } else if (effect.is(clearDiffSuggestionsEffect)) {
+            suggestions.clear();
+          }
+        }
+        
+        return { suggestions: suggestions };
+      },
+      provide: function(field) {
+        return EditorView.decorations.compute([field], function(state) {
+          var suggestions = state.field(field).suggestions;
+          var decorations = [];
+          
+          for (var entry of suggestions) {
+            var id = entry[0];
+            var config = entry[1];
+            try {
+              var lineStart = state.doc.lineAt(config.lineFrom);
+              var lineEnd = state.doc.lineAt(config.lineTo);
+              
+              for (var i = lineStart.number; i <= lineEnd.number; i++) {
+                var line = state.doc.line(i);
+                decorations.push(
+                  Decoration.line({ class: 'diff-line-deleted' }).range(line.from)
+                );
+              }
+              
+              decorations.push(
+                Decoration.widget({
+                  widget: new DiffSuggestionWidget(config),
+                  block: true,
+                  side: 1
+                }).range(config.widgetPos)
+              );
+            } catch (e) {
+              console.error('[DiffAPI] 创建装饰失败:', e);
+            }
+          }
+          
+          return Decoration.set(decorations, true);
+        });
+      }
+    });
+    
+    window._diffSuggestionEffects = {
+      addDiffSuggestionEffect: addDiffSuggestionEffect,
+      removeDiffSuggestionEffect: removeDiffSuggestionEffect,
+      clearDiffSuggestionsEffect: clearDiffSuggestionsEffect
+    };
+    
+    // 保存 StateField 引用，用于获取最新位置
+    window._diffSuggestionField = diffSuggestionField;
+    
+    return diffSuggestionField;
+  }
+  
+  // 监听扩展加载
+  window.addEventListener('UNSTABLE_editor:extensions', function(evt) {
+    var detail = evt.detail;
+    var CM = detail.CodeMirror;
+    var extensions = detail.extensions;
+    diffCodeMirror = CM;
+    console.log('[DiffAPI] 捕获到 CodeMirror 实例');
+    var diffSuggestionExtension = createDiffSuggestionExtension(CM);
+    extensions.push(diffSuggestionExtension);
+    console.log('[DiffAPI] Diff 建议扩展已注册');
+  });
+  
+  // 触发加载并设置 API
+  setTimeout(function() {
+    window.dispatchEvent(new CustomEvent('editor:extension-loaded'));
+    
+    setTimeout(function() {
+      var store = window.overleaf && window.overleaf.unstable && window.overleaf.unstable.store;
+      diffCurrentView = (store && store.get('editor.view')) ||
+                        (document.querySelector('.cm-content') && document.querySelector('.cm-content').cmView && document.querySelector('.cm-content').cmView.view);
+      
+      if (diffCurrentView) {
+        console.log('[DiffAPI] 编辑器视图已获取');
+        createDiffControlBar();
+        setupDiffAPI();
+      } else {
+        console.warn('[DiffAPI] 无法获取编辑器视图，稍后重试');
+        // 延迟重试
+        setTimeout(function() {
+          var store = window.overleaf && window.overleaf.unstable && window.overleaf.unstable.store;
+          diffCurrentView = (store && store.get('editor.view')) ||
+                            (document.querySelector('.cm-content') && document.querySelector('.cm-content').cmView && document.querySelector('.cm-content').cmView.view);
+          if (diffCurrentView) {
+            console.log('[DiffAPI] 编辑器视图已获取（重试）');
+            createDiffControlBar();
+            setupDiffAPI();
+          }
+        }, 2000);
+      }
+    }, 500);
+  }, 100);
+  
+  // 设置 API
+  function setupDiffAPI() {
+    var effects = window._diffSuggestionEffects;
+    if (!effects) {
+      console.error('[DiffAPI] 效果未初始化');
+      return;
+    }
+    
+    window.diffAPI = {
+      // 单行建议
+      suggest: function(lineNum, newContent, callbacks) {
+        callbacks = callbacks || {};
+        try {
+          var line = diffCurrentView.state.doc.line(lineNum);
+          var id = 'suggestion-' + (diffSuggestionId++);
+          var oldContent = line.text;
+          
+          var config = {
+            id: id,
+            lineNum: lineNum,
+            oldContent: oldContent,
+            newContent: newContent,
+            lineFrom: line.from,
+            lineTo: line.to,
+            widgetPos: line.to,
+            onAccept: function(view, suggestionId) {
+              var suggestion = diffSuggestions.get(suggestionId);
+              // 获取最新位置（文档可能已变化）
+              var latest = getLatestSuggestionPosition(suggestionId);
+              var from = latest ? latest.lineFrom : suggestion.lineFrom;
+              var to = latest ? latest.lineTo : suggestion.lineTo;
+              if (suggestion) {
+                view.dispatch({
+                  changes: { from: from, to: to, insert: suggestion.newContent },
+                  effects: effects.removeDiffSuggestionEffect.of(suggestionId)
+                });
+                // 通知 Content Script
+                window.postMessage({
+                  type: 'DIFF_SUGGESTION_RESOLVED',
+                  data: { id: suggestionId, accepted: true, oldContent: suggestion.oldContent, newContent: suggestion.newContent }
+                }, '*');
+                diffSuggestions.delete(suggestionId);
+                if (diffCurrentIndex >= diffSuggestions.size) diffCurrentIndex = Math.max(0, diffSuggestions.size - 1);
+                updateDiffControlBar();
+                console.log('[DiffAPI] 已接受建议:', suggestionId);
+                if (callbacks.onAccept) callbacks.onAccept(oldContent, newContent);
+              }
+            },
+            onReject: function(view, suggestionId) {
+              view.dispatch({ effects: effects.removeDiffSuggestionEffect.of(suggestionId) });
+              // 通知 Content Script
+              window.postMessage({
+                type: 'DIFF_SUGGESTION_RESOLVED',
+                data: { id: suggestionId, accepted: false }
+              }, '*');
+              diffSuggestions.delete(suggestionId);
+              if (diffCurrentIndex >= diffSuggestions.size) diffCurrentIndex = Math.max(0, diffSuggestions.size - 1);
+              updateDiffControlBar();
+              console.log('[DiffAPI] 已拒绝建议:', suggestionId);
+              if (callbacks.onReject) callbacks.onReject(oldContent, newContent);
+            }
+          };
+          
+          diffSuggestions.set(id, config);
+          diffCurrentView.dispatch({ effects: effects.addDiffSuggestionEffect.of(config) });
+          updateDiffControlBar();
+          console.log('[DiffAPI] 建议已创建:', id, '第', lineNum, '行');
+          return id;
+        } catch (e) {
+          console.error('[DiffAPI] 创建建议失败:', e);
+          return null;
+        }
+      },
+      
+      // 多行建议
+      suggestRange: function(startLine, endLine, newContent, callbacks) {
+        callbacks = callbacks || {};
+        try {
+          var lineStart = diffCurrentView.state.doc.line(startLine);
+          var lineEnd = diffCurrentView.state.doc.line(endLine);
+          var id = 'suggestion-' + (diffSuggestionId++);
+          var oldContent = diffCurrentView.state.doc.sliceString(lineStart.from, lineEnd.to);
+          
+          var config = {
+            id: id,
+            startLine: startLine,
+            endLine: endLine,
+            oldContent: oldContent,
+            newContent: newContent,
+            lineFrom: lineStart.from,
+            lineTo: lineEnd.to,
+            widgetPos: lineEnd.to,
+            onAccept: function(view, suggestionId) {
+              var suggestion = diffSuggestions.get(suggestionId);
+              // 获取最新位置（文档可能已变化）
+              var latest = getLatestSuggestionPosition(suggestionId);
+              var from = latest ? latest.lineFrom : suggestion.lineFrom;
+              var to = latest ? latest.lineTo : suggestion.lineTo;
+              if (suggestion) {
+                view.dispatch({
+                  changes: { from: from, to: to, insert: suggestion.newContent },
+                  effects: effects.removeDiffSuggestionEffect.of(suggestionId)
+                });
+                // 通知 Content Script
+                window.postMessage({
+                  type: 'DIFF_SUGGESTION_RESOLVED',
+                  data: { id: suggestionId, accepted: true, oldContent: suggestion.oldContent, newContent: suggestion.newContent }
+                }, '*');
+                diffSuggestions.delete(suggestionId);
+                if (diffCurrentIndex >= diffSuggestions.size) diffCurrentIndex = Math.max(0, diffSuggestions.size - 1);
+                updateDiffControlBar();
+                if (callbacks.onAccept) callbacks.onAccept();
+              }
+            },
+            onReject: function(view, suggestionId) {
+              view.dispatch({ effects: effects.removeDiffSuggestionEffect.of(suggestionId) });
+              // 通知 Content Script
+              window.postMessage({
+                type: 'DIFF_SUGGESTION_RESOLVED',
+                data: { id: suggestionId, accepted: false }
+              }, '*');
+              diffSuggestions.delete(suggestionId);
+              if (diffCurrentIndex >= diffSuggestions.size) diffCurrentIndex = Math.max(0, diffSuggestions.size - 1);
+              updateDiffControlBar();
+              if (callbacks.onReject) callbacks.onReject();
+            }
+          };
+          
+          diffSuggestions.set(id, config);
+          diffCurrentView.dispatch({ effects: effects.addDiffSuggestionEffect.of(config) });
+          updateDiffControlBar();
+          console.log('[DiffAPI] 建议已创建:', id, '第', startLine, '-', endLine, '行');
+          return id;
+        } catch (e) {
+          console.error('[DiffAPI] 创建建议失败:', e);
+          return null;
+        }
+      },
+      
+      // 使用外部 ID 创建建议
+      suggestRangeWithId: function(externalId, startLine, endLine, newContent, callbacks) {
+        callbacks = callbacks || {};
+        try {
+          var lineStart = diffCurrentView.state.doc.line(startLine);
+          var lineEnd = diffCurrentView.state.doc.line(endLine);
+          var oldContent = diffCurrentView.state.doc.sliceString(lineStart.from, lineEnd.to);
+          
+          var config = {
+            id: externalId,
+            startLine: startLine,
+            endLine: endLine,
+            oldContent: oldContent,
+            newContent: newContent,
+            lineFrom: lineStart.from,
+            lineTo: lineEnd.to,
+            widgetPos: lineEnd.to,
+            onAccept: function(view, suggestionId) {
+              var suggestion = diffSuggestions.get(suggestionId);
+              // 获取最新位置（文档可能已变化）
+              var latest = getLatestSuggestionPosition(suggestionId);
+              var from = latest ? latest.lineFrom : suggestion.lineFrom;
+              var to = latest ? latest.lineTo : suggestion.lineTo;
+              if (suggestion) {
+                view.dispatch({
+                  changes: { from: from, to: to, insert: suggestion.newContent },
+                  effects: effects.removeDiffSuggestionEffect.of(suggestionId)
+                });
+                // 通知 Content Script
+                window.postMessage({
+                  type: 'DIFF_SUGGESTION_RESOLVED',
+                  data: { id: suggestionId, accepted: true, oldContent: suggestion.oldContent, newContent: suggestion.newContent }
+                }, '*');
+                diffSuggestions.delete(suggestionId);
+                if (diffCurrentIndex >= diffSuggestions.size) diffCurrentIndex = Math.max(0, diffSuggestions.size - 1);
+                updateDiffControlBar();
+                if (callbacks.onAccept) callbacks.onAccept();
+              }
+            },
+            onReject: function(view, suggestionId) {
+              view.dispatch({ effects: effects.removeDiffSuggestionEffect.of(suggestionId) });
+              // 通知 Content Script
+              window.postMessage({
+                type: 'DIFF_SUGGESTION_RESOLVED',
+                data: { id: suggestionId, accepted: false }
+              }, '*');
+              diffSuggestions.delete(suggestionId);
+              if (diffCurrentIndex >= diffSuggestions.size) diffCurrentIndex = Math.max(0, diffSuggestions.size - 1);
+              updateDiffControlBar();
+              if (callbacks.onReject) callbacks.onReject();
+            }
+          };
+          
+          diffSuggestions.set(externalId, config);
+          diffCurrentView.dispatch({ effects: effects.addDiffSuggestionEffect.of(config) });
+          updateDiffControlBar();
+          console.log('[DiffAPI] 建议已创建（外部ID）:', externalId, '第', startLine, '-', endLine, '行');
+          return externalId;
+        } catch (e) {
+          console.error('[DiffAPI] 创建建议失败:', e);
+          return null;
+        }
+      },
+      
+      // 导航
+      prev: function() {
+        if (diffSuggestions.size === 0) return;
+        if (diffCurrentIndex > 0) {
+          jumpToDiffSuggestion(diffCurrentIndex - 1);
+        } else {
+          // 已经是第一个，重新定位到当前建议
+          jumpToDiffSuggestion(diffCurrentIndex);
+        }
+      },
+      
+      next: function() {
+        if (diffSuggestions.size === 0) return;
+        if (diffCurrentIndex < diffSuggestions.size - 1) {
+          jumpToDiffSuggestion(diffCurrentIndex + 1);
+        } else {
+          // 已经是最后一个，重新定位到当前建议
+          jumpToDiffSuggestion(diffCurrentIndex);
+        }
+      },
+      
+      goto: function(index) {
+        jumpToDiffSuggestion(index);
+      },
+      
+      // 接受当前
+      acceptCurrent: function() {
+        var ids = Array.from(diffSuggestions.keys());
+        if (ids[diffCurrentIndex]) {
+          var config = diffSuggestions.get(ids[diffCurrentIndex]);
+          if (config && config.onAccept) {
+            config.onAccept(diffCurrentView, ids[diffCurrentIndex]);
+          }
+        }
+      },
+      
+      // 拒绝当前
+      rejectCurrent: function() {
+        var ids = Array.from(diffSuggestions.keys());
+        if (ids[diffCurrentIndex]) {
+          var config = diffSuggestions.get(ids[diffCurrentIndex]);
+          if (config && config.onReject) {
+            config.onReject(diffCurrentView, ids[diffCurrentIndex]);
+          }
+        }
+      },
+      
+      // 接受所有
+      acceptAll: function() {
+        var ids = Array.from(diffSuggestions.keys());
+        // 从后往前接受，避免位置偏移问题
+        for (var i = ids.length - 1; i >= 0; i--) {
+          var config = diffSuggestions.get(ids[i]);
+          if (config && config.onAccept) {
+            config.onAccept(diffCurrentView, ids[i]);
+          }
+        }
+        console.log('[DiffAPI] 已接受所有建议');
+      },
+      
+      // 拒绝所有
+      rejectAll: function() {
+        var ids = Array.from(diffSuggestions.keys());
+        for (var j = 0; j < ids.length; j++) {
+          var config = diffSuggestions.get(ids[j]);
+          if (config && config.onReject) {
+            config.onReject(diffCurrentView, ids[j]);
+          }
+        }
+        console.log('[DiffAPI] 已拒绝所有建议');
+      },
+      
+      // 清除所有
+      clearAll: function() {
+        var ids = Array.from(diffSuggestions.keys());
+        for (var k = 0; k < ids.length; k++) {
+          // 通知 Content Script 建议被清除（视为拒绝）
+          window.postMessage({
+            type: 'DIFF_SUGGESTION_RESOLVED',
+            data: { id: ids[k], accepted: false }
+          }, '*');
+        }
+        diffSuggestions.clear();
+        diffCurrentIndex = 0;
+        diffCurrentView.dispatch({ effects: effects.clearDiffSuggestionsEffect.of(null) });
+        updateDiffControlBar();
+        console.log('[DiffAPI] 所有建议已清除');
+      },
+      
+      // 列出所有建议
+      list: function() {
+        console.log('[DiffAPI] 修改建议 (' + diffSuggestions.size + '个):');
+        diffSuggestions.forEach(function(config, id) {
+          console.log('  -', id, ': 第', config.lineNum || config.startLine, '行');
+        });
+      },
+      
+      // 获取建议数量
+      count: function() {
+        return diffSuggestions.size;
+      },
+      
+      // 测试
+      test: function() {
+        console.log('[DiffAPI] 批量测试...');
+        this.suggest(5, '这是第5行的修改建议内容');
+        this.suggest(10, '这是第10行的修改建议');
+        this.suggest(15, '第15行的新内容');
+        console.log('[DiffAPI] 已创建3个测试建议，使用底部控制栏导航');
+      }
+    };
+    
+    console.log('[DiffAPI] Diff API 准备就绪!');
+  }
+  
+  // 监听来自 Content Script 的消息
+  window.addEventListener('message', function(event) {
+    if (event.source !== window) return;
+    
+    var data = event.data;
+    if (!data) return;
+    
+    // 创建单个建议
+    if (data.type === 'DIFF_CREATE_SUGGESTION') {
+      var suggData = data.data;
+      if (window.diffAPI) {
+        window.diffAPI.suggestRangeWithId(
+          suggData.id,
+          suggData.startLine,
+          suggData.endLine,
+          suggData.newContent
+        );
+      }
+    }
+    
+    // 批量创建建议
+    else if (data.type === 'DIFF_CREATE_BATCH') {
+      var suggestions = data.data.suggestions;
+      if (window.diffAPI && suggestions) {
+        for (var i = 0; i < suggestions.length; i++) {
+          var s = suggestions[i];
+          window.diffAPI.suggestRangeWithId(s.id, s.startLine, s.endLine, s.newContent);
+        }
+      }
+    }
+    
+    // 接受指定建议
+    else if (data.type === 'DIFF_ACCEPT') {
+      var acceptId = data.data.id;
+      if (window.diffAPI && diffSuggestions.has(acceptId)) {
+        var config = diffSuggestions.get(acceptId);
+        if (config && config.onAccept) {
+          config.onAccept(diffCurrentView, acceptId);
+        }
+      }
+    }
+    
+    // 拒绝指定建议
+    else if (data.type === 'DIFF_REJECT') {
+      var rejectId = data.data.id;
+      if (window.diffAPI && diffSuggestions.has(rejectId)) {
+        var config = diffSuggestions.get(rejectId);
+        if (config && config.onReject) {
+          config.onReject(diffCurrentView, rejectId);
+        }
+      }
+    }
+    
+    // 接受所有
+    else if (data.type === 'DIFF_ACCEPT_ALL') {
+      if (window.diffAPI) {
+        window.diffAPI.acceptAll();
+      }
+    }
+    
+    // 拒绝所有
+    else if (data.type === 'DIFF_REJECT_ALL') {
+      if (window.diffAPI) {
+        window.diffAPI.rejectAll();
+      }
+    }
+    
+    // 清除所有
+    else if (data.type === 'DIFF_CLEAR_ALL') {
+      if (window.diffAPI) {
+        window.diffAPI.clearAll();
+      }
+    }
+  });
+  
+})();
