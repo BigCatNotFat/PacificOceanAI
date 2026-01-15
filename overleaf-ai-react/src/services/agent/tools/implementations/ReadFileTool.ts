@@ -23,12 +23,11 @@ export class ReadFileTool extends BaseTool {
     name: 'read_file',
     description: `Read the contents of a file in the Overleaf project. The output will be the 1-indexed file contents from start_line_one_indexed to end_line_one_indexed_inclusive, together with a summary of the lines outside that range.
 Note that this call can view at most 300 lines at a time for performance reasons.
+Each time you call this tool, you should:
+1) if you do not sure which lines to read, read the entire file at once.
+2) Trust the content that you read before fully. Unless you can sure the content that you read before has been changed, do not read the same content again.
+`,
 
-When using this tool to gather information, it's your responsibility to ensure you have the COMPLETE context. Specifically, each time you call this command you should:
-1) Assess if the contents you viewed are sufficient to proceed with your task.
-2) Take note of where there are lines not shown.
-3) If the file contents you have viewed are insufficient, and you suspect they may be in lines not shown, proactively call the tool again to view those lines.
-4) When in doubt, call this tool again to gather more information. Remember that partial file views may miss critical dependencies, imports, or functionality.`,
     parameters: {
       type: 'object',
       properties: {
@@ -275,18 +274,9 @@ When using this tool to gather information, it's your responsibility to ensure y
   }
 
   private generateSummaryFromResult(result: ReadLinesResult, totalLines: number): string {
-    const parts: string[] = [];
-    
-    if (result.hasMoreBefore) {
-      parts.push(`Lines 1-${result.startLine - 1} not shown (${result.startLine - 1} lines before)`);
-    }
-    
-    if (result.hasMoreAfter) {
-      const linesAfter = totalLines - result.endLine;
-      parts.push(`Lines ${result.endLine + 1}-${totalLines} not shown (${linesAfter} lines after)`);
-    }
-    
-    return parts.join('\n');
+    // 移除 "Lines not shown" 的提示，避免 Agent 误以为丢失上下文
+    // 用户反馈该提示会导致 Agent 反复读取已有的文件内容
+    return '';
   }
 
   /**

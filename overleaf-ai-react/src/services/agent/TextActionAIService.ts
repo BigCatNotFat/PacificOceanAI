@@ -110,6 +110,14 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
       // 4. 构建 LLM 配置
       const llmConfig = this.buildLLMConfig(modelId, abortSignal);
 
+      // 打印发送给 AI 的提示词
+      console.log('='.repeat(80));
+      console.log(`[TextActionAIService] 📤 发送给 AI 的提示词: ${action}`);
+      console.log('='.repeat(80));
+      console.log(JSON.stringify(messages, null, 2));
+      console.log('='.repeat(80));
+      console.log('');
+
       // 5. 调用 LLM
       const result = await this.llmService.chat(messages, llmConfig);
 

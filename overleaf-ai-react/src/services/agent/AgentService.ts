@@ -214,9 +214,13 @@ export class AgentService implements IAgentService {
           }
         );
 
-        // 打印发送给 AI 的提示词（便于调试）
-        // console.log('[AgentService] 发送给 AI 的提示词:');
-        // console.log(JSON.stringify(llmMessages, null, 2));
+        // 打印发送给 AI 的提示词
+        console.log('='.repeat(80));
+        console.log(`[AgentService] 📤 发送给 AI 的提示词 - 第 ${context.iteration + 1} 轮迭代`);
+        console.log('='.repeat(80));
+        console.log(JSON.stringify(llmMessages, null, 2));
+        console.log('='.repeat(80));
+        console.log('');
 
         // 3. 构建 LLM 配置
         const llmConfig = this.buildLLMConfig(
