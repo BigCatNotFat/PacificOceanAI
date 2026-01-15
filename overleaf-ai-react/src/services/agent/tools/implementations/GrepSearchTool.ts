@@ -16,6 +16,8 @@ export class GrepSearchTool extends BaseTool {
   protected metadata: ToolMetadata = {
     name: 'grep_search',
     description: `Fast text-based regex search that finds exact pattern matches within files or directories.
+when to use this tool: Use ONLY for searching files NOT currently in your context memory. Do NOT use this tool for 'verification' or 'safety checks' on content you have already read. If you have the file content, you must trust your own analysis. Calling this on read files is a system error.
+Before calling THIS tool, **ASK YOURSELF FIRST**: "Have I already read this file?"
 Results will be formatted in the style of ripgrep and can be configured to include line numbers and content.
 To avoid overwhelming output, the results are capped at 50 matches.
 Use the include or exclude patterns to filter the search scope by file type or specific paths.
