@@ -3479,15 +3479,8 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
           }
           counter.textContent = displayText;
           
-          // 设置 tooltip 显示所有文件列表
-          var tooltipLines = ['点击跳转到有建议的文件:'];
-          for (var i = 0; i < filesInfo.files.length && i < 10; i++) {
-            tooltipLines.push('  • ' + filesInfo.files[i].fileName + ' (' + filesInfo.files[i].count + ')');
-          }
-          if (filesInfo.files.length > 10) {
-            tooltipLines.push('  ... 还有 ' + (filesInfo.files.length - 10) + ' 个文件');
-          }
-          counter.title = tooltipLines.join('\n');
+          // 设置简洁的 tooltip
+          counter.title = '点击跳转到 ' + filesInfo.nextFile.fileName;
           
           // 隐藏 prev 按钮，修改 next 按钮为 "Go" 样式
           prevBtn.style.display = 'none';

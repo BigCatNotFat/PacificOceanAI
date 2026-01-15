@@ -146,7 +146,8 @@ Each time you call this tool, you should:
     
     const { lines: truncatedLines, truncated, truncatedAtLine } = this.truncateByCharacters(rangeLines);
     
-    const formattedContent = this.formatLinesWithNumbers(truncatedLines);
+    const linesContent = this.formatLinesWithNumbers(truncatedLines);
+    const formattedContent = this.wrapContentAsXml(targetFile, linesContent);
     
     const readCharacters = truncatedLines.reduce((sum, line) => sum + line.text.length + 1, 0);
     
@@ -283,16 +284,16 @@ Each time you call this tool, you should:
    * 格式化行内容（带行号）
    */
   private formatLinesWithNumbers(lines: Array<{ lineNumber: number; text: string }>): string {
-    // 计算行号的最大宽度
-    const maxLineNum = lines.length > 0 ? lines[lines.length - 1].lineNumber : 0;
-    const lineNumWidth = String(maxLineNum).length;
-    
     return lines
-      .map(line => {
-        const paddedNum = String(line.lineNumber).padStart(lineNumWidth, ' ');
-        return `${paddedNum} | ${line.text}`;
-      })
+      .map(line => `[Line ${line.lineNumber}] ${line.text}`)
       .join('\n');
+  }
+
+  /**
+   * 将内容包装为 XML 格式
+   */
+  private wrapContentAsXml(fileName: string, content: string): string {
+    return `<file name="${fileName}">\n${content}\n</file>`;
   }
 
 
