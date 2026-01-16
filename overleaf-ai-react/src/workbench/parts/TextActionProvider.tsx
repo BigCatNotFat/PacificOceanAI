@@ -18,7 +18,7 @@
  * - 支持流式输出
  */
 
-import React, { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useTextAction } from '../hooks/useTextAction';
 import { useService } from '../hooks/useService';
 import type { TextActionType } from '../../services/editor/bridge';
@@ -99,16 +99,6 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
       window.removeEventListener('message', handleShowActivationModal);
     };
   }, [sendActivationStatus]);
-  
-  // 思考内容滚动区域的 ref - 用于实现从底部向上滚动的效果
-  const thinkingScrollRef = useRef<HTMLDivElement>(null);
-  
-  // 当思考内容更新时，自动滚动到底部
-  useLayoutEffect(() => {
-    if (thinkingScrollRef.current && streamingThinking) {
-      thinkingScrollRef.current.scrollTop = thinkingScrollRef.current.scrollHeight;
-    }
-  }, [streamingThinking]);
   
   // 创建 AI 调用处理器
   const createAIHandler = useCallback((action: TextActionType) => {
@@ -281,109 +271,7 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
     <>
       {children}
       
-      {/* 操作进行中提示 */}
-      {showStatusToast && isProcessing && lastRequest && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '20px',
-            right: '20px',
-            background: 'rgba(30, 41, 59, 0.95)',
-            color: '#e5e7eb',
-            padding: '12px 20px',
-            borderRadius: '8px',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            zIndex: 10000,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            fontSize: '14px',
-            maxWidth: '400px'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span
-              style={{
-                width: '16px',
-                height: '16px',
-                border: '2px solid #3b82f6',
-                borderTopColor: 'transparent',
-                borderRadius: '50%',
-                animation: 'spin 1s linear infinite',
-                flexShrink: 0
-              }}
-            />
-            <span>
-              正在{lastRequest.action === 'expand' ? '扩写' : 
-                    lastRequest.action === 'condense' ? '缩写' : 
-                    lastRequest.action === 'translate' ? '翻译' : 
-                    lastRequest.action === 'custom' ? '处理' : '润色'}...
-            </span>
-          </div>
-          {/* 思考过程预览 - 从底部向上滚动效果 */}
-          {streamingThinking && (
-            <div
-              style={{
-                fontSize: '11px',
-                color: '#a78bfa',
-                maxHeight: '80px',
-                borderTop: '1px solid rgba(167, 139, 250, 0.2)',
-                paddingTop: '8px',
-                marginTop: '4px',
-                fontStyle: 'italic',
-                display: 'flex',
-                flexDirection: 'column'
-              }}
-            >
-              <span style={{ color: '#c4b5fd', fontWeight: 500, marginBottom: '4px' }}>思考中：</span>
-              {/* 滚动容器 - 内容从底部向上填充 */}
-              <div
-                ref={thinkingScrollRef}
-                className="thinking-scroll-container"
-                style={{
-                  flex: 1,
-                  maxHeight: '60px',
-                  overflowY: 'auto',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'flex-end',
-                  // 隐藏滚动条但保持功能 (Firefox + IE)
-                  scrollbarWidth: 'none',
-                  msOverflowStyle: 'none'
-                }}
-              >
-                <div
-                  style={{
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                    lineHeight: '1.4'
-                  }}
-                >
-                  {streamingThinking}
-                </div>
-              </div>
-            </div>
-          )}
-          {/* 流式文本预览 */}
-          {streamingText && (
-            <div
-              style={{
-                fontSize: '12px',
-                color: '#9ca3af',
-                maxHeight: '100px',
-                overflow: 'auto',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-                borderTop: '1px solid rgba(255,255,255,0.1)',
-                paddingTop: '8px',
-                marginTop: '4px'
-              }}
-            >
-              {streamingText}
-            </div>
-          )}
-        </div>
-      )}
+      {/* 操作进行中提示 - 已移至内联状态系统，此处不再显示 */}
       
       {/* 预览决策结果提示 */}
       {showDecisionToast && decisionAccepted !== null && (
@@ -413,18 +301,11 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
       
       {/* CSS 动画 */}
       <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
         @keyframes fadeInOut {
           0% { opacity: 0; transform: translateY(10px); }
           15% { opacity: 1; transform: translateY(0); }
           85% { opacity: 1; transform: translateY(0); }
           100% { opacity: 0; transform: translateY(-10px); }
-        }
-        /* 隐藏 webkit 滚动条 */
-        .thinking-scroll-container::-webkit-scrollbar {
-          display: none;
         }
       `}</style>
     </>

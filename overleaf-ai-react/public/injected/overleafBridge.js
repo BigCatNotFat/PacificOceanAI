@@ -2402,8 +2402,133 @@ function createPreviewConfirmMenu() {
 var streamPreviewText = '';
 var isStreamingPreview = false;
 
+// ============ 内联状态系统辅助函数 ============
+
 /**
- * 开始流式预览
+ * 判断选区是否为整行
+ * @param {EditorView} view 编辑器视图
+ * @param {number} from 选区起始位置
+ * @param {number} to 选区结束位置
+ * @returns {boolean} 是否为整行选区
+ */
+function isFullLineSelection(view, from, to) {
+  try {
+    const startLine = view.state.doc.lineAt(from);
+    const endLine = view.state.doc.lineAt(to);
+    // 从行首开始且到行尾结束（或下一行行首）
+    return from === startLine.from && (to === endLine.to || to === endLine.to + 1);
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * 获取选区的行号范围
+ * @param {EditorView} view 编辑器视图
+ * @param {number} from 选区起始位置
+ * @param {number} to 选区结束位置
+ * @returns {Object} { startLine, endLine }
+ */
+function getLineRange(view, from, to) {
+  try {
+    const startLine = view.state.doc.lineAt(from);
+    const endLine = view.state.doc.lineAt(to);
+    return {
+      startLine: startLine.number,
+      endLine: endLine.number
+    };
+  } catch (e) {
+    return { startLine: 1, endLine: 1 };
+  }
+}
+
+/**
+ * 创建内联状态窗口
+ * @param {Object} config 配置信息
+ */
+function createInlineStatus(config) {
+  const effects = window._diffSuggestionEffects;
+  const view = getEditorView();
+  if (!effects || !view) {
+    console.warn('[InlineStatus] Effects or view not available');
+    return null;
+  }
+  
+  try {
+    view.dispatch({
+      effects: effects.addInlineStatusEffect.of(config)
+    });
+    
+    // 保存到文件级存储（用于跨文件保持）
+    // 注意：需要在 Diff 建议系统 IIFE 内部访问 inlineStatusByFile
+    // 这里通过 window._inlineStatusByFile 暴露
+    if (window._inlineStatusByFile) {
+      var fileName = config.fileName || 'unknown';
+      if (!window._inlineStatusByFile.has(fileName)) {
+        window._inlineStatusByFile.set(fileName, new Map());
+      }
+      window._inlineStatusByFile.get(fileName).set(config.id, config);
+    }
+    
+    console.log('[InlineStatus] 创建内联状态:', config.id);
+    return config.id;
+  } catch (e) {
+    console.error('[InlineStatus] 创建失败:', e);
+    return null;
+  }
+}
+
+/**
+ * 更新内联状态窗口
+ * @param {Object} updates 更新内容 { id, state, ... }
+ */
+function updateInlineStatusState(updates) {
+  const effects = window._diffSuggestionEffects;
+  const view = getEditorView();
+  if (!effects || !view) return;
+  
+  try {
+    view.dispatch({
+      effects: effects.updateInlineStatusEffect.of(updates)
+    });
+  } catch (e) {
+    console.error('[InlineStatus] 更新失败:', e);
+  }
+}
+
+/**
+ * 移除内联状态窗口
+ * @param {string} id 内联状态 ID
+ */
+function removeInlineStatus(id) {
+  const effects = window._diffSuggestionEffects;
+  const view = getEditorView();
+  if (!effects || !view) return;
+  
+  try {
+    view.dispatch({
+      effects: effects.removeInlineStatusEffect.of(id)
+    });
+    
+    // 从文件级存储中移除
+    if (window._inlineStatusByFile) {
+      for (var entry of window._inlineStatusByFile) {
+        var statusMap = entry[1];
+        if (statusMap.has(id)) {
+          statusMap.delete(id);
+          break;
+        }
+      }
+    }
+    
+    console.log('[InlineStatus] 移除内联状态:', id);
+  } catch (e) {
+    console.error('[InlineStatus] 移除失败:', e);
+  }
+}
+
+/**
+ * 开始流式预览（使用内联状态系统）
  * @param {Object} data 包含 action, originalText, from, to
  */
 function startStreamPreview(data) {
@@ -2421,108 +2546,82 @@ function startStreamPreview(data) {
     streamPreviewText = '';
     isStreamingPreview = true;
     
+    // 判断是否为插入模式（无原文）
+    const isInsertMode = !data.originalText || data.originalText.trim().length === 0;
+    
+    // 判断选区类型
+    const isFullLine = isFullLineSelection(view, data.from, data.to);
+    const lineRange = getLineRange(view, data.from, data.to);
+    
+    // 生成唯一 ID
+    const statusId = 'inline-status-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    
     // 保存当前预览信息
     currentPreview = {
-      id: generatePreviewId(),
+      id: statusId,
       action: data.action,
       originalText: data.originalText,
       newText: '',  // 初始为空
       from: data.from,
-      to: data.to
+      to: data.to,
+      isInsertMode: isInsertMode,
+      isFullLine: isFullLine,
+      lineRange: lineRange,
+      suggestionId: null  // 生成完成后会设置
     };
     
-    // 获取选区位置坐标
-    const coords = view.coordsAtPos(data.from);
-    if (!coords) {
-      console.error('[OverleafBridge] Could not get coords for stream preview');
-      return;
-    }
+    // 创建内联状态窗口配置（简化版 - 只用于显示旋转指示器）
+    const inlineStatusConfig = {
+      id: statusId,
+      fileName: getCurrentFileName(),
+      from: data.from,
+      to: data.to,
+      widgetPos: data.from,  // 显示在选区起始位置
+      originalText: data.originalText,
+      newText: null,
+      state: 'generating',
+      isFullLine: isFullLine,
+      lineRange: lineRange,
+      action: data.action
+    };
     
-    // 懒创建覆盖层
-    if (!previewOverlayEl) {
-      previewOverlayEl = createPreviewOverlay();
-    }
-    if (!previewConfirmEl) {
-      previewConfirmEl = createPreviewConfirmMenu();
-    }
+    // 创建内联状态窗口
+    createInlineStatus(inlineStatusConfig);
     
-    // 更新覆盖层内容
-    const originalContainer = document.getElementById('ol-ai-preview-original');
-    const arrowEl = document.getElementById('ol-ai-preview-arrow');
-    const newContainer = document.getElementById('ol-ai-preview-new');
-    const titleEl = document.getElementById('ol-ai-preview-title');
-    
-    // 判断是否为插入模式（无原文）
-    const isInsertMode = !data.originalText || data.originalText.trim().length === 0;
-    
-    if (isInsertMode) {
-      // 插入模式：隐藏原文区域和箭头，只显示生成内容
-      if (originalContainer) {
-        originalContainer.style.display = 'none';
-      }
-      if (arrowEl) {
-        arrowEl.style.display = 'none';
-      }
-      if (titleEl) {
-        titleEl.textContent = '📝 生成内容';
-      }
-      if (newContainer) {
-        // 插入模式使用深色文字（白色背景）
-        newContainer.style.color = '#1f2937';
-        newContainer.style.background = 'rgba(59, 130, 246, 0.08)';
-        newContainer.style.borderLeft = '3px solid #3b82f6';
-        newContainer.innerHTML = '<span style="color: #3b82f6; animation: pulse 1.5s ease-in-out infinite;">AI 正在生成...</span>';
-      }
-    } else {
-      // 替换模式：显示原文和新文本对比
-      if (originalContainer) {
-        originalContainer.style.display = 'block';
-        originalContainer.textContent = data.originalText;
-      }
-      if (arrowEl) {
-        arrowEl.style.display = 'block';
-      }
-      if (titleEl) {
-        titleEl.textContent = '📝 预览更改';
-      }
-      if (newContainer) {
-        // 恢复默认样式 - 使用深绿色
-        newContainer.style.color = '#166534';
-        newContainer.style.background = 'rgba(167, 243, 208, 0.3)';
-        newContainer.style.borderLeft = '3px solid #059669';
-        newContainer.innerHTML = '<span style="color: #3b82f6; animation: pulse 1.5s ease-in-out infinite;">AI 正在生成...</span>';
-      }
-    }
-    
-    // 保存插入模式标记
-    currentPreview.isInsertMode = isInsertMode;
-    
-    // 计算位置
-    const scrollX = window.scrollX || window.pageXOffset;
-    const scrollY = window.scrollY || window.pageYOffset;
-    
-    let overlayLeft = coords.left + scrollX;
-    let overlayTop = coords.bottom + scrollY + 10;
-    
-    const overlayWidth = 500;
-    if (overlayLeft + overlayWidth > window.innerWidth + scrollX - 20) {
-      overlayLeft = window.innerWidth + scrollX - overlayWidth - 20;
-    }
-    if (overlayLeft < scrollX + 10) {
-      overlayLeft = scrollX + 10;
-    }
-    
-    previewOverlayEl.style.left = overlayLeft + 'px';
-    previewOverlayEl.style.top = overlayTop + 'px';
-    previewOverlayEl.style.display = 'block';
-    
-    // 隐藏确认菜单（等生成完成后显示）
-    previewConfirmEl.style.display = 'none';
-    
-    console.log('[OverleafBridge] Stream preview started:', currentPreview.id);
+    console.log('[OverleafBridge] Stream preview started with inline status:', statusId, 
+      'isFullLine:', isFullLine, 'lines:', lineRange.startLine, '-', lineRange.endLine);
     
   } catch (e) {
     console.error('[OverleafBridge] Failed to start stream preview:', e);
+  }
+}
+
+/**
+ * 获取当前文件名
+ */
+function getCurrentFileName() {
+  try {
+    var fileTab = document.querySelector('.file-tree-inner .selected .name');
+    if (fileTab) return fileTab.textContent;
+    
+    var breadcrumb = document.querySelector('.editor-header .name');
+    if (breadcrumb) return breadcrumb.textContent;
+    
+    var store = window.overleaf && window.overleaf.unstable && window.overleaf.unstable.store;
+    if (store) {
+      var openDocId = store.get('editor.open_doc_id');
+      var docs = store.get('docs');
+      if (openDocId && docs) {
+        for (var key in docs) {
+          if (docs[key]._id === openDocId) {
+            return docs[key].name || 'unknown';
+          }
+        }
+      }
+    }
+    return 'unknown';
+  } catch (e) {
+    return 'unknown';
   }
 }
 
@@ -2536,15 +2635,13 @@ function updateStreamPreview(delta) {
   streamPreviewText += delta;
   currentPreview.newText = streamPreviewText;
   
-  const newContainer = document.getElementById('ol-ai-preview-new');
-  if (newContainer) {
-    // 显示流式文本 + 光标动画
-    newContainer.innerHTML = escapeHtml(streamPreviewText) + '<span style="animation: blink 0.7s step-end infinite; color: #60a5fa;">▌</span>';
-  }
+  // 注意：内联状态系统不需要实时更新流式文本
+  // 因为内联窗口只显示状态，不显示内容
+  // 内容通过 Suggestion 系统显示
 }
 
 /**
- * 完成流式预览
+ * 完成流式预览（使用 Suggestion 系统显示更改）
  * @param {Object} data 包含最终的 newText
  */
 function completeStreamPreview(data) {
@@ -2553,35 +2650,89 @@ function completeStreamPreview(data) {
   isStreamingPreview = false;
   
   // 更新最终文本
-  if (data && data.newText) {
-    currentPreview.newText = data.newText;
-  } else {
-    currentPreview.newText = streamPreviewText;
+  const newText = (data && data.newText) ? data.newText : streamPreviewText;
+  currentPreview.newText = newText;
+  
+  // 移除旋转指示器
+  removeInlineStatus(currentPreview.id);
+  
+  // 检查是否生成失败
+  if (!newText || newText.trim().length === 0) {
+    console.log('[OverleafBridge] 生成失败或返回空内容');
+    currentPreview = null;
+    return;
   }
   
-  const newContainer = document.getElementById('ol-ai-preview-new');
-  if (newContainer) {
-    // 移除光标，显示最终文本
-    newContainer.textContent = currentPreview.newText;
+  const view = getEditorView();
+  if (!view) {
+    console.error('[OverleafBridge] EditorView not available for suggestion');
+    currentPreview = null;
+    return;
   }
   
-  // 显示内置确认按钮
-  const inlineConfirm = document.getElementById('ol-ai-inline-confirm');
-  if (inlineConfirm) {
-    // 根据模式更新提示文字
-    const hintEl = document.getElementById('ol-ai-inline-confirm-hint');
-    if (hintEl) {
-      hintEl.textContent = currentPreview.isInsertMode ? '是否插入此内容？' : '是否接受更改？';
+  // 等待 diffAPI 准备好
+  const waitForDiffAPI = function(callback, retries) {
+    if (window.diffAPI) {
+      callback();
+    } else if (retries > 0) {
+      setTimeout(function() { waitForDiffAPI(callback, retries - 1); }, 100);
+    } else {
+      console.error('[OverleafBridge] diffAPI not available');
     }
-    inlineConfirm.style.display = 'flex';
-  }
+  };
   
-  // 隐藏外部确认菜单（不再使用）
-  if (previewConfirmEl) {
-    previewConfirmEl.style.display = 'none';
-  }
-  
-  console.log('[OverleafBridge] Stream preview completed', { isInsertMode: currentPreview.isInsertMode });
+  waitForDiffAPI(function() {
+    try {
+      var suggestionId = null;
+      
+      if (currentPreview.isInsertMode) {
+        // 插入模式：在光标位置插入新内容（使用片段建议）
+        suggestionId = window.diffAPI.suggestSegmentWithId(
+          'text-action-' + currentPreview.id,
+          currentPreview.from,
+          currentPreview.to,
+          newText
+        );
+      } else if (currentPreview.isFullLine) {
+        // 整行模式：使用行级建议
+        var lineRange = currentPreview.lineRange;
+        suggestionId = window.diffAPI.suggestRangeWithId(
+          'text-action-' + currentPreview.id,
+          lineRange.startLine,
+          lineRange.endLine,
+          newText
+        );
+      } else {
+        // 片段模式：使用片段级建议
+        suggestionId = window.diffAPI.suggestSegmentWithId(
+          'text-action-' + currentPreview.id,
+          currentPreview.from,
+          currentPreview.to,
+          newText
+        );
+      }
+      
+      // 保存关联的 suggestion ID（用于后续操作）
+      if (currentPreview) {
+        currentPreview.suggestionId = suggestionId;
+      }
+      
+      console.log('[OverleafBridge] Stream preview completed with suggestion:', suggestionId, 
+        'isFullLine:', currentPreview ? currentPreview.isFullLine : 'N/A', 
+        'isInsertMode:', currentPreview ? currentPreview.isInsertMode : 'N/A');
+      
+      // 清理 currentPreview，因为现在完全由 Suggestion 系统管理
+      currentPreview = null;
+        
+    } catch (e) {
+      console.error('[OverleafBridge] Failed to create suggestion:', e);
+      // 更新内联状态为错误状态
+      updateInlineStatusState({
+        id: currentPreview.id,
+        state: 'error'
+      });
+    }
+  }, 10);
 }
 
 /**
@@ -2594,93 +2745,13 @@ function escapeHtml(text) {
 }
 
 /**
- * 显示预览覆盖层
+ * 显示预览覆盖层（已废弃 - 现在使用内联状态系统）
  * @param {Object} previewData 预览数据
+ * @deprecated 使用 startStreamPreview 和内联状态系统代替
  */
 function showPreviewOverlay(previewData) {
-  try {
-    // 先隐藏选区菜单，避免遮挡
-    hideSelectionTooltip();
-    
-    const view = getEditorView();
-    if (!view) {
-      console.error('[OverleafBridge] EditorView not available for preview');
-      return;
-    }
-    
-    // 保存当前预览信息
-    currentPreview = {
-      id: previewData.id || generatePreviewId(),
-      action: previewData.action,
-      originalText: previewData.originalText,
-      newText: previewData.newText,
-      from: previewData.from,
-      to: previewData.to
-    };
-    
-    // 获取选区位置坐标
-    const coords = view.coordsAtPos(previewData.from);
-    if (!coords) {
-      console.error('[OverleafBridge] Could not get coords for preview');
-      return;
-    }
-    
-    // 懒创建覆盖层
-    if (!previewOverlayEl) {
-      previewOverlayEl = createPreviewOverlay();
-    }
-    if (!previewConfirmEl) {
-      previewConfirmEl = createPreviewConfirmMenu();
-    }
-    
-    // 更新覆盖层内容
-    const originalContainer = document.getElementById('ol-ai-preview-original');
-    const newContainer = document.getElementById('ol-ai-preview-new');
-    
-    if (originalContainer) {
-      originalContainer.textContent = previewData.originalText;
-    }
-    if (newContainer) {
-      newContainer.textContent = previewData.newText;
-    }
-    
-    // 计算位置（使用绝对定位，需要加上滚动偏移）
-    const scrollX = window.scrollX || window.pageXOffset;
-    const scrollY = window.scrollY || window.pageYOffset;
-    
-    // 预览覆盖层显示在选区下方
-    let overlayLeft = coords.left + scrollX;
-    let overlayTop = coords.bottom + scrollY + 10;
-    
-    // 确保不超出视口右边界
-    const overlayWidth = 500;
-    if (overlayLeft + overlayWidth > window.innerWidth + scrollX - 20) {
-      overlayLeft = window.innerWidth + scrollX - overlayWidth - 20;
-    }
-    if (overlayLeft < scrollX + 10) {
-      overlayLeft = scrollX + 10;
-    }
-    
-    previewOverlayEl.style.left = overlayLeft + 'px';
-    previewOverlayEl.style.top = overlayTop + 'px';
-    previewOverlayEl.style.display = 'block';
-    
-    // 确认菜单显示在覆盖层下方
-    // 需要等待覆盖层渲染后获取其高度
-    setTimeout(function() {
-      const overlayRect = previewOverlayEl.getBoundingClientRect();
-      const confirmTop = overlayTop + overlayRect.height + 10;
-      
-      previewConfirmEl.style.left = overlayLeft + 'px';
-      previewConfirmEl.style.top = confirmTop + 'px';
-      previewConfirmEl.style.display = 'flex';
-    }, 10);
-    
-    console.log('[OverleafBridge] Preview overlay shown:', currentPreview.id);
-    
-  } catch (e) {
-    console.error('[OverleafBridge] Failed to show preview overlay:', e);
-  }
+  // 已废弃：现在使用内联状态系统显示预览
+  console.log('[OverleafBridge] showPreviewOverlay 已废弃，请使用内联状态系统');
 }
 
 /**
@@ -2926,15 +2997,6 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
       left: 5px;
       color: #4caf50;
       font-weight: bold;
-    }
-    
-    .diff-new-label {
-      color: #4caf50;
-      font-weight: 600;
-      margin-right: 8px;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
     }
     
     .diff-new-text {
@@ -3216,6 +3278,33 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
     #diff-control-bar {
       animation: diff-bar-slide-up 0.3s ease-out;
     }
+    
+    /* ===== 内联生成指示器样式 (Inline Generating Spinner) ===== */
+    
+    /* 生成中的文本样式 - 浅红色背景 + 删除线（与 suggestion 系统一致） */
+    .inline-generating-text {
+      background: rgba(255, 0, 0, 0.15) !important;
+      text-decoration: line-through !important;
+      text-decoration-color: #c62828 !important;
+      text-decoration-thickness: 2px !important;
+    }
+    
+    /* 旋转指示器 - 显示在文本后面 */
+    .inline-generating-spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #3b82f6;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: inline-generating-spin 0.8s linear infinite;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    
+    @keyframes inline-generating-spin {
+      to { transform: rotate(360deg); }
+    }
   `;
   document.head.appendChild(diffStyle);
   
@@ -3228,6 +3317,34 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
   var diffControlBar = null;
   var diffCurrentFileName = null;  // 当前文件名
   var diffFileCheckInterval = null;  // 文件切换检测定时器
+  
+  // ===== 内联状态系统存储 =====
+  var inlineStatusByFile = new Map();  // Map<fileName, Map<id, inlineStatus>>
+  var inlineStatusId = 0;
+  
+  // 暴露到 window，用于外部函数访问
+  window._inlineStatusByFile = inlineStatusByFile;
+  
+  // 获取当前文件的内联状态 Map
+  function getCurrentFileInlineStatus() {
+    if (!diffCurrentFileName) return new Map();
+    if (!inlineStatusByFile.has(diffCurrentFileName)) {
+      inlineStatusByFile.set(diffCurrentFileName, new Map());
+    }
+    return inlineStatusByFile.get(diffCurrentFileName);
+  }
+  
+  // 保存内联状态到当前文件
+  function saveInlineStatusToFile(config) {
+    var statusMap = getCurrentFileInlineStatus();
+    statusMap.set(config.id, config);
+  }
+  
+  // 从当前文件移除内联状态
+  function removeInlineStatusFromFile(id) {
+    var statusMap = getCurrentFileInlineStatus();
+    statusMap.delete(id);
+  }
   
   // 获取当前文件的建议 Map
   function getCurrentFileSuggestions() {
@@ -3359,6 +3476,7 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
       return;
     }
     var suggestions = getCurrentFileSuggestions();
+    var inlineStatus = getCurrentFileInlineStatus();
     var effects = window._diffSuggestionEffects;
     
     // 如果当前文件没有建议或没有 effects，仍然需要更新控制栏（可能显示导航模式）
@@ -3367,24 +3485,25 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
       return;
     }
     
-    // 先清除所有装饰（行级和片段级）
+    // 先清除所有装饰（行级、片段级和内联状态）
     try {
       diffCurrentView.dispatch({ 
         effects: [
           effects.clearDiffSuggestionsEffect.of(null),
-          effects.clearSegmentSuggestionsEffect.of(null)
+          effects.clearSegmentSuggestionsEffect.of(null),
+          effects.clearInlineStatusEffect.of(null)
         ]
       });
     } catch (e) {}
     
-    // 如果当前文件没有建议，直接更新控制栏
-    if (suggestions.size === 0) {
+    // 如果当前文件没有建议和内联状态，直接更新控制栏
+    if (suggestions.size === 0 && inlineStatus.size === 0) {
       console.log('[DiffAPI] 当前文件无建议:', diffCurrentFileName);
       updateDiffControlBar();
       return;
     }
     
-    console.log('[DiffAPI] 恢复文件建议:', diffCurrentFileName, '共', suggestions.size, '个');
+    console.log('[DiffAPI] 恢复文件建议:', diffCurrentFileName, '共', suggestions.size, '个建议,', inlineStatus.size, '个内联状态');
     
     // 重新应用建议（需要重新计算位置）
     var toRemove = [];
@@ -3425,6 +3544,40 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
     // 移除无法恢复的建议
     for (var i = 0; i < toRemove.length; i++) {
       suggestions.delete(toRemove[i]);
+    }
+    
+    // 恢复内联状态
+    var statusToRemove = [];
+    for (var entry of inlineStatus) {
+      var id = entry[0];
+      var config = entry[1];
+      try {
+        // 基于 originalText 重新查找位置
+        var docContent = diffCurrentView.state.doc.toString();
+        if (config.originalText) {
+          var foundIndex = docContent.indexOf(config.originalText);
+          if (foundIndex !== -1) {
+            config.from = foundIndex;
+            config.to = foundIndex + config.originalText.length;
+            config.widgetPos = foundIndex;
+            diffCurrentView.dispatch({ effects: effects.addInlineStatusEffect.of(config) });
+          } else {
+            console.warn('[InlineStatus] 恢复内联状态失败，找不到原始内容:', id);
+            statusToRemove.push(id);
+          }
+        } else {
+          // 没有原始文本（插入模式），使用保存的位置
+          diffCurrentView.dispatch({ effects: effects.addInlineStatusEffect.of(config) });
+        }
+      } catch (e) {
+        console.warn('[InlineStatus] 恢复内联状态失败:', id, e);
+        statusToRemove.push(id);
+      }
+    }
+    
+    // 移除无法恢复的内联状态
+    for (var i = 0; i < statusToRemove.length; i++) {
+      inlineStatus.delete(statusToRemove[i]);
     }
     
     updateDiffControlBar();
@@ -3709,15 +3862,10 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
         var newContentDiv = document.createElement('div');
         newContentDiv.className = 'diff-new-content';
         
-        var label = document.createElement('span');
-        label.className = 'diff-new-label';
-        label.textContent = '→ New:';
-        
         var text = document.createElement('span');
         text.className = 'diff-new-text';
         text.textContent = newContent;
         
-        newContentDiv.appendChild(label);
         newContentDiv.appendChild(text);
         
         var buttons = document.createElement('div');
@@ -3840,6 +3988,40 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
     };
   }
   
+  // ===== 内联状态 Widget 类 =====
+  
+  // 创建内联状态 Widget 类（简化版 - 只显示旋转指示器）
+  function createInlineStatusWidgetClass(CM) {
+    var WidgetType = CM.WidgetType;
+    
+    return class InlineStatusWidget extends WidgetType {
+      constructor(config) {
+        super();
+        this.config = config;
+      }
+      
+      toDOM(view) {
+        var config = this.config;
+        
+        // 创建旋转指示器
+        var spinner = document.createElement('span');
+        spinner.className = 'inline-generating-spinner';
+        spinner.dataset.inlineStatusId = config.id;
+        spinner.title = '生成中... (按 ESC 取消)';
+        return spinner;
+      }
+      
+      eq(other) {
+        return this.config.id === other.config.id &&
+               this.config.state === other.config.state;
+      }
+      
+      ignoreEvent(event) {
+        return true;
+      }
+    };
+  }
+  
   // 创建扩展
   function createDiffSuggestionExtension(CM) {
     var StateEffect = CM.StateEffect;
@@ -3848,6 +4030,7 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
     var Decoration = CM.Decoration;
     var DiffSuggestionWidget = createDiffSuggestionWidgetClass(CM);
     var SegmentSuggestionWidget = createSegmentSuggestionWidgetClass(CM);
+    var InlineStatusWidget = createInlineStatusWidgetClass(CM);
     
     // 行级建议 effects
     var addDiffSuggestionEffect = StateEffect.define();
@@ -3859,16 +4042,24 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
     var removeSegmentSuggestionEffect = StateEffect.define();
     var clearSegmentSuggestionsEffect = StateEffect.define();
     
+    // 内联状态 effects
+    var addInlineStatusEffect = StateEffect.define();
+    var updateInlineStatusEffect = StateEffect.define();
+    var removeInlineStatusEffect = StateEffect.define();
+    var clearInlineStatusEffect = StateEffect.define();
+    
     var diffSuggestionField = StateField.define({
       create: function() {
         return { 
           suggestions: new Map(),      // 行级建议
-          segments: new Map()          // 片段级建议
+          segments: new Map(),         // 片段级建议
+          inlineStatus: new Map()      // 内联状态
         };
       },
       update: function(value, tr) {
         var suggestions = new Map(value.suggestions);
         var segments = new Map(value.segments);
+        var inlineStatus = new Map(value.inlineStatus);
         
         if (tr.docChanged) {
           // 更新行级建议位置
@@ -3894,6 +4085,18 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
               widgetPos: tr.changes.mapPos(config.widgetPos, 1)
             });
           }
+          
+          // 更新内联状态位置
+          for (var entry of inlineStatus) {
+            var id = entry[0];
+            var config = entry[1];
+            inlineStatus.set(id, {
+              ...config,
+              from: tr.changes.mapPos(config.from, 1),
+              to: tr.changes.mapPos(config.to, -1),
+              widgetPos: tr.changes.mapPos(config.widgetPos, -1)
+            });
+          }
         }
         
         // 处理行级建议 effects
@@ -3913,15 +4116,29 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
           } else if (effect.is(clearSegmentSuggestionsEffect)) {
             segments.clear();
           }
+          // 处理内联状态 effects
+          else if (effect.is(addInlineStatusEffect)) {
+            inlineStatus.set(effect.value.id, effect.value);
+          } else if (effect.is(updateInlineStatusEffect)) {
+            var existing = inlineStatus.get(effect.value.id);
+            if (existing) {
+              inlineStatus.set(effect.value.id, { ...existing, ...effect.value });
+            }
+          } else if (effect.is(removeInlineStatusEffect)) {
+            inlineStatus.delete(effect.value);
+          } else if (effect.is(clearInlineStatusEffect)) {
+            inlineStatus.clear();
+          }
         }
         
-        return { suggestions: suggestions, segments: segments };
+        return { suggestions: suggestions, segments: segments, inlineStatus: inlineStatus };
       },
       provide: function(field) {
         return EditorView.decorations.compute([field], function(state) {
           var fieldValue = state.field(field);
           var suggestions = fieldValue.suggestions;
           var segments = fieldValue.segments;
+          var inlineStatus = fieldValue.inlineStatus;
           var decorations = [];
           
           // 处理行级建议装饰
@@ -3956,10 +4173,13 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
             var id = entry[0];
             var config = entry[1];
             try {
-              // 使用 mark 装饰标记被删除的片段
-              decorations.push(
-                Decoration.mark({ class: 'diff-segment-deleted' }).range(config.startOffset, config.endOffset)
-              );
+              // 只有在有选中内容时才添加 mark 装饰（避免空范围错误）
+              if (config.startOffset < config.endOffset) {
+                // 使用 mark 装饰标记被删除的片段
+                decorations.push(
+                  Decoration.mark({ class: 'diff-segment-deleted' }).range(config.startOffset, config.endOffset)
+                );
+              }
               
               // 在片段末尾添加 inline widget 显示新内容
               decorations.push(
@@ -3970,6 +4190,35 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
               );
             } catch (e) {
               console.error('[DiffAPI] 创建片段级装饰失败:', e);
+            }
+          }
+          
+          // 处理内联状态装饰（生成中：文本标记 + 旋转指示器）
+          for (var entry of inlineStatus) {
+            var id = entry[0];
+            var config = entry[1];
+            try {
+              // 只在生成中状态显示装饰
+              if (config.state === 'generating') {
+                // 判断是否有选中的文本（非插入模式）
+                if (config.from < config.to) {
+                  // 有选中文本：添加 mark 装饰（浅红色背景 + 删除线）
+                  decorations.push(
+                    Decoration.mark({ class: 'inline-generating-text' }).range(config.from, config.to)
+                  );
+                }
+                
+                // 在位置处添加旋转指示器 widget（插入模式在光标处，替换模式在文本末尾）
+                var spinnerPos = config.to;
+                decorations.push(
+                  Decoration.widget({
+                    widget: new InlineStatusWidget(config),
+                    side: 1  // 放在位置之后
+                  }).range(spinnerPos)
+                );
+              }
+            } catch (e) {
+              console.error('[InlineStatus] 创建内联状态装饰失败:', e);
             }
           }
           
@@ -3986,7 +4235,12 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
       // 片段级建议 effects
       addSegmentSuggestionEffect: addSegmentSuggestionEffect,
       removeSegmentSuggestionEffect: removeSegmentSuggestionEffect,
-      clearSegmentSuggestionsEffect: clearSegmentSuggestionsEffect
+      clearSegmentSuggestionsEffect: clearSegmentSuggestionsEffect,
+      // 内联状态 effects
+      addInlineStatusEffect: addInlineStatusEffect,
+      updateInlineStatusEffect: updateInlineStatusEffect,
+      removeInlineStatusEffect: removeInlineStatusEffect,
+      clearInlineStatusEffect: clearInlineStatusEffect
     };
     
     // 保存 StateField 引用，用于获取最新位置
