@@ -1,10 +1,33 @@
 /**
- * Overleaf Bridge - 注入到页面主世界的脚本
- * 用于访问 window.overleaf.unstable.store 等页面内部 API
+ * ⚠️  此文件由构建脚本自动生成，请勿直接修改
+ * 
+ * 源文件位置: public/injected/modules/
+ *   - main.js: 主入口和核心模块
+ *   - legacy.js: 大型 UI 模块（选区工具提示、预览系统、Diff 建议）
+ *   - core/: 核心功能模块
+ *   - search/: 搜索功能模块
+ *   - methodHandlers/: API 方法处理器
+ *   - modelManagement/: 模型管理模块
+ * 
+ * 构建时间: 2026-01-16T06:19:22.135Z
+ * 构建脚本: scripts/build-bridge-new.js
+ * 构建策略: 智能合并（main.js + legacy.js）
+ * 
+ * 构建流程: modules/ → public/injected/ → Vite → dist/injected/
  */
 
-// 获取 EditorView
-function getEditorView() {
+/**
+ * overleafBridge.js - 主入口文件
+ * 整合所有模块，提供完整的桥接功能
+ * 
+ * 此文件将被 esbuild 打包为单文件版本
+ */
+
+// ============ 导入核心模块 ============
+// 注意：由于浏览器环境限制，这些导入语句会被 esbuild 打包处理
+
+// 核心功能
+const getEditorView = (function() {
   try {
     const overleaf = window.overleaf;
     if (!overleaf || !overleaf.unstable || !overleaf.unstable.store) {
@@ -15,9 +38,46 @@ function getEditorView() {
     console.error('[OverleafBridge] Failed to get EditorView:', error);
     return null;
   }
+});
+
+// 工具函数
+function escapeHtml(text) {
+  var div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
-// --- Search Helper Functions ---
+function generatePreviewId() {
+  return 'preview_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+function getCurrentFileName() {
+  try {
+    var fileTab = document.querySelector('.file-tree-inner .selected .name');
+    if (fileTab) return fileTab.textContent;
+    
+    var breadcrumb = document.querySelector('.editor-header .name');
+    if (breadcrumb) return breadcrumb.textContent;
+    
+    var store = window.overleaf && window.overleaf.unstable && window.overleaf.unstable.store;
+    if (store) {
+      var openDocId = store.get('editor.open_doc_id');
+      var docs = store.get('docs');
+      if (openDocId && docs) {
+        for (var key in docs) {
+          if (docs[key]._id === openDocId) {
+            return docs[key].name || 'unknown';
+          }
+        }
+      }
+    }
+    return 'unknown';
+  } catch (e) {
+    return 'unknown';
+  }
+}
+
+// ============ 搜索模块 ============
 
 // 获取项目 ID
 function getProjectId() {
@@ -25,7 +85,6 @@ function getProjectId() {
   if (match) {
     return match[1];
   }
-  // 尝试从 meta 标签获取
   const metaTag = document.querySelector('meta[name="ol-project_id"]');
   if (metaTag) {
     return metaTag.getAttribute('content');
@@ -59,13 +118,11 @@ async function fetchFileHashes(projectId) {
     
     const fileHashes = {};
     
-    // 从 changes 中提取文件 hash
     if (data.chunk && data.chunk.history && data.chunk.history.changes) {
       data.chunk.history.changes.forEach(change => {
         if (change.operations) {
           change.operations.forEach(op => {
             if (op.pathname && op.file && op.file.hash) {
-              // 保存最新的 hash（后面的 change 会覆盖前面的）
               fileHashes[op.pathname] = op.file.hash;
             }
           });
@@ -73,7 +130,6 @@ async function fetchFileHashes(projectId) {
       });
     }
     
-    // 也检查 snapshot（如果有的话）
     if (data.chunk && data.chunk.history && data.chunk.history.snapshot && data.chunk.history.snapshot.files) {
       const snapshotFiles = data.chunk.history.snapshot.files;
       for (const [pathname, fileData] of Object.entries(snapshotFiles)) {
@@ -110,20 +166,15 @@ async function getAllDocsWithContent(projectId) {
   
   console.log('[OverleafBridge] 使用 entities + history API 获取文件');
   
-  // 1. 获取文件列表
   const entities = await fetchEntities(projectId);
   console.log(`[OverleafBridge] 找到 ${entities.length} 个实体`);
   
-  // 2. 获取文件 hash 映射
   const fileHashes = await fetchFileHashes(projectId);
   console.log(`[OverleafBridge] 找到 ${Object.keys(fileHashes).length} 个文件 hash`);
   
-  // 3. 过滤出可编辑的文档（type === 'doc'）
   const docs = entities.filter(e => e.type === 'doc');
   console.log(`[OverleafBridge] 找到 ${docs.length} 个可编辑文档`);
   
-  // ========== 新增：获取当前编辑器文档的实时内容 ==========
-  // 优先使用编辑器内容，因为 blob API 可能返回旧版本（不包含最新修改）
   let currentDocPath = null;
   let currentDocContent = null;
   
@@ -131,7 +182,6 @@ async function getAllDocsWithContent(projectId) {
     const view = getEditorView();
     if (view) {
       currentDocContent = view.state.doc.toString();
-      // 从 Overleaf store 获取当前打开的文档名
       const store = window.overleaf?.unstable?.store;
       if (store) {
         currentDocPath = store.get('editor.open_doc_name');
@@ -143,25 +193,19 @@ async function getAllDocsWithContent(projectId) {
   } catch (e) {
     console.warn('[OverleafBridge] 无法获取当前编辑器内容:', e);
   }
-  // ========== 新增结束 ==========
   
-  // 4. 获取每个文档的内容
   const batchSize = 5;
   for (let i = 0; i < docs.length; i += batchSize) {
     const batch = docs.slice(i, i + batchSize);
     
     const contents = await Promise.all(
       batch.map(async (doc) => {
-        // 路径格式: "/main.tex" -> "main.tex"
         const pathname = doc.path.startsWith('/') ? doc.path.substring(1) : doc.path;
         
-        // ========== 新增：当前文档优先使用编辑器实时内容 ==========
-        // 这样可以确保搜索到最新的内容（包括中文等最近添加的内容）
         if (currentDocPath && currentDocContent && pathname === currentDocPath) {
           console.log(`[OverleafBridge] ${pathname}: 使用编辑器实时内容`);
           return currentDocContent;
         }
-        // ========== 新增结束 ==========
         
         const hash = fileHashes[pathname];
         
@@ -176,7 +220,6 @@ async function getAllDocsWithContent(projectId) {
     
     for (let j = 0; j < batch.length; j++) {
       if (contents[j] !== null) {
-        // 移除开头的 /
         const path = batch[j].path.startsWith('/') ? batch[j].path.substring(1) : batch[j].path;
         files.push({
           path: path,
@@ -197,14 +240,11 @@ function createSearchRegex(pattern, options = {}) {
   let regexPattern;
   
   if (regexp) {
-    // 使用用户提供的正则表达式
     regexPattern = pattern;
   } else {
-    // 转义特殊字符
     regexPattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-  // 如果是全字匹配，添加单词边界
   if (wholeWord) {
     regexPattern = `\\b${regexPattern}\\b`;
   }
@@ -225,7 +265,6 @@ function searchInFile(file, regex) {
 
   lines.forEach((line, lineIndex) => {
     let match;
-    // 重置 lastIndex
     regex.lastIndex = 0;
     
     const matchesInLine = [];
@@ -238,7 +277,6 @@ function searchInFile(file, regex) {
         lineContent: line,
       });
       
-      // 防止无限循环（空匹配）
       if (match.index === regex.lastIndex) {
         regex.lastIndex++;
       }
@@ -261,7 +299,6 @@ async function searchInternal(pattern, options = {}) {
     const projectId = getProjectId();
     console.log(`[OverleafBridge] 📂 项目 ID: ${projectId}`);
     
-    // 获取所有文档及其内容
     console.log('[OverleafBridge] 📥 正在获取项目文档...');
     const files = await getAllDocsWithContent(projectId);
     console.log(`[OverleafBridge] ✅ 已加载 ${files.length} 个文档`);
@@ -277,10 +314,8 @@ async function searchInternal(pattern, options = {}) {
       };
     }
     
-    // 创建搜索正则表达式
     const regex = createSearchRegex(pattern, options);
     
-    // 搜索所有文件
     console.log('[OverleafBridge] 🔎 正在搜索...');
     const results = [];
     let totalMatches = 0;
@@ -315,7 +350,8 @@ async function searchInternal(pattern, options = {}) {
   }
 }
 
-// 处理请求的方法映射
+// ============ 方法处理器 ============
+
 const methodHandlers = {
   // 获取文档行数
   getDocLines: function() {
@@ -808,6 +844,8 @@ const methodHandlers = {
   }
 };
 
+// ============ 消息监听器 ============
+
 // 监听来自 Content Script 的消息
 window.addEventListener('message', function(event) {
   // 只处理来自同一页面的消息
@@ -860,7 +898,23 @@ window.addEventListener('message', function(event) {
   window.postMessage(response, '*');
 });
 
-// ============ 选区提示框功能 ============
+// ============ 导入 Legacy UI 模块 ============
+// Legacy 模块包含：选区工具提示、预览系统、Diff 建议系统的完整 UI 代码
+// 这部分代码将在打包时自动内联
+
+console.log('[OverleafBridge] 模块化 Bridge 已加载');
+console.log('[OverleafBridge] Modular architecture initialized');
+
+
+
+/**
+ * Legacy UI Modules
+ * 包含选区工具提示、预览系统、Diff 建议系统的完整代码
+ * 
+ * 注意：这些模块包含大量 UI 和交互逻辑，暂时保留在此文件中
+ * 未来可以进一步拆分为更小的模块
+ */
+
 
 /**
  * 选区操作按钮配置
