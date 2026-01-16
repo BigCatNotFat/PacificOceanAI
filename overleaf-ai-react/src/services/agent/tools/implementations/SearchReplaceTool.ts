@@ -21,15 +21,19 @@ import { BaseTool } from '../base/BaseTool';
 import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import { diffSuggestionService } from '../../../editor/DiffSuggestionService';
-import type { CreateSuggestionInput } from '../../../../platform/editor/IDiffSuggestionService';
+import type { CreateSegmentSuggestionInput } from '../../../../platform/editor/IDiffSuggestionService';
 
 /**
- * 匹配位置信息
+ * 匹配位置信息（片段级）
  */
 interface MatchInfo {
+  /** 字符偏移位置 */
   index: number;
+  /** 所在行号（用于显示） */
   startLine: number;
+  /** 结束行号（用于显示） */
   endLine: number;
+  /** 原始内容 */
   oldContent: string;
 }
 
@@ -279,19 +283,19 @@ Good examples:
         };
       }
 
-      // 6. 准备创建 diff 建议
+      // 6. 准备创建片段级 diff 建议
       // 如果不是 replace_all，只处理第一个匹配
       const matchesToProcess = replaceAll ? matches : [matches[0]];
       
-      const suggestionInputs: CreateSuggestionInput[] = [];
+      const suggestionInputs: CreateSegmentSuggestionInput[] = [];
       const previewLines: string[] = [];
 
       for (const match of matchesToProcess) {
         suggestionInputs.push({
           toolCallId,
           targetFile: targetBaseName,
-          startLine: match.startLine,
-          endLine: match.endLine,
+          startOffset: match.index,
+          endOffset: match.index + match.oldContent.length,
           oldContent: match.oldContent,
           newContent: newString
         });
@@ -301,11 +305,11 @@ Good examples:
         previewLines.push(`第 ${match.startLine} 行: "${truncatedOld}" → "${truncatedNew}"`);
       }
 
-      // 7. 批量创建 diff 建议
-      console.log('[SearchReplaceTool] Creating diff suggestions...');
-      const suggestionIds = await diffSuggestionService.createBatchSuggestions(suggestionInputs);
+      // 7. 批量创建片段级 diff 建议
+      console.log('[SearchReplaceTool] Creating segment diff suggestions...');
+      const suggestionIds = await diffSuggestionService.createBatchSegmentSuggestions(suggestionInputs);
 
-      console.log(`[SearchReplaceTool] Created ${suggestionIds.length} diff suggestions:`, suggestionIds);
+      console.log(`[SearchReplaceTool] Created ${suggestionIds.length} segment diff suggestions:`, suggestionIds);
 
       // 8. 生成预览
       const lineNumbers = matchesToProcess.map(m => m.startLine);

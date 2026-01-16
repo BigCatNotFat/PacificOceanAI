@@ -2975,6 +2975,88 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
     .diff-btn-reject { background: #ef5350; color: white; }
     .diff-btn-reject:hover { background: #f44336; }
     
+    /* ===== 片段级建议样式 (Segment Suggestions) ===== */
+    
+    /* 片段删除样式 - inline strikethrough */
+    .diff-segment-deleted {
+      background: rgba(255, 0, 0, 0.15) !important;
+      text-decoration: line-through !important;
+      text-decoration-color: #c62828 !important;
+      text-decoration-thickness: 2px !important;
+    }
+    
+    /* 片段新内容 - inline widget */
+    .diff-segment-widget {
+      display: inline;
+      white-space: pre-wrap;
+    }
+    
+    .diff-segment-new {
+      background: rgba(76, 175, 80, 0.2);
+      border-radius: 3px;
+      padding: 1px 4px;
+      margin-left: 2px;
+      color: #1b5e20 !important;
+      font-weight: 500;
+    }
+    
+    /* 片段级 inline 按钮 */
+    .diff-segment-buttons {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      margin-left: 4px;
+      vertical-align: middle;
+    }
+    
+    .diff-segment-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      border: none;
+      border-radius: 3px;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.15s;
+      padding: 0;
+      line-height: 1;
+    }
+    
+    .diff-segment-btn:hover {
+      transform: scale(1.1);
+    }
+    
+    .diff-segment-btn-accept {
+      background: #4caf50;
+      color: white;
+    }
+    
+    .diff-segment-btn-accept:hover {
+      background: #43a047;
+    }
+    
+    .diff-segment-btn-reject {
+      background: #ef5350;
+      color: white;
+    }
+    
+    .diff-segment-btn-reject:hover {
+      background: #e53935;
+    }
+    
+    /* 片段建议动画 */
+    @keyframes diff-segment-highlight {
+      0% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+    
+    .diff-segment-widget {
+      animation: diff-segment-highlight 0.2s ease-out;
+    }
+    
     /* ===== 底部固定控制栏 ===== */
     #diff-control-bar {
       position: fixed;
@@ -3285,9 +3367,14 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
       return;
     }
     
-    // 先清除所有装饰
+    // 先清除所有装饰（行级和片段级）
     try {
-      diffCurrentView.dispatch({ effects: effects.clearDiffSuggestionsEffect.of(null) });
+      diffCurrentView.dispatch({ 
+        effects: [
+          effects.clearDiffSuggestionsEffect.of(null),
+          effects.clearSegmentSuggestionsEffect.of(null)
+        ]
+      });
     } catch (e) {}
     
     // 如果当前文件没有建议，直接更新控制栏
@@ -3305,15 +3392,32 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
       var id = entry[0];
       var config = entry[1];
       try {
-        // 重新计算位置
-        var lineStart = diffCurrentView.state.doc.line(config.startLine);
-        var lineEnd = diffCurrentView.state.doc.line(config.endLine);
-        config.lineFrom = lineStart.from;
-        config.lineTo = lineEnd.to;
-        config.widgetPos = lineEnd.to;
-        diffCurrentView.dispatch({ effects: effects.addDiffSuggestionEffect.of(config) });
+        // 根据类型选择不同的恢复方式
+        if (config.type === 'segment') {
+          // 片段级建议：使用字符偏移
+          // 注意：切换文件后偏移可能已变化，需要基于 oldContent 重新查找
+          var docContent = diffCurrentView.state.doc.toString();
+          var foundIndex = docContent.indexOf(config.oldContent);
+          if (foundIndex !== -1) {
+            config.startOffset = foundIndex;
+            config.endOffset = foundIndex + config.oldContent.length;
+            config.widgetPos = config.endOffset;
+            diffCurrentView.dispatch({ effects: effects.addSegmentSuggestionEffect.of(config) });
+          } else {
+            console.warn('[DiffAPI] 恢复片段建议失败，找不到原始内容:', id);
+            toRemove.push(id);
+          }
+        } else {
+          // 行级建议：使用行号
+          var lineStart = diffCurrentView.state.doc.line(config.startLine);
+          var lineEnd = diffCurrentView.state.doc.line(config.endLine);
+          config.lineFrom = lineStart.from;
+          config.lineTo = lineEnd.to;
+          config.widgetPos = lineEnd.to;
+          diffCurrentView.dispatch({ effects: effects.addDiffSuggestionEffect.of(config) });
+        }
       } catch (e) {
-        console.warn('[DiffAPI] 恢复建议失败，可能行号已变化:', id, e);
+        console.warn('[DiffAPI] 恢复建议失败:', id, e);
         toRemove.push(id);
       }
     }
@@ -3388,7 +3492,7 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
     return diffControlBar;
   }
   
-  // 从 StateField 获取最新的建议位置（文档变化后位置会自动映射）
+  // 从 StateField 获取最新的行级建议位置（文档变化后位置会自动映射）
   function getLatestSuggestionPosition(suggestionId) {
     if (!diffCurrentView) return null;
     try {
@@ -3397,7 +3501,21 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
         return field.suggestions.get(suggestionId);
       }
     } catch (e) {
-      console.warn('[DiffAPI] 获取最新位置失败:', e);
+      console.warn('[DiffAPI] 获取最新行级建议位置失败:', e);
+    }
+    return null;
+  }
+  
+  // 从 StateField 获取最新的片段级建议位置（文档变化后位置会自动映射）
+  function getLatestSegmentPosition(suggestionId) {
+    if (!diffCurrentView) return null;
+    try {
+      var field = diffCurrentView.state.field(window._diffSuggestionField);
+      if (field && field.segments) {
+        return field.segments.get(suggestionId);
+      }
+    } catch (e) {
+      console.warn('[DiffAPI] 获取最新片段建议位置失败:', e);
     }
     return null;
   }
@@ -3567,7 +3685,7 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
     }
   }
   
-  // 创建 Widget 类
+  // 创建行级 Widget 类 (block widget)
   function createDiffSuggestionWidgetClass(CM) {
     var WidgetType = CM.WidgetType;
     
@@ -3646,6 +3764,82 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
     };
   }
   
+  // 创建片段级 Widget 类 (inline widget)
+  function createSegmentSuggestionWidgetClass(CM) {
+    var WidgetType = CM.WidgetType;
+    
+    return class SegmentSuggestionWidget extends WidgetType {
+      constructor(config) {
+        super();
+        this.config = config;
+      }
+      
+      toDOM(view) {
+        var config = this.config;
+        var id = config.id;
+        var newContent = config.newContent;
+        var onAccept = config.onAccept;
+        var onReject = config.onReject;
+        
+        // 创建 inline 容器
+        var container = document.createElement('span');
+        container.className = 'diff-segment-widget';
+        container.dataset.suggestionId = id;
+        
+        // 新内容文本
+        var newText = document.createElement('span');
+        newText.className = 'diff-segment-new';
+        newText.textContent = newContent;
+        container.appendChild(newText);
+        
+        // inline 按钮容器
+        var buttons = document.createElement('span');
+        buttons.className = 'diff-segment-buttons';
+        
+        // 接受按钮 ✓
+        var acceptBtn = document.createElement('button');
+        acceptBtn.className = 'diff-segment-btn diff-segment-btn-accept';
+        acceptBtn.innerHTML = '✓';
+        acceptBtn.type = 'button';
+        acceptBtn.title = 'Accept';
+        acceptBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+        acceptBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (onAccept) onAccept(view, id);
+        });
+        
+        // 拒绝按钮 ✕
+        var rejectBtn = document.createElement('button');
+        rejectBtn.className = 'diff-segment-btn diff-segment-btn-reject';
+        rejectBtn.innerHTML = '✕';
+        rejectBtn.type = 'button';
+        rejectBtn.title = 'Reject';
+        rejectBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+        rejectBtn.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (onReject) onReject(view, id);
+        });
+        
+        buttons.appendChild(acceptBtn);
+        buttons.appendChild(rejectBtn);
+        container.appendChild(buttons);
+        
+        return container;
+      }
+      
+      eq(other) {
+        return this.config.id === other.config.id &&
+               this.config.newContent === other.config.newContent;
+      }
+      
+      ignoreEvent(event) {
+        return event.type !== 'mousedown' && event.type !== 'mouseup';
+      }
+    };
+  }
+  
   // 创建扩展
   function createDiffSuggestionExtension(CM) {
     var StateEffect = CM.StateEffect;
@@ -3653,20 +3847,31 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
     var EditorView = CM.EditorView;
     var Decoration = CM.Decoration;
     var DiffSuggestionWidget = createDiffSuggestionWidgetClass(CM);
+    var SegmentSuggestionWidget = createSegmentSuggestionWidgetClass(CM);
     
+    // 行级建议 effects
     var addDiffSuggestionEffect = StateEffect.define();
     var removeDiffSuggestionEffect = StateEffect.define();
     var clearDiffSuggestionsEffect = StateEffect.define();
     
+    // 片段级建议 effects
+    var addSegmentSuggestionEffect = StateEffect.define();
+    var removeSegmentSuggestionEffect = StateEffect.define();
+    var clearSegmentSuggestionsEffect = StateEffect.define();
+    
     var diffSuggestionField = StateField.define({
       create: function() {
-        return { suggestions: new Map() };
+        return { 
+          suggestions: new Map(),      // 行级建议
+          segments: new Map()          // 片段级建议
+        };
       },
       update: function(value, tr) {
-        var suggestions = value.suggestions;
-        suggestions = new Map(suggestions);
+        var suggestions = new Map(value.suggestions);
+        var segments = new Map(value.segments);
         
         if (tr.docChanged) {
+          // 更新行级建议位置
           for (var entry of suggestions) {
             var id = entry[0];
             var config = entry[1];
@@ -3677,8 +3882,21 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
               widgetPos: tr.changes.mapPos(config.widgetPos, 1)
             });
           }
+          
+          // 更新片段级建议位置
+          for (var entry of segments) {
+            var id = entry[0];
+            var config = entry[1];
+            segments.set(id, {
+              ...config,
+              startOffset: tr.changes.mapPos(config.startOffset, 1),
+              endOffset: tr.changes.mapPos(config.endOffset, -1),
+              widgetPos: tr.changes.mapPos(config.widgetPos, 1)
+            });
+          }
         }
         
+        // 处理行级建议 effects
         for (var effect of tr.effects) {
           if (effect.is(addDiffSuggestionEffect)) {
             suggestions.set(effect.value.id, effect.value);
@@ -3687,15 +3905,26 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
           } else if (effect.is(clearDiffSuggestionsEffect)) {
             suggestions.clear();
           }
+          // 处理片段级建议 effects
+          else if (effect.is(addSegmentSuggestionEffect)) {
+            segments.set(effect.value.id, effect.value);
+          } else if (effect.is(removeSegmentSuggestionEffect)) {
+            segments.delete(effect.value);
+          } else if (effect.is(clearSegmentSuggestionsEffect)) {
+            segments.clear();
+          }
         }
         
-        return { suggestions: suggestions };
+        return { suggestions: suggestions, segments: segments };
       },
       provide: function(field) {
         return EditorView.decorations.compute([field], function(state) {
-          var suggestions = state.field(field).suggestions;
+          var fieldValue = state.field(field);
+          var suggestions = fieldValue.suggestions;
+          var segments = fieldValue.segments;
           var decorations = [];
           
+          // 处理行级建议装饰
           for (var entry of suggestions) {
             var id = entry[0];
             var config = entry[1];
@@ -3718,7 +3947,29 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
                 }).range(config.widgetPos)
               );
             } catch (e) {
-              console.error('[DiffAPI] 创建装饰失败:', e);
+              console.error('[DiffAPI] 创建行级装饰失败:', e);
+            }
+          }
+          
+          // 处理片段级建议装饰
+          for (var entry of segments) {
+            var id = entry[0];
+            var config = entry[1];
+            try {
+              // 使用 mark 装饰标记被删除的片段
+              decorations.push(
+                Decoration.mark({ class: 'diff-segment-deleted' }).range(config.startOffset, config.endOffset)
+              );
+              
+              // 在片段末尾添加 inline widget 显示新内容
+              decorations.push(
+                Decoration.widget({
+                  widget: new SegmentSuggestionWidget(config),
+                  side: 1  // 放在位置之后
+                }).range(config.widgetPos)
+              );
+            } catch (e) {
+              console.error('[DiffAPI] 创建片段级装饰失败:', e);
             }
           }
           
@@ -3728,9 +3979,14 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
     });
     
     window._diffSuggestionEffects = {
+      // 行级建议 effects
       addDiffSuggestionEffect: addDiffSuggestionEffect,
       removeDiffSuggestionEffect: removeDiffSuggestionEffect,
-      clearDiffSuggestionsEffect: clearDiffSuggestionsEffect
+      clearDiffSuggestionsEffect: clearDiffSuggestionsEffect,
+      // 片段级建议 effects
+      addSegmentSuggestionEffect: addSegmentSuggestionEffect,
+      removeSegmentSuggestionEffect: removeSegmentSuggestionEffect,
+      clearSegmentSuggestionsEffect: clearSegmentSuggestionsEffect
     };
     
     // 保存 StateField 引用，用于获取最新位置
@@ -4027,6 +4283,155 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
         }
       },
       
+      // ===== 片段级建议 (Segment Suggestions) =====
+      
+      // 创建片段级建议（使用字符偏移）
+      suggestSegment: function(startOffset, endOffset, newContent, callbacks) {
+        callbacks = callbacks || {};
+        try {
+          var id = 'segment-' + (diffSuggestionId++);
+          var oldContent = diffCurrentView.state.doc.sliceString(startOffset, endOffset);
+          var fileName = diffCurrentFileName;
+          
+          var config = {
+            id: id,
+            type: 'segment',
+            fileName: fileName,
+            startOffset: startOffset,
+            endOffset: endOffset,
+            widgetPos: endOffset,
+            oldContent: oldContent,
+            newContent: newContent,
+            onAccept: function(view, suggestionId) {
+              var currentEffects = window._diffSuggestionEffects;
+              var fileSuggestions = diffSuggestionsByFile.get(fileName);
+              var suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
+              // 获取最新位置
+              var latest = getLatestSegmentPosition(suggestionId);
+              var from = latest ? latest.startOffset : (suggestion ? suggestion.startOffset : 0);
+              var to = latest ? latest.endOffset : (suggestion ? suggestion.endOffset : 0);
+              if (suggestion && currentEffects) {
+                view.dispatch({
+                  changes: { from: from, to: to, insert: suggestion.newContent },
+                  effects: currentEffects.removeSegmentSuggestionEffect.of(suggestionId)
+                });
+                window.postMessage({
+                  type: 'DIFF_SUGGESTION_RESOLVED',
+                  data: { id: suggestionId, accepted: true, oldContent: suggestion.oldContent, newContent: suggestion.newContent }
+                }, '*');
+                fileSuggestions.delete(suggestionId);
+                var totalCount = getTotalSuggestionsCount();
+                if (diffCurrentIndex >= totalCount) diffCurrentIndex = Math.max(0, totalCount - 1);
+                updateDiffControlBar();
+                console.log('[DiffAPI] 已接受片段建议:', suggestionId);
+                if (callbacks.onAccept) callbacks.onAccept(oldContent, newContent);
+              }
+            },
+            onReject: function(view, suggestionId) {
+              var currentEffects = window._diffSuggestionEffects;
+              if (currentEffects) {
+                view.dispatch({ effects: currentEffects.removeSegmentSuggestionEffect.of(suggestionId) });
+              }
+              window.postMessage({
+                type: 'DIFF_SUGGESTION_RESOLVED',
+                data: { id: suggestionId, accepted: false }
+              }, '*');
+              var fileSuggestions = diffSuggestionsByFile.get(fileName);
+              if (fileSuggestions) fileSuggestions.delete(suggestionId);
+              var totalCount = getTotalSuggestionsCount();
+              if (diffCurrentIndex >= totalCount) diffCurrentIndex = Math.max(0, totalCount - 1);
+              updateDiffControlBar();
+              console.log('[DiffAPI] 已拒绝片段建议:', suggestionId);
+              if (callbacks.onReject) callbacks.onReject(oldContent, newContent);
+            }
+          };
+          
+          getCurrentFileSuggestions().set(id, config);
+          var currentEffectsForAdd = window._diffSuggestionEffects;
+          if (currentEffectsForAdd) {
+            diffCurrentView.dispatch({ effects: currentEffectsForAdd.addSegmentSuggestionEffect.of(config) });
+          }
+          updateDiffControlBar();
+          console.log('[DiffAPI] 片段建议已创建:', id, '偏移', startOffset, '-', endOffset, '文件:', fileName);
+          return id;
+        } catch (e) {
+          console.error('[DiffAPI] 创建片段建议失败:', e);
+          return null;
+        }
+      },
+      
+      // 使用外部 ID 创建片段级建议
+      suggestSegmentWithId: function(externalId, startOffset, endOffset, newContent, callbacks) {
+        callbacks = callbacks || {};
+        try {
+          var oldContent = diffCurrentView.state.doc.sliceString(startOffset, endOffset);
+          var fileName = diffCurrentFileName;
+          
+          var config = {
+            id: externalId,
+            type: 'segment',
+            fileName: fileName,
+            startOffset: startOffset,
+            endOffset: endOffset,
+            widgetPos: endOffset,
+            oldContent: oldContent,
+            newContent: newContent,
+            onAccept: function(view, suggestionId) {
+              var currentEffects = window._diffSuggestionEffects;
+              var fileSuggestions = diffSuggestionsByFile.get(fileName);
+              var suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
+              // 获取最新位置
+              var latest = getLatestSegmentPosition(suggestionId);
+              var from = latest ? latest.startOffset : (suggestion ? suggestion.startOffset : 0);
+              var to = latest ? latest.endOffset : (suggestion ? suggestion.endOffset : 0);
+              if (suggestion && currentEffects) {
+                view.dispatch({
+                  changes: { from: from, to: to, insert: suggestion.newContent },
+                  effects: currentEffects.removeSegmentSuggestionEffect.of(suggestionId)
+                });
+                window.postMessage({
+                  type: 'DIFF_SUGGESTION_RESOLVED',
+                  data: { id: suggestionId, accepted: true, oldContent: suggestion.oldContent, newContent: suggestion.newContent }
+                }, '*');
+                fileSuggestions.delete(suggestionId);
+                var totalCount = getTotalSuggestionsCount();
+                if (diffCurrentIndex >= totalCount) diffCurrentIndex = Math.max(0, totalCount - 1);
+                updateDiffControlBar();
+                if (callbacks.onAccept) callbacks.onAccept();
+              }
+            },
+            onReject: function(view, suggestionId) {
+              var currentEffects = window._diffSuggestionEffects;
+              if (currentEffects) {
+                view.dispatch({ effects: currentEffects.removeSegmentSuggestionEffect.of(suggestionId) });
+              }
+              window.postMessage({
+                type: 'DIFF_SUGGESTION_RESOLVED',
+                data: { id: suggestionId, accepted: false }
+              }, '*');
+              var fileSuggestions = diffSuggestionsByFile.get(fileName);
+              if (fileSuggestions) fileSuggestions.delete(suggestionId);
+              var totalCount = getTotalSuggestionsCount();
+              if (diffCurrentIndex >= totalCount) diffCurrentIndex = Math.max(0, totalCount - 1);
+              updateDiffControlBar();
+              if (callbacks.onReject) callbacks.onReject();
+            }
+          };
+          
+          getCurrentFileSuggestions().set(externalId, config);
+          var currentEffectsForAdd = window._diffSuggestionEffects;
+          if (currentEffectsForAdd) {
+            diffCurrentView.dispatch({ effects: currentEffectsForAdd.addSegmentSuggestionEffect.of(config) });
+          }
+          updateDiffControlBar();
+          console.log('[DiffAPI] 片段建议已创建（外部ID）:', externalId, '偏移', startOffset, '-', endOffset, '文件:', fileName);
+          return externalId;
+        } catch (e) {
+          console.error('[DiffAPI] 创建片段建议失败:', e);
+          return null;
+        }
+      },
+      
       // 导航
       prev: function() {
         var totalCount = getTotalSuggestionsCount();
@@ -4121,7 +4526,7 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
         console.log('[DiffAPI] 已拒绝当前文件所有建议');
       },
       
-      // 清除当前文件所有建议
+      // 清除当前文件所有建议（包括行级和片段级）
       clearAll: function() {
         var fileSuggestions = getCurrentFileSuggestions();
         var ids = Array.from(fileSuggestions.keys());
@@ -4137,13 +4542,18 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
         if (diffCurrentIndex >= totalCount) diffCurrentIndex = Math.max(0, totalCount - 1);
         var currentEffectsForClear = window._diffSuggestionEffects;
         if (currentEffectsForClear) {
-          diffCurrentView.dispatch({ effects: currentEffectsForClear.clearDiffSuggestionsEffect.of(null) });
+          diffCurrentView.dispatch({ 
+            effects: [
+              currentEffectsForClear.clearDiffSuggestionsEffect.of(null),
+              currentEffectsForClear.clearSegmentSuggestionsEffect.of(null)
+            ]
+          });
         }
         updateDiffControlBar();
         console.log('[DiffAPI] 当前文件所有建议已清除');
       },
       
-      // 清除所有文件的建议
+      // 清除所有文件的建议（包括行级和片段级）
       clearAllFiles: function() {
         for (var entry of diffSuggestionsByFile) {
           var suggestions = entry[1];
@@ -4158,7 +4568,12 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
         diffCurrentIndex = 0;
         var currentEffectsForClear = window._diffSuggestionEffects;
         if (currentEffectsForClear) {
-          diffCurrentView.dispatch({ effects: currentEffectsForClear.clearDiffSuggestionsEffect.of(null) });
+          diffCurrentView.dispatch({ 
+            effects: [
+              currentEffectsForClear.clearDiffSuggestionsEffect.of(null),
+              currentEffectsForClear.clearSegmentSuggestionsEffect.of(null)
+            ]
+          });
         }
         updateDiffControlBar();
         console.log('[DiffAPI] 所有文件的建议已清除');
@@ -4228,6 +4643,30 @@ console.log('[OverleafBridge] Injected script loaded with selection tooltip and 
         for (var i = 0; i < suggestions.length; i++) {
           var s = suggestions[i];
           window.diffAPI.suggestRangeWithId(s.id, s.startLine, s.endLine, s.newContent);
+        }
+      }
+    }
+    
+    // 创建单个片段级建议
+    else if (data.type === 'DIFF_CREATE_SEGMENT_SUGGESTION') {
+      var segmentData = data.data;
+      if (window.diffAPI) {
+        window.diffAPI.suggestSegmentWithId(
+          segmentData.id,
+          segmentData.startOffset,
+          segmentData.endOffset,
+          segmentData.newContent
+        );
+      }
+    }
+    
+    // 批量创建片段级建议
+    else if (data.type === 'DIFF_CREATE_SEGMENT_BATCH') {
+      var segmentSuggestions = data.data.suggestions;
+      if (window.diffAPI && segmentSuggestions) {
+        for (var j = 0; j < segmentSuggestions.length; j++) {
+          var seg = segmentSuggestions[j];
+          window.diffAPI.suggestSegmentWithId(seg.id, seg.startOffset, seg.endOffset, seg.newContent);
         }
       }
     }

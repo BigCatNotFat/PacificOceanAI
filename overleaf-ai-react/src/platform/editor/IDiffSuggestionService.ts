@@ -16,11 +16,46 @@ import type { Event } from '../../base/common/event';
 export type DiffSuggestionStatus = 'pending' | 'accepted' | 'rejected';
 
 /**
+ * Diff 建议类型
+ * - line: 基于行的建议（整行标记删除，新内容作为块显示）
+ * - segment: 基于片段的建议（inline 标记删除，新内容紧随其后）
+ */
+export type DiffSuggestionType = 'line' | 'segment';
+
+/**
  * Diff 建议数据结构
  */
 export interface DiffSuggestion {
   /** 建议唯一标识 */
   id: string;
+  /** 关联的工具调用 ID */
+  toolCallId: string;
+  /** 目标文件名 */
+  targetFile: string;
+  /** 建议类型 */
+  type: DiffSuggestionType;
+  /** 起始行号（1-indexed），用于 line 类型 */
+  startLine: number;
+  /** 结束行号（1-indexed，inclusive），用于 line 类型 */
+  endLine: number;
+  /** 片段起始字符偏移（0-indexed），仅 segment 类型 */
+  startOffset?: number;
+  /** 片段结束字符偏移（0-indexed，exclusive），仅 segment 类型 */
+  endOffset?: number;
+  /** 原始内容 */
+  oldContent: string;
+  /** 新内容 */
+  newContent: string;
+  /** 建议状态 */
+  status: DiffSuggestionStatus;
+  /** 创建时间戳 */
+  createdAt: number;
+}
+
+/**
+ * 创建行级建议的输入参数
+ */
+export interface CreateSuggestionInput {
   /** 关联的工具调用 ID */
   toolCallId: string;
   /** 目标文件名 */
@@ -33,24 +68,20 @@ export interface DiffSuggestion {
   oldContent: string;
   /** 新内容 */
   newContent: string;
-  /** 建议状态 */
-  status: DiffSuggestionStatus;
-  /** 创建时间戳 */
-  createdAt: number;
 }
 
 /**
- * 创建建议的输入参数
+ * 创建片段级建议的输入参数
  */
-export interface CreateSuggestionInput {
+export interface CreateSegmentSuggestionInput {
   /** 关联的工具调用 ID */
   toolCallId: string;
   /** 目标文件名 */
   targetFile: string;
-  /** 起始行号（1-indexed） */
-  startLine: number;
-  /** 结束行号（1-indexed，inclusive） */
-  endLine: number;
+  /** 片段起始字符偏移（0-indexed） */
+  startOffset: number;
+  /** 片段结束字符偏移（0-indexed，exclusive） */
+  endOffset: number;
   /** 原始内容 */
   oldContent: string;
   /** 新内容 */
@@ -74,18 +105,32 @@ export interface SuggestionResolvedEvent {
  */
 export interface IDiffSuggestionService {
   /**
-   * 创建单个 diff 建议
+   * 创建单个行级 diff 建议
    * @param input 建议参数
    * @returns 建议 ID
    */
   createSuggestion(input: CreateSuggestionInput): Promise<string>;
 
   /**
-   * 批量创建 diff 建议
+   * 批量创建行级 diff 建议
    * @param inputs 建议参数数组
    * @returns 建议 ID 数组
    */
   createBatchSuggestions(inputs: CreateSuggestionInput[]): Promise<string[]>;
+
+  /**
+   * 创建单个片段级 diff 建议
+   * @param input 建议参数
+   * @returns 建议 ID
+   */
+  createSegmentSuggestion(input: CreateSegmentSuggestionInput): Promise<string>;
+
+  /**
+   * 批量创建片段级 diff 建议
+   * @param inputs 建议参数数组
+   * @returns 建议 ID 数组
+   */
+  createBatchSegmentSuggestions(inputs: CreateSegmentSuggestionInput[]): Promise<string[]>;
 
   /**
    * 接受指定建议

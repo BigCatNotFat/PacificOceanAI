@@ -15,6 +15,7 @@ import type {
   IDiffSuggestionService,
   DiffSuggestion,
   CreateSuggestionInput,
+  CreateSegmentSuggestionInput,
   SuggestionResolvedEvent
 } from '../../platform/editor/IDiffSuggestionService';
 
@@ -108,7 +109,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
   }
   
   /**
-   * 创建单个 diff 建议
+   * 创建单个行级 diff 建议
    */
   async createSuggestion(input: CreateSuggestionInput): Promise<string> {
     const id = this.generateId();
@@ -117,6 +118,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       id,
       toolCallId: input.toolCallId,
       targetFile: input.targetFile,
+      type: 'line',
       startLine: input.startLine,
       endLine: input.endLine,
       oldContent: input.oldContent,
@@ -139,13 +141,13 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       }
     }, '*');
     
-    console.log(`[DiffSuggestionService] 创建建议 ${id}: 行 ${input.startLine}-${input.endLine}`);
+    console.log(`[DiffSuggestionService] 创建行级建议 ${id}: 行 ${input.startLine}-${input.endLine}`);
     
     return id;
   }
   
   /**
-   * 批量创建 diff 建议
+   * 批量创建行级 diff 建议
    */
   async createBatchSuggestions(inputs: CreateSuggestionInput[]): Promise<string[]> {
     const ids: string[] = [];
@@ -165,6 +167,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
         id,
         toolCallId: input.toolCallId,
         targetFile: input.targetFile,
+        type: 'line',
         startLine: input.startLine,
         endLine: input.endLine,
         oldContent: input.oldContent,
@@ -192,7 +195,103 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       }
     }, '*');
     
-    console.log(`[DiffSuggestionService] 批量创建 ${ids.length} 个建议`);
+    console.log(`[DiffSuggestionService] 批量创建 ${ids.length} 个行级建议`);
+    
+    return ids;
+  }
+  
+  /**
+   * 创建单个片段级 diff 建议
+   */
+  async createSegmentSuggestion(input: CreateSegmentSuggestionInput): Promise<string> {
+    const id = this.generateId();
+    
+    const suggestion: DiffSuggestion = {
+      id,
+      toolCallId: input.toolCallId,
+      targetFile: input.targetFile,
+      type: 'segment',
+      startLine: 0, // segment 类型不使用行号
+      endLine: 0,
+      startOffset: input.startOffset,
+      endOffset: input.endOffset,
+      oldContent: input.oldContent,
+      newContent: input.newContent,
+      status: 'pending',
+      createdAt: Date.now()
+    };
+    
+    this.suggestions.set(id, suggestion);
+    
+    // 发送消息到注入脚本创建 UI
+    window.postMessage({
+      type: 'DIFF_CREATE_SEGMENT_SUGGESTION',
+      data: {
+        id,
+        startOffset: input.startOffset,
+        endOffset: input.endOffset,
+        oldContent: input.oldContent,
+        newContent: input.newContent
+      }
+    }, '*');
+    
+    console.log(`[DiffSuggestionService] 创建片段级建议 ${id}: 偏移 ${input.startOffset}-${input.endOffset}`);
+    
+    return id;
+  }
+  
+  /**
+   * 批量创建片段级 diff 建议
+   */
+  async createBatchSegmentSuggestions(inputs: CreateSegmentSuggestionInput[]): Promise<string[]> {
+    const ids: string[] = [];
+    const batchData: Array<{
+      id: string;
+      startOffset: number;
+      endOffset: number;
+      oldContent: string;
+      newContent: string;
+    }> = [];
+    
+    for (const input of inputs) {
+      const id = this.generateId();
+      ids.push(id);
+      
+      const suggestion: DiffSuggestion = {
+        id,
+        toolCallId: input.toolCallId,
+        targetFile: input.targetFile,
+        type: 'segment',
+        startLine: 0, // segment 类型不使用行号
+        endLine: 0,
+        startOffset: input.startOffset,
+        endOffset: input.endOffset,
+        oldContent: input.oldContent,
+        newContent: input.newContent,
+        status: 'pending',
+        createdAt: Date.now()
+      };
+      
+      this.suggestions.set(id, suggestion);
+      
+      batchData.push({
+        id,
+        startOffset: input.startOffset,
+        endOffset: input.endOffset,
+        oldContent: input.oldContent,
+        newContent: input.newContent
+      });
+    }
+    
+    // 发送批量创建消息到注入脚本
+    window.postMessage({
+      type: 'DIFF_CREATE_SEGMENT_BATCH',
+      data: {
+        suggestions: batchData
+      }
+    }, '*');
+    
+    console.log(`[DiffSuggestionService] 批量创建 ${ids.length} 个片段级建议`);
     
     return ids;
   }
