@@ -19,7 +19,7 @@
   "content_scripts": [
     {
       "js": [
-        "assets/main.tsx-loader-imBBi2OV.js"
+        "assets/main.tsx-loader-DpSMcqFV.js"
       ],
       "matches": [
         "https://www.overleaf.com/*",
@@ -41,7 +41,7 @@
       ],
       "resources": [
         "src/workbench/styles/sidebar.css",
-        "injected/overleafBridge.js",
+        "injected/generated/overleafBridge.js",
         "src/extension/options/index.html",
         "images/*",
         "assets/KaTeX_AMS-Regular-BQhdFMY1.woff2",
@@ -105,7 +105,7 @@
         "assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf",
         "assets/client-CLze4-QF.js",
         "assets/StorageService-t_CsOJeT.js",
-        "assets/main.tsx-z9oAEzQn.js"
+        "assets/main.tsx-DhorcWqh.js"
       ],
       "use_dynamic_url": false
     }

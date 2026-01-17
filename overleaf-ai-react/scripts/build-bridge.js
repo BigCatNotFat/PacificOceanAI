@@ -19,7 +19,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // 路径配置
-const SOURCE_FILE = path.join(__dirname, '../public/injected/overleafBridge.js');
+const SOURCE_FILE = path.join(__dirname, '../public/injected/generated/overleafBridge.js');
 const DIST_DIR = path.join(__dirname, '../dist/injected');
 const DIST_FILE = path.join(DIST_DIR, 'overleafBridge.js');
 
@@ -41,7 +41,7 @@ try {
   // 添加构建标记注释
   const buildInfo = `/**
  * ⚠️ 此文件由构建脚本自动生成，请勿直接修改
- * 源文件位置: public/injected/overleafBridge.js
+ * 源文件位置: public/injected/generated/overleafBridge.js
  * 模块化源码位置: public/injected/modules/
  * 
  * 构建时间: ${new Date().toISOString()}

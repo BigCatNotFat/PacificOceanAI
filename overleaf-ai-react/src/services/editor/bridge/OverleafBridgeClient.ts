@@ -41,7 +41,7 @@ export class OverleafBridgeClient {
 
     try {
       const script = document.createElement('script');
-      script.src = chrome.runtime.getURL('injected/overleafBridge.js');
+      script.src = chrome.runtime.getURL('injected/generated/overleafBridge.js');
       script.onload = () => {
         console.log('[OverleafBridgeClient] Bridge script injected successfully');
         this.injected = true;

@@ -15,7 +15,7 @@ const __dirname = dirname(__filename);
 const MODULES_DIR = path.join(__dirname, '../public/injected/modules');
 const MAIN_FILE = path.join(MODULES_DIR, 'main.js');
 const LEGACY_FILE = path.join(MODULES_DIR, 'legacy.js');
-const OUTPUT_DIR = path.join(__dirname, '../public/injected');
+const OUTPUT_DIR = path.join(__dirname, '../public/injected/generated');
 const OUTPUT_FILE = path.join(OUTPUT_DIR, 'overleafBridge.js');
 
 console.log('🔨 开始构建 overleafBridge.js (模块化版本)...');
@@ -56,7 +56,7 @@ try {
  * 构建脚本: scripts/build-bridge-new.js
  * 构建策略: 智能合并（main.js + legacy.js）
  * 
- * 构建流程: modules/ → public/injected/ → Vite → dist/injected/
+ * 构建流程: modules/ → public/injected/generated/ → Vite → dist/injected/
  */
 
 `;
@@ -87,7 +87,7 @@ try {
   console.log('   ✅ legacy.js - 完整 UI 模块');
   console.log('');
   console.log('📦 构建流程:');
-  console.log('   1. modules/ → public/injected/overleafBridge.js (此步骤)');
+  console.log('   1. modules/ → public/injected/generated/overleafBridge.js (此步骤)');
   console.log('   2. Vite 会自动将 public/ 复制到 dist/');
   console.log('   3. 最终浏览器加载 dist/injected/overleafBridge.js');
   console.log('');

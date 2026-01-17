@@ -9,11 +9,11 @@
  *   - methodHandlers/: API 方法处理器
  *   - modelManagement/: 模型管理模块
  * 
- * 构建时间: 2026-01-17T02:26:25.548Z
+ * 构建时间: 2026-01-17T03:23:32.395Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建策略: 智能合并（main.js + legacy.js）
  * 
- * 构建流程: modules/ → public/injected/ → Vite → dist/injected/
+ * 构建流程: modules/ → public/injected/generated/ → Vite → dist/injected/
  */
 
 /**
