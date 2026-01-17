@@ -12,6 +12,7 @@ import { IChatServiceId } from '../../platform/agent/IChatService';
  *   - 如果存在 thinking，则生成一条 type = 'thinking' 的思考块消息
  *   - 如果有内容，则生成一条 type = 'normal' 的回答消息
  *   - 如果正在调用工具且没有内容，则不生成空消息
+ *   - 如果有已存储的 toolCalls，会传递到 UI 消息中
  * - tool 消息：
  *   - 显示为一个类似思考块的折叠区域，展示工具调用结果
  * 
@@ -19,13 +20,16 @@ import { IChatServiceId } from '../../platform/agent/IChatService';
  * @param streamingContent - Optional streaming content override (from UIStreamService)
  * @param streamingThinking - Optional streaming thinking override (from UIStreamService)
  * @param hasActiveToolCalls - Whether there are active tool calls for this message
+ * @param hasStreamingBuffer - Whether there is an active streaming buffer
+ * @param hasStoredToolCalls - Whether the message has stored tool calls to display
  */
 function mapServiceMessageToUI(
   message: ServiceChatMessage,
   streamingContent?: string,
   streamingThinking?: string,
   hasActiveToolCalls?: boolean,
-  hasStreamingBuffer?: boolean
+  hasStreamingBuffer?: boolean,
+  hasStoredToolCalls?: boolean
 ): ChatMessage[] {
   const uiMessages: ChatMessage[] = [];
 
@@ -90,14 +94,28 @@ function mapServiceMessageToUI(
   }
 
   // 主消息内容：只有当有实际内容时才添加
-  if (mainContent || message.status === 'completed' || message.status === 'error') {
-    uiMessages.push({
+  // 如果有已存储的 toolCalls，也需要添加这个消息作为工具调用 UI 的锚点
+  if (mainContent || message.status === 'completed' || message.status === 'error' || hasStoredToolCalls) {
+    const uiMessage: ChatMessage = {
       id: message.id,
       role,
       content: mainContent,
       isHtml: false,
       type: 'normal'
-    });
+    };
+    
+    // 如果有已存储的工具调用，传递给 UI 层
+    if (message.toolCalls && message.toolCalls.length > 0) {
+      uiMessage.toolCalls = message.toolCalls.map(tc => ({
+        id: tc.id,
+        name: tc.name,
+        arguments: tc.arguments,
+        result: tc.result,
+        status: tc.status
+      }));
+    }
+    
+    uiMessages.push(uiMessage);
   }
 
   return uiMessages;
@@ -159,6 +177,8 @@ export function useChatMessages(conversationId: string, initialMessages: ChatMes
         : false;
       // 检查是否已经有流式数据（用于区分"正在发送"和"正在思考"）
       const hasStreamingBuffer = streamingBuffer !== undefined;
+      // 检查是否有已存储的工具调用（从存储恢复时使用）
+      const hasStoredToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
       
       uiMessages.push(
         ...mapServiceMessageToUI(
@@ -166,7 +186,8 @@ export function useChatMessages(conversationId: string, initialMessages: ChatMes
           streamingBuffer?.content,
           streamingBuffer?.thinking,
           hasActiveToolCalls,
-          hasStreamingBuffer
+          hasStreamingBuffer,
+          hasStoredToolCalls
         )
       );
     }

@@ -46,20 +46,20 @@ import { hideSelectionTooltip, showSelectionTooltipForCurrentSelection } from '.
 
 // 补充处理器：替换选区
 methodHandlers.replaceSelection = function(from, to, text) {
-  const view = getEditorView();
-  if (!view) {
-    throw new Error('EditorView not available');
-  }
+    const view = getEditorView();
+    if (!view) {
+      throw new Error('EditorView not available');
+    }
   
   console.log('[OverleafBridge] replaceSelection called:', {
-    from: from,
-    to: to,
+      from: from,
+      to: to,
     textLength: text.length
   });
   
-  view.dispatch({
-    changes: { from: from, to: to, insert: text }
-  });
+    view.dispatch({
+      changes: { from: from, to: to, insert: text }
+    });
   
   return { success: true };
 };
@@ -69,7 +69,7 @@ methodHandlers.replaceSelection = function(from, to, text) {
 import { startStreamPreview } from './preview/stream.js';
 methodHandlers.showTextActionPreview = function(previewData) {
   startStreamPreview(previewData);
-  return { success: true };
+      return { success: true };
 };
 
 // 补充处理器：处理预览决策

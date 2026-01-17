@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-01-17T04:08:36.563Z
+ * 构建时间: 2026-01-17T05:28:31.046Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */
@@ -1023,10 +1023,10 @@
 
   // public/injected/modules/selectionTooltip/ui.js
   var SELECTION_ACTION_BUTTONS = [
-    { id: "expand", label: "\u6269\u5199", icon: "", bgColor: "#10b981", hoverColor: "#059669" },
-    { id: "condense", label: "\u7F29\u5199", icon: "", bgColor: "#f59e0b", hoverColor: "#d97706" },
-    { id: "polish", label: "\u6DA6\u8272", icon: "", bgColor: "#3b82f6", hoverColor: "#2563eb" },
-    { id: "translate", label: "\u7FFB\u8BD1", icon: "", bgColor: "#8b5cf6", hoverColor: "#7c3aed" }
+    { id: "expand", label: "\u6269\u5199", icon: "", bgColor: "rgba(255,255,255,0.1)", hoverColor: "rgba(255,255,255,0.2)" },
+    { id: "condense", label: "\u7F29\u5199", icon: "", bgColor: "rgba(255,255,255,0.1)", hoverColor: "rgba(255,255,255,0.2)" },
+    { id: "polish", label: "\u6DA6\u8272", icon: "", bgColor: "rgba(255,255,255,0.1)", hoverColor: "rgba(255,255,255,0.2)" },
+    { id: "translate", label: "\u8BD1", icon: "", bgColor: "rgba(255,255,255,0.1)", hoverColor: "rgba(255,255,255,0.2)" }
   ];
   var selectionTooltipEl = null;
   var buttonContainerEl = null;
@@ -1097,49 +1097,49 @@
     tooltip.id = "ol-ai-selection-tooltip";
     tooltip.style.position = "fixed";
     tooltip.style.zIndex = "9999";
-    tooltip.style.background = "linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%)";
+    tooltip.style.background = "#1e1e1e";
     tooltip.style.color = "#e5e7eb";
-    tooltip.style.padding = "10px";
-    tooltip.style.borderRadius = "10px";
+    tooltip.style.padding = "8px";
+    tooltip.style.borderRadius = "8px";
     tooltip.style.fontSize = "12px";
-    tooltip.style.boxShadow = "0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.1)";
+    tooltip.style.boxShadow = "0 4px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.1)";
     tooltip.style.display = "none";
     tooltip.style.flexDirection = "column";
     tooltip.style.gap = "8px";
     tooltip.style.backdropFilter = "blur(10px)";
     tooltip.style.transition = "left 0.1s ease-out, top 0.1s ease-out, opacity 0.15s ease";
     tooltip.style.opacity = "1";
-    tooltip.style.minWidth = "300px";
+    tooltip.style.minWidth = "320px";
     tooltip.style.maxWidth = "420px";
     const customInputContainer = document.createElement("div");
     customInputContainer.id = "ol-ai-custom-input-container";
     customInputContainer.style.display = "flex";
-    customInputContainer.style.gap = "8px";
+    customInputContainer.style.gap = "6px";
     customInputContainer.style.alignItems = "stretch";
     const customInput = document.createElement("textarea");
     customInput.id = "ol-ai-custom-input";
-    customInput.placeholder = "\u8F93\u5165\u8981\u6C42\uFF0C\u5982\uFF1A\u63D2\u5165\u79EF\u5206\u516C\u5F0F\u3001\u6DA6\u8272\u6587\u672C...";
+    customInput.placeholder = "\u8F93\u5165\u60A8\u7684\u8981\u6C42...";
     customInput.style.flex = "1";
     customInput.style.padding = "6px 10px";
     customInput.style.fontSize = "12px";
     customInput.style.borderRadius = "6px";
-    customInput.style.border = "1px solid rgba(255,255,255,0.15)";
-    customInput.style.background = "rgba(15, 23, 42, 0.6)";
+    customInput.style.border = "1px solid #333";
+    customInput.style.background = "#2d2d2d";
     customInput.style.color = "#e5e7eb";
     customInput.style.outline = "none";
     customInput.style.resize = "none";
-    customInput.style.height = "28px";
-    customInput.style.minHeight = "28px";
+    customInput.style.height = "32px";
+    customInput.style.minHeight = "32px";
     customInput.style.maxHeight = "60px";
-    customInput.style.lineHeight = "1.3";
+    customInput.style.lineHeight = "1.4";
     customInput.style.fontFamily = "inherit";
     customInput.onfocus = function() {
-      this.style.border = "1px solid rgba(59, 130, 246, 0.5)";
-      this.style.boxShadow = "0 0 0 2px rgba(59, 130, 246, 0.2)";
+      this.style.border = "1px solid #5865f2";
+      this.style.background = "#363636";
     };
     customInput.onblur = function() {
-      this.style.border = "1px solid rgba(255,255,255,0.15)";
-      this.style.boxShadow = "none";
+      this.style.border = "1px solid #333";
+      this.style.background = "#2d2d2d";
     };
     customInput.onkeydown = function(e) {
       e.stopPropagation();
@@ -1152,36 +1152,32 @@
       }
     };
     customInput.oninput = function() {
-      this.style.height = "28px";
+      this.style.height = "32px";
       this.style.height = Math.min(this.scrollHeight, 60) + "px";
     };
     customInputContainer.appendChild(customInput);
     const sendBtn = document.createElement("button");
     sendBtn.id = "ol-ai-send-btn";
-    sendBtn.innerHTML = "\u27A4";
+    sendBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>';
     sendBtn.title = "\u53D1\u9001 (Enter)";
-    sendBtn.style.padding = "0 12px";
-    sendBtn.style.fontSize = "14px";
+    sendBtn.style.width = "32px";
+    sendBtn.style.height = "32px";
+    sendBtn.style.padding = "0";
     sendBtn.style.borderRadius = "6px";
     sendBtn.style.border = "none";
-    sendBtn.style.background = "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)";
+    sendBtn.style.background = "#5865f2";
     sendBtn.style.color = "white";
     sendBtn.style.cursor = "pointer";
     sendBtn.style.transition = "all 0.2s ease";
-    sendBtn.style.boxShadow = "0 2px 6px rgba(59, 130, 246, 0.3)";
     sendBtn.style.display = "flex";
     sendBtn.style.alignItems = "center";
     sendBtn.style.justifyContent = "center";
-    sendBtn.style.height = "28px";
+    sendBtn.style.flexShrink = "0";
     sendBtn.onmouseenter = function() {
-      this.style.background = "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)";
-      this.style.transform = "translateY(-1px)";
-      this.style.boxShadow = "0 4px 12px rgba(59, 130, 246, 0.4)";
+      this.style.background = "#4752c4";
     };
     sendBtn.onmouseleave = function() {
-      this.style.background = "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)";
-      this.style.transform = "translateY(0)";
-      this.style.boxShadow = "0 2px 6px rgba(59, 130, 246, 0.3)";
+      this.style.background = "#5865f2";
     };
     sendBtn.onclick = function(e) {
       e.stopPropagation();
@@ -1189,44 +1185,45 @@
     };
     customInputContainer.appendChild(sendBtn);
     tooltip.appendChild(customInputContainer);
-    const quickActionsLabel = document.createElement("div");
-    quickActionsLabel.id = "ol-ai-quick-actions-label";
-    quickActionsLabel.style.display = "flex";
-    quickActionsLabel.style.alignItems = "center";
-    quickActionsLabel.style.gap = "8px";
-    quickActionsLabel.style.marginTop = "2px";
-    const labelLine1 = document.createElement("div");
-    labelLine1.style.flex = "1";
-    labelLine1.style.height = "1px";
-    labelLine1.style.background = "rgba(255,255,255,0.1)";
-    const labelText = document.createElement("span");
-    labelText.textContent = "\u5FEB\u6377\u64CD\u4F5C";
-    labelText.style.fontSize = "10px";
-    labelText.style.color = "#9ca3af";
-    labelText.style.textTransform = "uppercase";
-    labelText.style.letterSpacing = "0.5px";
-    const labelLine2 = document.createElement("div");
-    labelLine2.style.flex = "1";
-    labelLine2.style.height = "1px";
-    labelLine2.style.background = "rgba(255,255,255,0.1)";
-    quickActionsLabel.appendChild(labelLine1);
-    quickActionsLabel.appendChild(labelText);
-    quickActionsLabel.appendChild(labelLine2);
-    tooltip.appendChild(quickActionsLabel);
+    const bottomRow = document.createElement("div");
+    bottomRow.style.display = "flex";
+    bottomRow.style.gap = "6px";
+    bottomRow.style.alignItems = "center";
+    bottomRow.style.justifyContent = "space-between";
     buttonContainerEl = document.createElement("div");
     buttonContainerEl.id = "ol-ai-selection-buttons";
     buttonContainerEl.style.display = "flex";
-    buttonContainerEl.style.gap = "8px";
-    buttonContainerEl.style.justifyContent = "center";
-    buttonContainerEl.style.flexWrap = "wrap";
+    buttonContainerEl.style.gap = "4px";
+    buttonContainerEl.style.flexWrap = "nowrap";
     buttonContainerEl.style.pointerEvents = "auto";
     SELECTION_ACTION_BUTTONS.forEach(function(btnConfig) {
       const btn = createActionButton(btnConfig);
+      btn.style.padding = "4px 8px";
+      btn.style.fontSize = "11px";
+      btn.style.border = "1px solid rgba(255,255,255,0.1)";
       buttonContainerEl.appendChild(btn);
     });
-    tooltip.appendChild(buttonContainerEl);
+    bottomRow.appendChild(buttonContainerEl);
     const modelSelector = createModelSelector();
-    tooltip.appendChild(modelSelector);
+    modelSelector.style.marginTop = "0";
+    modelSelector.style.paddingTop = "0";
+    modelSelector.style.borderTop = "none";
+    modelSelector.style.flex = "1";
+    modelSelector.style.justifyContent = "flex-end";
+    const label = modelSelector.querySelector("span");
+    if (label) label.style.display = "none";
+    const select = modelSelector.querySelector("select");
+    if (select) {
+      select.style.width = "auto";
+      select.style.minWidth = "80px";
+      select.style.maxWidth = "100px";
+      select.style.padding = "4px 2px";
+      select.style.height = "24px";
+      select.style.background = "#2d2d2d";
+      select.style.border = "1px solid rgba(255,255,255,0.1)";
+    }
+    bottomRow.appendChild(modelSelector);
+    tooltip.appendChild(bottomRow);
     document.body.appendChild(tooltip);
     return tooltip;
   }
@@ -1275,37 +1272,21 @@
   }
   function showInsertOnlyMode() {
     if (!selectionTooltipEl) return;
-    const quickActionsLabel = selectionTooltipEl.querySelector("#ol-ai-quick-actions-label");
-    if (quickActionsLabel) {
-      quickActionsLabel.style.display = "none";
-    }
     const buttonsContainer = selectionTooltipEl.querySelector("#ol-ai-selection-buttons");
     if (buttonsContainer) {
       buttonsContainer.style.display = "none";
     }
-    const modelSelector = selectionTooltipEl.querySelector("#ol-ai-model-selector");
-    if (modelSelector) {
-      modelSelector.style.display = "flex";
-    }
     const inputEl = document.getElementById("ol-ai-custom-input");
     if (inputEl) {
-      inputEl.placeholder = "\u8F93\u5165\u8981\u751F\u6210\u7684\u5185\u5BB9\uFF0C\u5982\uFF1A\u63D2\u5165\u79EF\u5206\u516C\u5F0F...";
+      inputEl.placeholder = "\u8F93\u5165\u8981\u751F\u6210\u7684\u5185\u5BB9...";
     }
     console.log("[OverleafBridge] Switched to insert-only mode");
   }
   function showFullMenuMode() {
     if (!selectionTooltipEl) return;
-    const quickActionsLabel = selectionTooltipEl.querySelector("#ol-ai-quick-actions-label");
-    if (quickActionsLabel) {
-      quickActionsLabel.style.display = "flex";
-    }
     const buttonsContainer = selectionTooltipEl.querySelector("#ol-ai-selection-buttons");
     if (buttonsContainer) {
       buttonsContainer.style.display = "flex";
-    }
-    const modelSelector = selectionTooltipEl.querySelector("#ol-ai-model-selector");
-    if (modelSelector) {
-      modelSelector.style.display = "flex";
     }
     const buttons = selectionTooltipEl.querySelectorAll("#ol-ai-selection-buttons button");
     buttons.forEach(function(btn) {
@@ -1315,7 +1296,7 @@
     });
     const inputEl = document.getElementById("ol-ai-custom-input");
     if (inputEl) {
-      inputEl.placeholder = "\u8F93\u5165\u8981\u6C42\uFF0C\u5982\uFF1A\u7FFB\u8BD1\u6210\u82F1\u6587\u3001\u6DA6\u8272...";
+      inputEl.placeholder = "\u8F93\u5165\u60A8\u7684\u8981\u6C42...";
     }
     console.log("[OverleafBridge] Switched to full menu mode");
   }

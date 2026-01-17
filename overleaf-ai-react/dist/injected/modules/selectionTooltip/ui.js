@@ -6,12 +6,12 @@ import { getEditorView } from '../core/editorView.js';
 import { createModelSelector, getSelectedTextActionModel } from '../modelManagement/models.js';
 import { handleTextActionRequest, handleCustomRequest } from './textActions.js';
 
-// 选区操作按钮配置
+// 选区操作按钮配置 (仿照图片样式)
 const SELECTION_ACTION_BUTTONS = [
-  { id: 'expand',    label: '扩写', icon: '', bgColor: '#10b981', hoverColor: '#059669' },
-  { id: 'condense',  label: '缩写', icon: '', bgColor: '#f59e0b', hoverColor: '#d97706' },
-  { id: 'polish',    label: '润色', icon: '', bgColor: '#3b82f6', hoverColor: '#2563eb' },
-  { id: 'translate', label: '翻译', icon: '', bgColor: '#8b5cf6', hoverColor: '#7c3aed' }
+  { id: 'expand',    label: '扩写', icon: '', bgColor: 'rgba(255,255,255,0.1)', hoverColor: 'rgba(255,255,255,0.2)' },
+  { id: 'condense',  label: '缩写', icon: '', bgColor: 'rgba(255,255,255,0.1)', hoverColor: 'rgba(255,255,255,0.2)' },
+  { id: 'polish',    label: '润色', icon: '', bgColor: 'rgba(255,255,255,0.1)', hoverColor: 'rgba(255,255,255,0.2)' },
+  { id: 'translate', label: '译',   icon: '', bgColor: 'rgba(255,255,255,0.1)', hoverColor: 'rgba(255,255,255,0.2)' }
 ];
 
 let selectionTooltipEl = null;
@@ -127,53 +127,53 @@ function createSelectionTooltip() {
   tooltip.id = 'ol-ai-selection-tooltip';
   tooltip.style.position = 'fixed';
   tooltip.style.zIndex = '9999';
-  tooltip.style.background = 'linear-gradient(135deg, rgba(30, 41, 59, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%)';
+  tooltip.style.background = '#1e1e1e'; // 纯黑背景
   tooltip.style.color = '#e5e7eb';
-  tooltip.style.padding = '10px';
-  tooltip.style.borderRadius = '10px';
+  tooltip.style.padding = '8px';
+  tooltip.style.borderRadius = '8px';
   tooltip.style.fontSize = '12px';
-  tooltip.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255,255,255,0.1)';
+  tooltip.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255,255,255,0.1)';
   tooltip.style.display = 'none';
   tooltip.style.flexDirection = 'column';
   tooltip.style.gap = '8px';
   tooltip.style.backdropFilter = 'blur(10px)';
   tooltip.style.transition = 'left 0.1s ease-out, top 0.1s ease-out, opacity 0.15s ease';
   tooltip.style.opacity = '1';
-  tooltip.style.minWidth = '300px';
+  tooltip.style.minWidth = '320px';
   tooltip.style.maxWidth = '420px';
   
   // 自定义输入区域
   const customInputContainer = document.createElement('div');
   customInputContainer.id = 'ol-ai-custom-input-container';
   customInputContainer.style.display = 'flex';
-  customInputContainer.style.gap = '8px';
+  customInputContainer.style.gap = '6px';
   customInputContainer.style.alignItems = 'stretch';
   
   const customInput = document.createElement('textarea');
   customInput.id = 'ol-ai-custom-input';
-  customInput.placeholder = '输入要求，如：插入积分公式、润色文本...';
+  customInput.placeholder = '输入您的要求...';
   customInput.style.flex = '1';
   customInput.style.padding = '6px 10px';
   customInput.style.fontSize = '12px';
   customInput.style.borderRadius = '6px';
-  customInput.style.border = '1px solid rgba(255,255,255,0.15)';
-  customInput.style.background = 'rgba(15, 23, 42, 0.6)';
+  customInput.style.border = '1px solid #333';
+  customInput.style.background = '#2d2d2d';
   customInput.style.color = '#e5e7eb';
   customInput.style.outline = 'none';
   customInput.style.resize = 'none';
-  customInput.style.height = '28px';
-  customInput.style.minHeight = '28px';
+  customInput.style.height = '32px';
+  customInput.style.minHeight = '32px';
   customInput.style.maxHeight = '60px';
-  customInput.style.lineHeight = '1.3';
+  customInput.style.lineHeight = '1.4';
   customInput.style.fontFamily = 'inherit';
   
   customInput.onfocus = function() {
-    this.style.border = '1px solid rgba(59, 130, 246, 0.5)';
-    this.style.boxShadow = '0 0 0 2px rgba(59, 130, 246, 0.2)';
+    this.style.border = '1px solid #5865f2'; // Discord-like blue
+    this.style.background = '#363636';
   };
   customInput.onblur = function() {
-    this.style.border = '1px solid rgba(255,255,255,0.15)';
-    this.style.boxShadow = 'none';
+    this.style.border = '1px solid #333';
+    this.style.background = '#2d2d2d';
   };
   
   customInput.onkeydown = function(e) {
@@ -188,7 +188,7 @@ function createSelectionTooltip() {
   };
   
   customInput.oninput = function() {
-    this.style.height = '28px';
+    this.style.height = '32px';
     this.style.height = Math.min(this.scrollHeight, 60) + 'px';
   };
   
@@ -196,31 +196,27 @@ function createSelectionTooltip() {
   
   const sendBtn = document.createElement('button');
   sendBtn.id = 'ol-ai-send-btn';
-  sendBtn.innerHTML = '➤';
+  sendBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>';
   sendBtn.title = '发送 (Enter)';
-  sendBtn.style.padding = '0 12px';
-  sendBtn.style.fontSize = '14px';
+  sendBtn.style.width = '32px';
+  sendBtn.style.height = '32px';
+  sendBtn.style.padding = '0';
   sendBtn.style.borderRadius = '6px';
   sendBtn.style.border = 'none';
-  sendBtn.style.background = 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)';
+  sendBtn.style.background = '#5865f2';
   sendBtn.style.color = 'white';
   sendBtn.style.cursor = 'pointer';
   sendBtn.style.transition = 'all 0.2s ease';
-  sendBtn.style.boxShadow = '0 2px 6px rgba(59, 130, 246, 0.3)';
   sendBtn.style.display = 'flex';
   sendBtn.style.alignItems = 'center';
   sendBtn.style.justifyContent = 'center';
-  sendBtn.style.height = '28px';
+  sendBtn.style.flexShrink = '0';
   
   sendBtn.onmouseenter = function() {
-    this.style.background = 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)';
-    this.style.transform = 'translateY(-1px)';
-    this.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.4)';
+    this.style.background = '#4752c4';
   };
   sendBtn.onmouseleave = function() {
-    this.style.background = 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)';
-    this.style.transform = 'translateY(0)';
-    this.style.boxShadow = '0 2px 6px rgba(59, 130, 246, 0.3)';
+    this.style.background = '#5865f2';
   };
   sendBtn.onclick = function(e) {
     e.stopPropagation();
@@ -230,55 +226,59 @@ function createSelectionTooltip() {
   customInputContainer.appendChild(sendBtn);
   tooltip.appendChild(customInputContainer);
   
-  // 分隔线和标签
-  const quickActionsLabel = document.createElement('div');
-  quickActionsLabel.id = 'ol-ai-quick-actions-label';
-  quickActionsLabel.style.display = 'flex';
-  quickActionsLabel.style.alignItems = 'center';
-  quickActionsLabel.style.gap = '8px';
-  quickActionsLabel.style.marginTop = '2px';
-  
-  const labelLine1 = document.createElement('div');
-  labelLine1.style.flex = '1';
-  labelLine1.style.height = '1px';
-  labelLine1.style.background = 'rgba(255,255,255,0.1)';
-  
-  const labelText = document.createElement('span');
-  labelText.textContent = '快捷操作';
-  labelText.style.fontSize = '10px';
-  labelText.style.color = '#9ca3af';
-  labelText.style.textTransform = 'uppercase';
-  labelText.style.letterSpacing = '0.5px';
-  
-  const labelLine2 = document.createElement('div');
-  labelLine2.style.flex = '1';
-  labelLine2.style.height = '1px';
-  labelLine2.style.background = 'rgba(255,255,255,0.1)';
-  
-  quickActionsLabel.appendChild(labelLine1);
-  quickActionsLabel.appendChild(labelText);
-  quickActionsLabel.appendChild(labelLine2);
-  tooltip.appendChild(quickActionsLabel);
+  // 底部行：按钮 + 模型选择器
+  const bottomRow = document.createElement('div');
+  bottomRow.style.display = 'flex';
+  bottomRow.style.gap = '6px';
+  bottomRow.style.alignItems = 'center';
+  bottomRow.style.justifyContent = 'space-between';
   
   // 按钮容器
   buttonContainerEl = document.createElement('div');
   buttonContainerEl.id = 'ol-ai-selection-buttons';
   buttonContainerEl.style.display = 'flex';
-  buttonContainerEl.style.gap = '8px';
-  buttonContainerEl.style.justifyContent = 'center';
-  buttonContainerEl.style.flexWrap = 'wrap';
+  buttonContainerEl.style.gap = '4px';
+  buttonContainerEl.style.flexWrap = 'nowrap';
   buttonContainerEl.style.pointerEvents = 'auto';
   
   SELECTION_ACTION_BUTTONS.forEach(function(btnConfig) {
     const btn = createActionButton(btnConfig);
+    // 调整按钮样式为紧凑型
+    btn.style.padding = '4px 8px';
+    btn.style.fontSize = '11px';
+    btn.style.border = '1px solid rgba(255,255,255,0.1)';
     buttonContainerEl.appendChild(btn);
   });
   
-  tooltip.appendChild(buttonContainerEl);
+  bottomRow.appendChild(buttonContainerEl);
   
   // 模型选择器
   const modelSelector = createModelSelector();
-  tooltip.appendChild(modelSelector);
+  // 调整模型选择器样式以适应底部行
+  modelSelector.style.marginTop = '0';
+  modelSelector.style.paddingTop = '0';
+  modelSelector.style.borderTop = 'none';
+  modelSelector.style.flex = '1';
+  modelSelector.style.justifyContent = 'flex-end';
+  
+  // 尝试隐藏标签，只保留下拉框
+  const label = modelSelector.querySelector('span');
+  if (label) label.style.display = 'none';
+  
+  const select = modelSelector.querySelector('select');
+  if (select) {
+    select.style.width = 'auto';
+    select.style.minWidth = '80px';
+    select.style.maxWidth = '100px';
+    select.style.padding = '4px 2px';
+    select.style.height = '24px';
+    select.style.background = '#2d2d2d';
+    select.style.border = '1px solid rgba(255,255,255,0.1)';
+  }
+  
+  bottomRow.appendChild(modelSelector);
+  
+  tooltip.appendChild(bottomRow);
   
   document.body.appendChild(tooltip);
   return tooltip;
@@ -344,24 +344,16 @@ export function showSelectionTooltipForCurrentSelection() {
 export function showInsertOnlyMode() {
   if (!selectionTooltipEl) return;
   
-  const quickActionsLabel = selectionTooltipEl.querySelector('#ol-ai-quick-actions-label');
-  if (quickActionsLabel) {
-    quickActionsLabel.style.display = 'none';
-  }
-  
+  // 插入模式下不需要隐藏底部行，因为底部行包含模型选择器
+  // 但可能需要隐藏快捷按钮
   const buttonsContainer = selectionTooltipEl.querySelector('#ol-ai-selection-buttons');
   if (buttonsContainer) {
     buttonsContainer.style.display = 'none';
   }
   
-  const modelSelector = selectionTooltipEl.querySelector('#ol-ai-model-selector');
-  if (modelSelector) {
-    modelSelector.style.display = 'flex';
-  }
-  
   const inputEl = document.getElementById('ol-ai-custom-input');
   if (inputEl) {
-    inputEl.placeholder = '输入要生成的内容，如：插入积分公式...';
+    inputEl.placeholder = '输入要生成的内容...';
   }
   
   console.log('[OverleafBridge] Switched to insert-only mode');
@@ -373,19 +365,9 @@ export function showInsertOnlyMode() {
 export function showFullMenuMode() {
   if (!selectionTooltipEl) return;
   
-  const quickActionsLabel = selectionTooltipEl.querySelector('#ol-ai-quick-actions-label');
-  if (quickActionsLabel) {
-    quickActionsLabel.style.display = 'flex';
-  }
-  
   const buttonsContainer = selectionTooltipEl.querySelector('#ol-ai-selection-buttons');
   if (buttonsContainer) {
     buttonsContainer.style.display = 'flex';
-  }
-  
-  const modelSelector = selectionTooltipEl.querySelector('#ol-ai-model-selector');
-  if (modelSelector) {
-    modelSelector.style.display = 'flex';
   }
   
   const buttons = selectionTooltipEl.querySelectorAll('#ol-ai-selection-buttons button');
@@ -397,7 +379,7 @@ export function showFullMenuMode() {
   
   const inputEl = document.getElementById('ol-ai-custom-input');
   if (inputEl) {
-    inputEl.placeholder = '输入要求，如：翻译成英文、润色...';
+    inputEl.placeholder = '输入您的要求...';
   }
   
   console.log('[OverleafBridge] Switched to full menu mode');

@@ -1,3 +1,14 @@
+/**
+ * 工具调用信息（用于从存储恢复工具调用 UI）
+ */
+export interface StoredToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, any>;
+  result?: any;
+  status?: 'pending' | 'approved' | 'rejected' | 'executing' | 'completed' | 'error';
+}
+
 export type ChatMessage = {
   id: string;
   role: 'user' | 'bot';
@@ -13,5 +24,7 @@ export type ChatMessage = {
     collapsed?: boolean;
     toolName?: string;
   };
+  /** 工具调用列表（从存储恢复时使用） */
+  toolCalls?: StoredToolCall[];
 };
 

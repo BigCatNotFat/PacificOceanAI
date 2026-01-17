@@ -31,6 +31,7 @@ interface ExtendedChatMessage extends ChatMessage {
     collapsed?: boolean;
     toolName?: string;
   };
+  // toolCalls 已经在 ChatMessage 中定义，这里继承即可
 }
 
 interface ConversationPaneProps {
@@ -752,73 +753,142 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                 </div>
               )}
 
-              {/* 工具调用 */}
+              {/* 工具调用 - 优先使用流式 buffer，否则使用存储的 toolCalls */}
               {(() => {
                 const buffer = streamingBuffers.get(msg.id);
-                if (!buffer || buffer.toolCalls.size === 0) return null;
                 
-                const visibleTools = Array.from(buffer.toolCalls.entries())
-                  .filter(([_, tc]) => tc.status === 'running' || tc.status === 'completed' || tc.status === 'error');
-                
-                if (visibleTools.length === 0) return null;
-                
-                return visibleTools.map(([toolCallId, toolCall]) => {
-                  const toolMsgId = `${msg.id}:${toolCallId}`;
-                  const canExpand = toolCall.status === 'completed' || toolCall.status === 'error' || toolCall.status === 'running';
-                  const isExpanded = canExpand && !!thinkingStates[toolMsgId];
+                // 优先使用流式 buffer（实时数据）
+                if (buffer && buffer.toolCalls.size > 0) {
+                  const visibleTools = Array.from(buffer.toolCalls.entries())
+                    .filter(([_, tc]) => tc.status === 'running' || tc.status === 'completed' || tc.status === 'error');
+                  
+                  if (visibleTools.length > 0) {
+                    return visibleTools.map(([toolCallId, toolCall]) => {
+                      const toolMsgId = `${msg.id}:${toolCallId}`;
+                      const canExpand = toolCall.status === 'completed' || toolCall.status === 'error' || toolCall.status === 'running';
+                      const isExpanded = canExpand && !!thinkingStates[toolMsgId];
 
-                  let statusLabel = '';
-                  switch (toolCall.status) {
-                    case 'running': statusLabel = '执行中...'; break;
-                    case 'completed': statusLabel = '完成'; break;
-                    case 'error': statusLabel = '失败'; break;
+                      let statusLabel = '';
+                      switch (toolCall.status) {
+                        case 'running': statusLabel = '执行中...'; break;
+                        case 'completed': statusLabel = '完成'; break;
+                        case 'error': statusLabel = '失败'; break;
+                      }
+
+                      const statusClass = toolCall.status === 'running' ? 'running' : 
+                                         toolCall.status === 'error' ? 'error' : '';
+
+                      const friendlyToolName = toolCall.name
+                        ?.replace(/_/g, ' ')
+                        ?.replace(/([A-Z])/g, ' $1')
+                        ?.trim()
+                        ?.toLowerCase() || '工具';
+
+                      return (
+                        <div key={toolCallId} className={`ai-tool-block ${statusClass}`}>
+                          <div
+                            className="ai-tool-header"
+                            onClick={() => {
+                              if (!canExpand) return;
+                              toggleThinking(toolMsgId);
+                            }}
+                            style={{ cursor: canExpand ? 'pointer' : 'default' }}
+                          >
+                            <span className="ai-tool-label">{friendlyToolName}</span>
+                            {statusLabel && <span className="ai-tool-status-label">{statusLabel}</span>}
+                            {canExpand && (
+                              <span className={`material-symbols ai-tool-chevron ${isExpanded ? 'expanded' : ''}`}>
+                                chevron_right
+                              </span>
+                            )}
+                          </div>
+                          {canExpand && isExpanded && (
+                            <div className="ai-tool-content">
+                              {toolCall.status === 'running' ? (
+                                toolCall.args ? (
+                                  <ToolArgsPreview toolName={toolCall.name} args={toolCall.args} />
+                                ) : (
+                                  <div className="tool-result-empty">正在生成工具参数...</div>
+                                )
+                              ) : toolCall.status === 'error' ? (
+                                <ToolResultRenderer toolName={toolCall.name} result={toolCall.result || toolCall.error} />
+                              ) : (
+                                <ToolResultRenderer toolName={toolCall.name} result={toolCall.result} />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    });
                   }
+                }
+                
+                // 没有流式 buffer 时，使用存储的 toolCalls（从历史记录恢复）
+                const extMsg = msg as ExtendedChatMessage;
+                if (extMsg.toolCalls && extMsg.toolCalls.length > 0) {
+                  return extMsg.toolCalls.map((toolCall) => {
+                    const toolMsgId = `${msg.id}:${toolCall.id}`;
+                    // 存储的工具调用默认可展开
+                    const canExpand = true;
+                    const isExpanded = !!thinkingStates[toolMsgId];
 
-                  const statusClass = toolCall.status === 'running' ? 'running' : 
-                                     toolCall.status === 'error' ? 'error' : '';
+                    let statusLabel = '';
+                    switch (toolCall.status) {
+                      case 'completed': statusLabel = '完成'; break;
+                      case 'error': statusLabel = '失败'; break;
+                      case 'pending': statusLabel = '待处理'; break;
+                      case 'executing': statusLabel = '执行中'; break;
+                      default: statusLabel = '完成'; break;
+                    }
 
-                  const friendlyToolName = toolCall.name
-                    ?.replace(/_/g, ' ')
-                    ?.replace(/([A-Z])/g, ' $1')
-                    ?.trim()
-                    ?.toLowerCase() || '工具';
+                    const statusClass = toolCall.status === 'error' ? 'error' : '';
 
-                  return (
-                    <div key={toolCallId} className={`ai-tool-block ${statusClass}`}>
-                      <div
-                        className="ai-tool-header"
-                        onClick={() => {
-                          if (!canExpand) return;
-                          toggleThinking(toolMsgId);
-                        }}
-                        style={{ cursor: canExpand ? 'pointer' : 'default' }}
-                      >
-                        <span className="ai-tool-label">{friendlyToolName}</span>
-                        {statusLabel && <span className="ai-tool-status-label">{statusLabel}</span>}
-                        {canExpand && (
+                    const friendlyToolName = toolCall.name
+                      ?.replace(/_/g, ' ')
+                      ?.replace(/([A-Z])/g, ' $1')
+                      ?.trim()
+                      ?.toLowerCase() || '工具';
+
+                    // 将参数转换为字符串（用于显示）
+                    const argsString = typeof toolCall.arguments === 'string' 
+                      ? toolCall.arguments 
+                      : JSON.stringify(toolCall.arguments || {});
+                    
+                    // 将结果转换为字符串
+                    const resultString = typeof toolCall.result === 'string'
+                      ? toolCall.result
+                      : JSON.stringify(toolCall.result || {});
+
+                    return (
+                      <div key={toolCall.id} className={`ai-tool-block ${statusClass}`}>
+                        <div
+                          className="ai-tool-header"
+                          onClick={() => toggleThinking(toolMsgId)}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <span className="ai-tool-label">{friendlyToolName}</span>
+                          {statusLabel && <span className="ai-tool-status-label">{statusLabel}</span>}
                           <span className={`material-symbols ai-tool-chevron ${isExpanded ? 'expanded' : ''}`}>
                             chevron_right
                           </span>
+                        </div>
+                        {canExpand && isExpanded && (
+                          <div className="ai-tool-content">
+                            {toolCall.status === 'error' ? (
+                              <ToolResultRenderer toolName={toolCall.name} result={resultString} />
+                            ) : toolCall.result ? (
+                              <ToolResultRenderer toolName={toolCall.name} result={resultString} />
+                            ) : (
+                              <ToolArgsPreview toolName={toolCall.name} args={argsString} />
+                            )}
+                          </div>
                         )}
                       </div>
-                      {canExpand && isExpanded && (
-                        <div className="ai-tool-content">
-                          {toolCall.status === 'running' ? (
-                            toolCall.args ? (
-                              <ToolArgsPreview toolName={toolCall.name} args={toolCall.args} />
-                            ) : (
-                              <div className="tool-result-empty">正在生成工具参数...</div>
-                            )
-                          ) : toolCall.status === 'error' ? (
-                            <ToolResultRenderer toolName={toolCall.name} result={toolCall.result || toolCall.error} />
-                          ) : (
-                            <ToolResultRenderer toolName={toolCall.name} result={toolCall.result} />
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                });
+                    );
+                  });
+                }
+                
+                return null;
               })()}
             </div>
           );
