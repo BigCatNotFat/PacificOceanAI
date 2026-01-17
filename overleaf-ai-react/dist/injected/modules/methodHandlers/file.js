@@ -4,7 +4,7 @@
  */
 
 // 创建文件相关的方法处理器
-function createFileHandlers(getEditorView, methodHandlers) {
+export function createFileHandlers(getEditorView, methodHandlers) {
   return {
     // 获取文件信息（行数等元数据）
     getFileInfo: function() {
@@ -133,9 +133,3 @@ function createFileHandlers(getEditorView, methodHandlers) {
     }
   };
 }
-
-// 导出
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createFileHandlers };
-}
-

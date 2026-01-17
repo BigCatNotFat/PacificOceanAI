@@ -4,7 +4,7 @@
  */
 
 // 创建编辑器相关的方法处理器
-function createEditorHandlers(getEditorView) {
+export function createEditorHandlers(getEditorView) {
   return {
     // 在光标位置插入文本（通过 EditorView API）
     insertText: function(text) {
@@ -174,9 +174,3 @@ function createEditorHandlers(getEditorView) {
     }
   };
 }
-
-// 导出
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createEditorHandlers };
-}
-

@@ -4,11 +4,11 @@
  */
 
 // 创建项目相关的方法处理器
-function createProjectHandlers(searchInternal, getProjectId, getAllDocsWithContent) {
+export function createProjectHandlers(searchInternal, getProjectId, getAllDocsWithContent) {
   return {
     // 获取全局搜索
     searchProject: async function(pattern, options) {
-      return await searchInternal(pattern, options, getProjectId, getAllDocsWithContent);
+      return await searchInternal(pattern, options);
     },
 
     // 获取项目文件统计信息（行数、字符数）
@@ -28,9 +28,3 @@ function createProjectHandlers(searchInternal, getProjectId, getAllDocsWithConte
     }
   };
 }
-
-// 导出
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createProjectHandlers };
-}
-

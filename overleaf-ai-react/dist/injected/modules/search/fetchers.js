@@ -3,8 +3,10 @@
  * 负责通过 Overleaf API 获取文件列表、hash、内容等
  */
 
+import { getEditorView } from '../core/editorView.js';
+
 // 通过 entities API 获取文件列表
-async function fetchEntities(projectId) {
+export async function fetchEntities(projectId) {
   try {
     const response = await fetch(`/project/${projectId}/entities`);
     if (!response.ok) {
@@ -19,7 +21,7 @@ async function fetchEntities(projectId) {
 }
 
 // 通过 history API 获取文件 hash 映射
-async function fetchFileHashes(projectId) {
+export async function fetchFileHashes(projectId) {
   try {
     const response = await fetch(`/project/${projectId}/latest/history`);
     if (!response.ok) {
@@ -61,7 +63,7 @@ async function fetchFileHashes(projectId) {
 }
 
 // 通过 blob API 获取文件内容
-async function fetchBlobContent(projectId, hash) {
+export async function fetchBlobContent(projectId, hash) {
   try {
     const response = await fetch(`/project/${projectId}/blob/${hash}`);
     if (!response.ok) {
@@ -75,8 +77,7 @@ async function fetchBlobContent(projectId, hash) {
 }
 
 // 获取所有文档及其内容
-// 注意：这个函数依赖 getEditorView，需要在主文件中传入或通过全局访问
-async function getAllDocsWithContent(projectId, getEditorView) {
+export async function getAllDocsWithContent(projectId) {
   const files = [];
   
   console.log('[OverleafBridge] 使用 entities + history API 获取文件');
@@ -160,14 +161,3 @@ async function getAllDocsWithContent(projectId, getEditorView) {
   console.log(`[OverleafBridge] 成功加载 ${files.length} 个文档内容`);
   return files;
 }
-
-// 导出
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { 
-    fetchEntities, 
-    fetchFileHashes, 
-    fetchBlobContent, 
-    getAllDocsWithContent 
-  };
-}
-

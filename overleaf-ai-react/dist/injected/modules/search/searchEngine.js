@@ -3,8 +3,11 @@
  * 负责搜索逻辑和正则表达式处理
  */
 
+import { getProjectId } from './projectId.js';
+import { getAllDocsWithContent } from './fetchers.js';
+
 // 创建正则表达式
-function createSearchRegex(pattern, options = {}) {
+export function createSearchRegex(pattern, options = {}) {
   const { caseSensitive = false, wholeWord = false, regexp = false } = options;
   
   let regexPattern;
@@ -32,7 +35,7 @@ function createSearchRegex(pattern, options = {}) {
 }
 
 // 搜索单个文件
-function searchInFile(file, regex) {
+export function searchInFile(file, regex) {
   const lines = file.content.split('\n');
   const matches = [];
 
@@ -64,8 +67,7 @@ function searchInFile(file, regex) {
 }
 
 // 主搜索函数
-// 注意：依赖 getProjectId, getAllDocsWithContent
-async function searchInternal(pattern, options = {}, getProjectId, getAllDocsWithContent) {
+export async function searchInternal(pattern, options = {}) {
   const startTime = Date.now();
   
   console.log(`[OverleafBridge] 🔍 正在搜索: "${pattern}"`);
@@ -128,13 +130,3 @@ async function searchInternal(pattern, options = {}, getProjectId, getAllDocsWit
     throw error;
   }
 }
-
-// 导出
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { 
-    createSearchRegex, 
-    searchInFile, 
-    searchInternal 
-  };
-}
-

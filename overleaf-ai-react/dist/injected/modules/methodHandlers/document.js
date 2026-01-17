@@ -4,7 +4,7 @@
  */
 
 // 创建文档相关的方法处理器
-function createDocumentHandlers(getEditorView) {
+export function createDocumentHandlers(getEditorView) {
   return {
     // 获取文档行数
     getDocLines: function() {
@@ -183,9 +183,3 @@ function createDocumentHandlers(getEditorView) {
     }
   };
 }
-
-// 导出
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createDocumentHandlers };
-}
-

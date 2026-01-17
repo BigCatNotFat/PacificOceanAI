@@ -3,7 +3,7 @@
  */
 
 // 获取项目 ID
-function getProjectId() {
+export function getProjectId() {
   const match = window.location.pathname.match(/\/project\/([a-f0-9]+)/);
   if (match) {
     return match[1];
@@ -15,9 +15,3 @@ function getProjectId() {
   }
   throw new Error('无法获取项目 ID');
 }
-
-// 导出
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { getProjectId };
-}
-

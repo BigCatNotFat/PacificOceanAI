@@ -5,7 +5,7 @@
 /**
  * 转义 HTML 特殊字符
  */
-function escapeHtml(text) {
+export function escapeHtml(text) {
   var div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
@@ -14,14 +14,14 @@ function escapeHtml(text) {
 /**
  * 生成唯一 ID
  */
-function generatePreviewId() {
+export function generatePreviewId() {
   return 'preview_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
 /**
  * 获取当前文件名
  */
-function getCurrentFileName() {
+export function getCurrentFileName() {
   try {
     var fileTab = document.querySelector('.file-tree-inner .selected .name');
     if (fileTab) return fileTab.textContent;
@@ -46,9 +46,3 @@ function getCurrentFileName() {
     return 'unknown';
   }
 }
-
-// 导出
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { escapeHtml, generatePreviewId, getCurrentFileName };
-}
-

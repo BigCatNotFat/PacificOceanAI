@@ -1,15 +1,31 @@
 /**
- * 预览系统模块 - 统一导出
- * 注意：此模块包含大量预览UI和流式更新逻辑，将在构建时从原始文件提取完整代码
+ * 预览系统 - 入口
  */
 
-// 注意：完整的overlay、confirmMenu、streamPreview、inlineStatus代码将在构建时添加
-// 这些模块包含数千行代码，需要从原始文件中提取
+import { startStreamPreview, updateStreamPreview, completeStreamPreview, initStreamListeners } from './stream.js';
 
-// 导出
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { 
-    // 导出将在构建时添加
-  };
+export function initPreview() {
+  console.log('[OverleafBridge] Initializing Preview System...');
+  
+  initStreamListeners();
+  
+  // 监听预览相关消息
+  window.addEventListener('message', function(event) {
+    if (event.source !== window) return;
+    
+    const data = event.data;
+    if (!data) return;
+    
+    if (data.type === 'OVERLEAF_STREAM_PREVIEW_START') {
+      console.log('[OverleafBridge] Starting stream preview');
+      startStreamPreview(data.data);
+    }
+    else if (data.type === 'OVERLEAF_STREAM_PREVIEW_UPDATE') {
+      updateStreamPreview(data.data.delta);
+    }
+    else if (data.type === 'OVERLEAF_STREAM_PREVIEW_COMPLETE') {
+      console.log('[OverleafBridge] Stream preview complete');
+      completeStreamPreview(data.data);
+    }
+  });
 }
-

@@ -4,7 +4,7 @@
  */
 
 // 获取 EditorView
-function getEditorView() {
+export function getEditorView() {
   try {
     const overleaf = window.overleaf;
     if (!overleaf || !overleaf.unstable || !overleaf.unstable.store) {
@@ -16,9 +16,3 @@ function getEditorView() {
     return null;
   }
 }
-
-// 导出
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { getEditorView };
-}
-

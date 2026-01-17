@@ -3,20 +3,19 @@
  * 组合所有方法处理器为完整的 methodHandlers 对象
  */
 
+import { createDocumentHandlers } from './document.js';
+import { createEditorHandlers } from './editor.js';
+import { createFileHandlers } from './file.js';
+import { createProjectHandlers } from './project.js';
+
 // 创建完整的方法处理器对象
-function createMethodHandlers(dependencies) {
+export function createMethodHandlers(dependencies) {
   const { 
     getEditorView, 
     searchInternal, 
     getProjectId, 
     getAllDocsWithContent 
   } = dependencies;
-  
-  // 导入各个模块的处理器
-  const { createDocumentHandlers } = require('./document.js');
-  const { createEditorHandlers } = require('./editor.js');
-  const { createFileHandlers } = require('./file.js');
-  const { createProjectHandlers } = require('./project.js');
   
   // 创建一个空对象来存储所有方法
   const methodHandlers = {};
@@ -39,9 +38,3 @@ function createMethodHandlers(dependencies) {
   
   return methodHandlers;
 }
-
-// 导出
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { createMethodHandlers };
-}
-
