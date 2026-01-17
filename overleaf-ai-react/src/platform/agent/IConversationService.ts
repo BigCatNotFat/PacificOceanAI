@@ -133,6 +133,15 @@ export interface IConversationService {
    */
   autoGenerateName(conversationId: string, userMessage: string): Promise<void>;
 
+  /**
+   * 创建对话分支
+   * 复制指定对话的所有消息到一个新对话中
+   * @param conversationId - 源对话 ID
+   * @param upToMessageId - 可选，复制到指定消息为止（包含该消息）
+   * @returns 新分支对话的 ID
+   */
+  branchConversation(conversationId: string, upToMessageId?: string): Promise<string>;
+
   // ==================== 事件 ====================
 
   /**

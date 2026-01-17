@@ -124,7 +124,18 @@ export function useChatMessages(conversationId: string, initialMessages: ChatMes
   // 订阅消息更新事件，只处理匹配的 conversationId
   useEffect(() => {
     // 切换会话时必须覆盖旧状态：新会话可能还没有任何消息（空数组也要写回）
-    setServiceMessages(chatService.getMessages(conversationId));
+    const existingMessages = chatService.getMessages(conversationId);
+    setServiceMessages(existingMessages);
+    
+    // 如果当前 session 没有消息，尝试从 ConversationService 加载
+    // 这对于多列对话场景很重要，比如打开分支对话时需要加载已有消息
+    if (existingMessages.length === 0 && conversationId) {
+      chatService.loadConversationMessages(conversationId).then((loadedMessages) => {
+        if (loadedMessages.length > 0) {
+          setServiceMessages(loadedMessages);
+        }
+      });
+    }
 
     const disposable = chatService.onDidMessageUpdate((event: MessageUpdateEvent) => {
       if (event.conversationId === conversationId) {

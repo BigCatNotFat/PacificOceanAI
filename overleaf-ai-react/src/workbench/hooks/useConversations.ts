@@ -29,6 +29,8 @@ export interface UseConversationsResult {
   deleteConversation: (conversationId: string) => Promise<void>;
   /** 清空所有对话 */
   clearAllConversations: () => Promise<void>;
+  /** 创建对话分支 */
+  branchConversation: (conversationId: string, upToMessageId?: string) => Promise<string>;
 }
 
 /**
@@ -104,6 +106,12 @@ export function useConversations(): UseConversationsResult {
     await conversationService.clearAllConversations();
   }, [conversationService]);
 
+  // 创建对话分支
+  const branchConversation = useCallback(async (conversationId: string, upToMessageId?: string): Promise<string> => {
+    const newId = await conversationService.branchConversation(conversationId, upToMessageId);
+    return newId;
+  }, [conversationService]);
+
   return {
     conversations,
     currentConversationId,
@@ -112,7 +120,8 @@ export function useConversations(): UseConversationsResult {
     switchConversation,
     renameConversation,
     deleteConversation,
-    clearAllConversations
+    clearAllConversations,
+    branchConversation
   };
 }
 

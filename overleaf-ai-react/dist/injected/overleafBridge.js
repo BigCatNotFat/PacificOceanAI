@@ -9,7 +9,7 @@
  *   - methodHandlers/: API 方法处理器
  *   - modelManagement/: 模型管理模块
  * 
- * 构建时间: 2026-01-16T06:19:22.135Z
+ * 构建时间: 2026-01-17T02:26:25.548Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建策略: 智能合并（main.js + legacy.js）
  * 
@@ -907,7 +907,7 @@ console.log('[OverleafBridge] Modular architecture initialized');
 
 
 
-/**
+﻿/**
  * Legacy UI Modules
  * 包含选区工具提示、预览系统、Diff 建议系统的完整代码
  * 

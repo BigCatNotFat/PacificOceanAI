@@ -500,6 +500,54 @@ export class ChatService implements IChatService {
   }
 
   /**
+   * 加载指定对话的消息到 session 中
+   * 用于多列对话场景，当打开一个新的对话时需要主动加载消息
+   */
+  async loadConversationMessages(conversationId: string): Promise<ChatMessage[]> {
+    console.log('[ChatService] 加载对话消息:', conversationId);
+    
+    // 检查是否已经有消息（避免重复加载）
+    const existingSession = this.sessions.get(conversationId);
+    if (existingSession && existingSession.messages.length > 0) {
+      console.log('[ChatService] 对话已有消息，跳过加载:', conversationId);
+      return existingSession.messages;
+    }
+    
+    try {
+      // 从 ConversationService 加载对话
+      const conversation = await this.conversationService.loadConversation(conversationId);
+      
+      if (!conversation) {
+        console.warn('[ChatService] 对话不存在:', conversationId);
+        return [];
+      }
+      
+      // 获取或创建 session
+      const session = this.getOrCreateSession(conversationId);
+      
+      // 加载消息到 session
+      session.messages = conversation.messages;
+      session.messageIdCounter = conversation.messages.length;
+      
+      console.log('[ChatService] 对话消息加载成功:', {
+        conversationId,
+        messageCount: session.messages.length
+      });
+      
+      // 触发更新事件
+      this._onDidMessageUpdate.fire({
+        conversationId,
+        messages: [...session.messages]
+      });
+      
+      return session.messages;
+    } catch (error) {
+      console.error('[ChatService] 加载对话消息失败:', error);
+      return [];
+    }
+  }
+
+  /**
    * 检查指定会话是否正在生成
    */
   isProcessing(conversationId: string): boolean {

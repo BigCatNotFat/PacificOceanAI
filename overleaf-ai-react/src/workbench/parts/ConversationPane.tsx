@@ -44,6 +44,8 @@ interface ConversationPaneProps {
   onClose?: () => void;
   /** 是否是紧凑模式（多列时使用） */
   compact?: boolean;
+  /** 在新列中打开分支对话的回调 */
+  onBranchInNewPane?: (branchConversationId: string) => void;
 }
 
 // ==================== 辅助函数 ====================
@@ -173,7 +175,8 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   onConversationChange,
   showCloseButton = false,
   onClose,
-  compact = false
+  compact = false,
+  onBranchInNewPane
 }) => {
   const chatHistoryRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<RichTextInputHandle | null>(null);
@@ -201,7 +204,8 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   const {
     conversations,
     createConversation,
-    switchConversation
+    switchConversation,
+    branchConversation
   } = useConversations();
 
   // 加载可用模型列表
@@ -403,6 +407,26 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
       console.error('[ConversationPane] 复制失败:', error);
     }
   }, []);
+
+  // 创建对话分支
+  const handleBranchConversation = useCallback(async (upToMessageId?: string) => {
+    if (!conversationId) return;
+    
+    try {
+      const branchId = await branchConversation(conversationId, upToMessageId);
+      console.log('[ConversationPane] 创建分支成功:', branchId);
+      
+      // 如果提供了 onBranchInNewPane 回调，在新列中打开分支
+      if (onBranchInNewPane) {
+        onBranchInNewPane(branchId);
+      } else {
+        // 否则切换到分支对话
+        onConversationChange(branchId);
+      }
+    } catch (error) {
+      console.error('[ConversationPane] 创建分支失败:', error);
+    }
+  }, [conversationId, branchConversation, onBranchInNewPane, onConversationChange]);
 
   // 渲染内联代码
   const renderInlineCode = (text: string) => {
@@ -648,6 +672,15 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                         >
                           <span className="material-symbols">
                             {copiedMessageId === msg.id ? 'check' : 'content_copy'}
+                          </span>
+                        </button>
+                        <button
+                          className="ai-branch-btn"
+                          onClick={() => handleBranchConversation(msg.id)}
+                          title="从此处新建分支"
+                        >
+                          <span className="material-symbols">
+                            call_split
                           </span>
                         </button>
                       </div>

@@ -301,6 +301,31 @@
   font-weight: 500;
 }
 
+/* 分支按钮 */
+.ai-branch-btn {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 10px;
+  transition: all 0.15s ease;
+  margin-left: 4px;
+}
+
+.ai-branch-btn:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--accent-primary);
+}
+
+.ai-branch-btn .material-symbols {
+  font-size: 12px;
+}
+
 /* 内联代码 */
 .inline-code {
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;

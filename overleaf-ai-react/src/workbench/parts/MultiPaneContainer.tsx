@@ -31,6 +31,8 @@ export interface MultiPaneContainerHandle {
   removePane: (paneId: string) => void;
   setColumnCount: (count: number) => void;
   getColumnCount: () => number;
+  /** 在新列中打开指定对话 */
+  openInNewPane: (conversationId: string) => void;
 }
 
 /**
@@ -51,14 +53,22 @@ const MultiPaneContainer = forwardRef<MultiPaneContainerHandle, MultiPaneContain
     ]);
 
     // 当外部当前对话改变时，更新第一个 pane（仅在单列模式下）
+    // 使用 setState 回调确保访问到最新的 panes 状态，避免闭包导致的竞态问题
     useEffect(() => {
-      if (panes.length === 1 && currentConversationId && panes[0].conversationId !== currentConversationId) {
-        setPanes(prev => [{
+      if (!currentConversationId) return;
+      
+      setPanes(prev => {
+        // 只在单列模式下同步全局当前对话
+        // 多列模式下，每个 pane 独立管理自己的对话，不受全局状态影响
+        if (prev.length !== 1) return prev;
+        if (prev[0].conversationId === currentConversationId) return prev;
+        
+        return [{
           ...prev[0],
           conversationId: currentConversationId
-        }]);
-      }
-    }, [currentConversationId, panes.length]);
+        }];
+      });
+    }, [currentConversationId]);
 
     // 通知列数变化
     useEffect(() => {
@@ -145,13 +155,24 @@ const MultiPaneContainer = forwardRef<MultiPaneContainerHandle, MultiPaneContain
       }
     }, [panes, conversations, createConversation]);
 
+    /**
+     * 在新列中打开指定对话
+     */
+    const openInNewPane = useCallback((conversationId: string) => {
+      setPanes(prev => [
+        ...prev,
+        { id: generatePaneId(), conversationId }
+      ]);
+    }, []);
+
     // 暴露控制方法给父组件
     useImperativeHandle(ref, () => ({
       addPane,
       removePane,
       setColumnCount,
-      getColumnCount: () => panes.length
-    }), [addPane, removePane, setColumnCount, panes.length]);
+      getColumnCount: () => panes.length,
+      openInNewPane
+    }), [addPane, removePane, setColumnCount, panes.length, openInNewPane]);
 
     return (
       <div className="multi-pane-container">
@@ -164,6 +185,7 @@ const MultiPaneContainer = forwardRef<MultiPaneContainerHandle, MultiPaneContain
               showCloseButton={panes.length > 1}
               onClose={() => removePane(pane.id)}
               compact={panes.length > 1}
+              onBranchInNewPane={openInNewPane}
             />
           </React.Fragment>
         ))}

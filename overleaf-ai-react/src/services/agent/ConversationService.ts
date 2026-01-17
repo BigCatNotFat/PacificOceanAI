@@ -508,6 +508,93 @@ export class ConversationService extends Disposable implements IConversationServ
     await this.renameConversation(conversationId, name);
   }
 
+  /**
+   * 创建对话分支
+   * 复制指定对话的所有消息到一个新对话中
+   */
+  async branchConversation(conversationId: string, upToMessageId?: string): Promise<string> {
+    try {
+      // 加载源对话
+      const sourceConversation = await this.loadConversation(conversationId);
+      if (!sourceConversation) {
+        throw new Error(`源对话不存在: ${conversationId}`);
+      }
+
+      // 确定要复制的消息
+      let messagesToCopy = [...sourceConversation.messages];
+      
+      if (upToMessageId) {
+        // 找到指定消息的索引
+        const messageIndex = messagesToCopy.findIndex(m => m.id === upToMessageId);
+        if (messageIndex !== -1) {
+          // 只复制到指定消息为止（包含该消息）
+          messagesToCopy = messagesToCopy.slice(0, messageIndex + 1);
+        }
+      }
+
+      // 为复制的消息生成新的 ID，避免 ID 冲突
+      const copiedMessages = messagesToCopy.map(msg => ({
+        ...msg,
+        id: `${msg.id}_branch_${Date.now()}`
+      }));
+
+      // 生成分支名称
+      const branchName = `${sourceConversation.name} branch`;
+
+      // 创建新对话
+      const newId = this.generateId();
+      const now = Date.now();
+      
+      const newConversation: Conversation = {
+        id: newId,
+        name: branchName,
+        createdAt: now,
+        updatedAt: now,
+        messageCount: copiedMessages.length,
+        messages: copiedMessages,
+        previewText: sourceConversation.previewText
+      };
+
+      // 直接持久化新对话（因为已经有消息了）
+      await this.storageService.set(
+        `${STORAGE_KEYS.CONVERSATION_PREFIX}${newId}`,
+        newConversation
+      );
+
+      // 更新索引
+      const list = await this.getConversationList();
+      const meta: ConversationMeta = {
+        id: newConversation.id,
+        name: newConversation.name,
+        createdAt: newConversation.createdAt,
+        updatedAt: newConversation.updatedAt,
+        messageCount: newConversation.messageCount,
+        previewText: newConversation.previewText
+      };
+      
+      list.unshift(meta);
+      await this.storageService.set(STORAGE_KEYS.INDEX, list);
+      this._conversationsCache = list;
+
+      // 触发列表更新事件
+      this._onDidConversationListChange.fire({
+        conversations: list,
+        currentId: this._currentConversationId
+      });
+
+      console.log('[ConversationService] 创建对话分支:', {
+        sourceId: conversationId,
+        newId,
+        messageCount: copiedMessages.length
+      });
+
+      return newId;
+    } catch (error) {
+      console.error('[ConversationService] 创建对话分支失败:', error);
+      throw error;
+    }
+  }
+
   // ==================== 私有方法 ====================
 
   /**

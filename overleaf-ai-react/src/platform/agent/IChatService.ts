@@ -161,6 +161,14 @@ export interface IChatService {
   getMessages(conversationId: string): ChatMessage[];
 
   /**
+   * 加载指定对话的消息到 session 中
+   * 用于多列对话场景，当打开一个新的对话时需要主动加载消息
+   * @param conversationId - 会话 ID
+   * @returns 加载后的消息列表
+   */
+  loadConversationMessages(conversationId: string): Promise<ChatMessage[]>;
+
+  /**
    * 检查指定会话是否正在生成
    * @param conversationId - 会话 ID
    * @returns 是否正在生成
