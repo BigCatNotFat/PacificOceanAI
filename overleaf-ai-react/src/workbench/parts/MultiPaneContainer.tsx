@@ -45,7 +45,7 @@ function generatePaneId(): string {
 
 const MultiPaneContainer = forwardRef<MultiPaneContainerHandle, MultiPaneContainerProps>(
   ({ onColumnCountChange }, ref) => {
-    const { conversations, currentConversationId, createConversation } = useConversations();
+    const { conversations, currentConversationId } = useConversations();
     
     // 初始化时使用当前对话，如果没有则使用空字符串（等待创建）
     const [panes, setPanes] = useState<PaneState[]>(() => [
@@ -77,27 +77,23 @@ const MultiPaneContainer = forwardRef<MultiPaneContainerHandle, MultiPaneContain
 
     /**
      * 添加一列
+     * 
+     * 新列默认显示空白对话界面（草稿模式）。
+     * 只有当用户发送第一条消息时，对话才会被创建并出现在列表中。
      */
-    const addPane = useCallback(async () => {
-      // 为新列创建一个新对话或使用最新的对话
-      let newConversationId = '';
-      
-      // 尝试使用一个不在当前显示中的对话
-      const usedConversationIds = new Set(panes.map(p => p.conversationId));
+    const addPane = useCallback(() => {
+      // 尝试使用一个不在当前显示中的历史对话
+      const usedConversationIds = new Set(panes.map(p => p.conversationId).filter(Boolean));
       const availableConversation = conversations.find(c => !usedConversationIds.has(c.id));
       
-      if (availableConversation) {
-        newConversationId = availableConversation.id;
-      } else {
-        // 创建新对话
-        newConversationId = await createConversation();
-      }
+      // 如果有可用的历史对话就使用，否则使用空字符串（草稿模式）
+      const newConversationId = availableConversation?.id || '';
       
       setPanes(prev => [
         ...prev,
         { id: generatePaneId(), conversationId: newConversationId }
       ]);
-    }, [panes, conversations, createConversation]);
+    }, [panes, conversations]);
 
     /**
      * 移除一列
@@ -120,8 +116,11 @@ const MultiPaneContainer = forwardRef<MultiPaneContainerHandle, MultiPaneContain
 
     /**
      * 设置列数
+     * 
+     * 新增的列默认显示空白对话界面（草稿模式）。
+     * 只有当用户发送第一条消息时，对话才会被创建并出现在列表中。
      */
-    const setColumnCount = useCallback(async (count: number) => {
+    const setColumnCount = useCallback((count: number) => {
       if (count < 1) return;
       
       const currentCount = panes.length;
@@ -129,19 +128,18 @@ const MultiPaneContainer = forwardRef<MultiPaneContainerHandle, MultiPaneContain
       if (count > currentCount) {
         // 需要增加列
         const newPanes: PaneState[] = [...panes];
-        const usedConversationIds = new Set(panes.map(p => p.conversationId));
+        const usedConversationIds = new Set(
+          panes.map(p => p.conversationId).filter(Boolean)
+        );
         
         for (let i = currentCount; i < count; i++) {
-          // 尝试使用未显示的对话
+          // 尝试使用未显示的历史对话
           const availableConversation = conversations.find(c => !usedConversationIds.has(c.id));
-          let newConversationId = '';
           
-          if (availableConversation) {
-            newConversationId = availableConversation.id;
-            usedConversationIds.add(newConversationId);
-          } else {
-            // 创建新对话
-            newConversationId = await createConversation();
+          // 如果有可用的历史对话就使用，否则使用空字符串（草稿模式）
+          const newConversationId = availableConversation?.id || '';
+          
+          if (newConversationId) {
             usedConversationIds.add(newConversationId);
           }
           
@@ -153,7 +151,7 @@ const MultiPaneContainer = forwardRef<MultiPaneContainerHandle, MultiPaneContain
         // 需要减少列（从右边移除）
         setPanes(prev => prev.slice(0, count));
       }
-    }, [panes, conversations, createConversation]);
+    }, [panes, conversations]);
 
     /**
      * 在新列中打开指定对话
