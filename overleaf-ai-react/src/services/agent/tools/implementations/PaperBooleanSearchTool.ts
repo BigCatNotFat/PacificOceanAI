@@ -1,5 +1,6 @@
 import { BaseTool } from '../base/BaseTool';
 import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
+import { API_ENDPOINTS } from '../../../../base/common/apiConfig';
 
 /**
  * 论文布尔搜索接口参数
@@ -64,7 +65,7 @@ interface PaperBooleanSearchResponse {
  * 使用布尔逻辑对论文标题和摘要执行精确搜索
  */
 export class PaperBooleanSearchTool extends BaseTool {
-  private readonly API_URL = 'https://api.silicondream.top/api/paper_boolean_search';
+  private readonly API_URL = API_ENDPOINTS.PAPER_BOOLEAN_SEARCH;
 
   protected metadata: ToolMetadata = {
     name: 'paper_boolean_search',

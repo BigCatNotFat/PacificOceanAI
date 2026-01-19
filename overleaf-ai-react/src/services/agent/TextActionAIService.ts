@@ -29,6 +29,8 @@ import { IModelRegistryServiceId } from '../../platform/llm/IModelRegistryServic
 import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
 import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
 import { Disposable } from '../../base/common/disposable';
+import type { ITelemetryService } from '../../platform/telemetry/ITelemetryService';
+import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService';
 
 /**
  * 文本操作专用的消息 ID 前缀
@@ -43,7 +45,8 @@ const TEXT_ACTION_MESSAGE_PREFIX = 'text_action_';
   IPromptServiceId,
   IConfigurationServiceId,
   IModelRegistryServiceId,
-  IUIStreamServiceId
+  IUIStreamServiceId,
+  ITelemetryServiceId
 )
 export class TextActionAIService extends Disposable implements ITextActionAIService {
   /** 当前操作的流式回调 */
@@ -62,7 +65,8 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
     private readonly promptService: IPromptService,
     private readonly configService: IConfigurationService,
     private readonly modelRegistry: IModelRegistryService,
-    private readonly uiStreamService: IUIStreamService
+    private readonly uiStreamService: IUIStreamService,
+    private readonly telemetryService: ITelemetryService
   ) {
     super();
     console.log('[TextActionAIService] 依赖注入成功');
@@ -130,6 +134,9 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
       console.log(`[TextActionAIService] 操作完成: ${action}`, {
         resultLength: resultText.length
       });
+
+      // 统计埋点：记录文本操作使用
+      this.telemetryService.trackTextActionUsed(action);
 
       return {
         success: true,

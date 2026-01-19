@@ -41,7 +41,7 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
   const [showDecisionToast, setShowDecisionToast] = useState(false);
   const [decisionAccepted, setDecisionAccepted] = useState<boolean | null>(null);
   
-  // 获取 TextActionAI 服务
+  // 获取服务
   const textActionAIService = useService<ITextActionAIService>(ITextActionAIServiceId);
   const configService = useService<IConfigurationService>(IConfigurationServiceId);
   
@@ -261,6 +261,9 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
     if (previewDecision) {
       setDecisionAccepted(previewDecision.accepted);
       setShowDecisionToast(true);
+      
+      // 统计埋点：已移至 DiffSuggestionService.handleTextActionDecision
+      // 通过 OVERLEAF_TEXT_ACTION_DECISION 消息统一处理
       
       // 注意：多任务并行模式下，用户拒绝一个预览不应影响其他预览
       // 如果需要取消特定预览，应该通过 previewId 发送 OVERLEAF_STREAM_CANCEL 消息

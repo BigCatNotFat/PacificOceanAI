@@ -11,6 +11,7 @@ import type {
   ConnectivityTestResult,
   ConfigurationChangeEvent
 } from '../../platform/configuration/configuration';
+import { API_ENDPOINTS } from '../../base/common/apiConfig';
 
 /**
  * 配置服务实现
@@ -131,7 +132,7 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
   getDefaultConfig(): APIConfig {
     return {
       apiKey: '',
-      baseUrl: 'https://api.silicondream.top/v1',
+      baseUrl: API_ENDPOINTS.LLM_BASE_URL,
       models: [],
       isVerified: false,
       createdAt: Date.now(),
@@ -155,7 +156,7 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
       // 强制使用固定的 Base URL
       return {
         ...config,
-        baseUrl: 'https://api.silicondream.top/v1'
+        baseUrl: API_ENDPOINTS.LLM_BASE_URL
       };
     } catch (error) {
       console.error('[ConfigurationService] Failed to get API config:', error);

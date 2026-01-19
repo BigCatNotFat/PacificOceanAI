@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-01-19T06:59:03.655Z
+ * 构建时间: 2026-01-19T09:44:42.566Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */
@@ -2083,15 +2083,39 @@
     };
     const currentPreview = preview;
     const currentPreviewId = previewId;
+    const createDecisionCallbacks = function(action) {
+      return {
+        onAccept: function() {
+          window.postMessage({
+            type: "OVERLEAF_TEXT_ACTION_DECISION",
+            data: {
+              action,
+              accepted: true
+            }
+          }, "*");
+        },
+        onReject: function() {
+          window.postMessage({
+            type: "OVERLEAF_TEXT_ACTION_DECISION",
+            data: {
+              action,
+              accepted: false
+            }
+          }, "*");
+        }
+      };
+    };
     waitForDiffAPI(function() {
       try {
         let suggestionId = null;
+        const callbacks = createDecisionCallbacks(currentPreview.action);
         if (currentPreview.isInsertMode) {
           suggestionId = window.diffAPI.suggestSegmentWithId(
             "text-action-" + currentPreview.id,
             currentPreview.from,
             currentPreview.to,
-            newText
+            newText,
+            callbacks
           );
         } else if (currentPreview.isFullLine) {
           const lineRange = currentPreview.lineRange;
@@ -2099,14 +2123,16 @@
             "text-action-" + currentPreview.id,
             lineRange.startLine,
             lineRange.endLine,
-            newText
+            newText,
+            callbacks
           );
         } else {
           suggestionId = window.diffAPI.suggestSegmentWithId(
             "text-action-" + currentPreview.id,
             currentPreview.from,
             currentPreview.to,
-            newText
+            newText,
+            callbacks
           );
         }
         currentPreview.suggestionId = suggestionId;
@@ -2115,7 +2141,9 @@
           "previewId:",
           currentPreviewId,
           "suggestionId:",
-          suggestionId
+          suggestionId,
+          "action:",
+          currentPreview.action
         );
         previewsMap.delete(currentPreviewId);
       } catch (e) {

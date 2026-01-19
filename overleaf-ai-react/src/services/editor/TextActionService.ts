@@ -31,6 +31,7 @@ export type TextActionHandler = (
 /** 预览决策结果 */
 export interface PreviewDecisionEvent {
   id: string;
+  action: TextActionType;
   accepted: boolean;
   success: boolean;
 }
@@ -167,9 +168,10 @@ export class TextActionService extends Disposable {
       const decisionData = data.data;
       console.log('[TextActionService] 收到预览决策结果:', decisionData.accepted ? '接受' : '拒绝');
       
-      // 触发预览决策事件
+      // 触发预览决策事件（包含 action 信息）
       this._onPreviewDecision.fire({
         id: decisionData.id,
+        action: this.currentPreview?.action || 'custom', // 从 currentPreview 获取 action
         accepted: decisionData.accepted,
         success: decisionData.success
       });

@@ -1,6 +1,6 @@
-
 import { BaseTool } from '../base/BaseTool';
 import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
+import { API_ENDPOINTS } from '../../../../base/common/apiConfig';
 
 /**
  * 论文语义搜索接口参数
@@ -63,7 +63,7 @@ interface PaperSemanticSearchResponse {
  * 基于自然语言查询执行学术论文的语义搜索，按相关性排序结果
  */
 export class PaperSemanticSearchTool extends BaseTool {
-  private readonly API_URL = 'https://api.silicondream.top/api/paper_semantic_search';
+  private readonly API_URL = API_ENDPOINTS.PAPER_SEMANTIC_SEARCH;
 
   protected metadata: ToolMetadata = {
     name: 'paper_semantic_search',

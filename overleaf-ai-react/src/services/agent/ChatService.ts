@@ -33,6 +33,8 @@ import type { IConversationService } from '../../platform/agent/IConversationSer
 import { IConversationServiceId } from '../../platform/agent/IConversationService';
 import type { IPromptService } from '../../platform/agent/IPromptService';
 import { IPromptServiceId } from '../../platform/agent/IPromptService';
+import type { ITelemetryService } from '../../platform/telemetry/ITelemetryService';
+import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService';
 
 /**
  * 单个会话的状态
@@ -54,12 +56,14 @@ interface SessionState {
   currentTurnStartIndex?: number;
   /** 保存消息的防抖计时器 */
   saveDebounceTimer?: ReturnType<typeof setTimeout>;
+  /** 工具调用 ID -> 工具名称的映射（用于统计） */
+  toolCallIdToNameMap?: Map<string, string>;
 }
 
 /**
  * ChatService 实现 - 支持多会话并行
  */
-@injectable(IAgentServiceId, IConversationServiceId, IPromptServiceId)
+@injectable(IAgentServiceId, IConversationServiceId, IPromptServiceId, ITelemetryServiceId)
 export class ChatService implements IChatService {
   // ==================== 事件发射器 ====================
   private readonly _onDidMessageUpdate = new Emitter<MessageUpdateEvent>();
@@ -76,12 +80,14 @@ export class ChatService implements IChatService {
   constructor(
     private readonly agentService: IAgentService,
     private readonly conversationService: IConversationService,
-    private readonly promptService: IPromptService
+    private readonly promptService: IPromptService,
+    private readonly telemetryService: ITelemetryService
   ) {
     console.log('[ChatService] 依赖注入成功', {
       hasAgentService: !!agentService,
       hasConversationService: !!conversationService,
-      hasPromptService: !!promptService
+      hasPromptService: !!promptService,
+      hasTelemetryService: !!telemetryService
     });
 
     // 监听对话切换事件，加载对应对话的消息到 session
@@ -287,6 +293,9 @@ export class ChatService implements IChatService {
         assistantPlaceholderId: assistantPlaceholder.id
       });
 
+      // 统计埋点：记录用户发送消息
+      this.telemetryService.trackChat(options.modelId, options.mode);
+
       // 生成列表二：历史上下文视图
       const contextList = this.buildContextList(session.messages);
 
@@ -374,6 +383,13 @@ export class ChatService implements IChatService {
           return;
         }
         console.log(`[ChatService] 会话 ${conversationId} 工具调用待审批:`, event);
+        
+        // 记录 toolCallId -> toolName 映射（用于统计）
+        if (!session.toolCallIdToNameMap) {
+          session.toolCallIdToNameMap = new Map();
+        }
+        session.toolCallIdToNameMap.set(event.id, event.toolName);
+        
         this._onDidToolCallPending.fire(event);
       });
 
@@ -452,6 +468,10 @@ export class ChatService implements IChatService {
 
     console.log(`[ChatService] 会话 ${conversationId} 批准工具调用:`, toolCallId);
     
+    // 统计埋点：记录用户批准工具调用
+    const toolName = session.toolCallIdToNameMap?.get(toolCallId) || 'unknown';
+    this.telemetryService.trackToolApproval(toolName, true);
+    
     try {
       await session.currentLoop.approveToolCall(toolCallId);
     } catch (error) {
@@ -478,6 +498,10 @@ export class ChatService implements IChatService {
     }
 
     console.log(`[ChatService] 会话 ${conversationId} 拒绝工具调用:`, toolCallId);
+    
+    // 统计埋点：记录用户拒绝工具调用
+    const toolName = session.toolCallIdToNameMap?.get(toolCallId) || 'unknown';
+    this.telemetryService.trackToolApproval(toolName, false);
     
     await session.currentLoop.rejectToolCall(toolCallId);
     

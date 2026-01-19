@@ -312,6 +312,7 @@ Examples:
         // 准备建议输入
         suggestionInputs.push({
           toolCallId,
+          toolName: 'replace_lines', // 添加工具名，用于统计
           targetFile: targetBaseName,
           startLine: start_line,
           endLine: end_line,

@@ -18,6 +18,8 @@ import type {
   CreateSegmentSuggestionInput,
   SuggestionResolvedEvent
 } from '../../platform/editor/IDiffSuggestionService';
+import type { ITelemetryService } from '../../platform/telemetry/ITelemetryService';
+import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService';
 
 /**
  * DiffSuggestionService 实现
@@ -38,6 +40,9 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
   /** 建议决策事件发射器 */
   private readonly _onSuggestionResolved = new Emitter<SuggestionResolvedEvent>();
   readonly onSuggestionResolved: Event<SuggestionResolvedEvent> = this._onSuggestionResolved.event;
+
+  /** 统计服务（延迟注入） */
+  private telemetryService: ITelemetryService | null = null;
   
   private constructor() {
     super();
@@ -50,6 +55,13 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       DiffSuggestionService.instance = new DiffSuggestionService();
     }
     return DiffSuggestionService.instance;
+  }
+
+  /**
+   * 设置统计服务（手动注入）
+   */
+  setTelemetryService(service: ITelemetryService): void {
+    this.telemetryService = service;
   }
   
   /**
@@ -69,13 +81,34 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       const data = event.data;
       if (!data) return;
       
-      // 处理建议决策消息
+      // 处理建议决策消息（工具调用的 diff 建议）
       if (data.type === 'DIFF_SUGGESTION_RESOLVED') {
         this.handleSuggestionResolved(data.data);
+      }
+      
+      // 处理文本操作决策消息（expand, translate 等的 diff 建议）
+      if (data.type === 'OVERLEAF_TEXT_ACTION_DECISION') {
+        this.handleTextActionDecision(data.data);
       }
     };
     
     window.addEventListener('message', this.messageListener);
+  }
+  
+  /**
+   * 处理文本操作决策结果
+   * 用于统计 expand, translate, polish 等操作的接受/拒绝
+   */
+  private handleTextActionDecision(data: {
+    action: string;
+    accepted: boolean;
+  }): void {
+    console.log(`[DiffSuggestionService] 文本操作 ${data.action} 被${data.accepted ? '接受' : '拒绝'}`);
+    
+    // 统计埋点：记录文本操作决策
+    if (this.telemetryService) {
+      this.telemetryService.trackTextActionDecision(data.action, data.accepted);
+    }
   }
   
   /**
@@ -88,7 +121,17 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
     newContent?: string;
   }): void {
     const suggestion = this.suggestions.get(data.id);
+    
+    // 检查是否是文本操作的建议（ID 以 text-action- 开头）
+    // 这些建议是通过 diffAPI 直接创建的，不在 DiffSuggestionService 中
+    // 它们的统计通过 OVERLEAF_TEXT_ACTION_DECISION 消息处理
     if (!suggestion) {
+      if (data.id.startsWith('text-action-')) {
+        // 文本操作的统计已通过 OVERLEAF_TEXT_ACTION_DECISION 消息处理
+        // 这里只输出日志
+        console.log(`[DiffSuggestionService] 文本操作建议 ${data.id} 被${data.accepted ? '接受' : '拒绝'}（统计由 OVERLEAF_TEXT_ACTION_DECISION 处理）`);
+        return;
+      }
       console.warn('[DiffSuggestionService] 未找到建议:', data.id);
       return;
     }
@@ -97,6 +140,11 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
     suggestion.status = data.accepted ? 'accepted' : 'rejected';
     
     console.log(`[DiffSuggestionService] 建议 ${data.id} 被${data.accepted ? '接受' : '拒绝'}`);
+    
+    // 统计埋点：记录 Diff 建议决策
+    if (this.telemetryService && suggestion.toolName) {
+      this.telemetryService.trackToolApproval(suggestion.toolName, data.accepted);
+    }
     
     // 触发事件
     this._onSuggestionResolved.fire({
@@ -117,6 +165,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
     const suggestion: DiffSuggestion = {
       id,
       toolCallId: input.toolCallId,
+      toolName: input.toolName,
       targetFile: input.targetFile,
       type: 'line',
       startLine: input.startLine,
@@ -166,6 +215,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       const suggestion: DiffSuggestion = {
         id,
         toolCallId: input.toolCallId,
+        toolName: input.toolName, // 保存工具名，用于统计
         targetFile: input.targetFile,
         type: 'line',
         startLine: input.startLine,
@@ -209,6 +259,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
     const suggestion: DiffSuggestion = {
       id,
       toolCallId: input.toolCallId,
+      toolName: input.toolName,
       targetFile: input.targetFile,
       type: 'segment',
       startLine: 0, // segment 类型不使用行号
@@ -260,6 +311,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       const suggestion: DiffSuggestion = {
         id,
         toolCallId: input.toolCallId,
+        toolName: input.toolName,
         targetFile: input.targetFile,
         type: 'segment',
         startLine: 0, // segment 类型不使用行号

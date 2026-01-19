@@ -17,6 +17,8 @@ import { IChatServiceId } from '../../platform/agent/IChatService';
 import type { IChatService, ContextItem } from '../../platform/agent/IChatService';
 import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
 import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
+import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService';
+import type { ITelemetryService } from '../../platform/telemetry/ITelemetryService';
 import { ToolResultRenderer } from './ToolResultRenderer';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import RichTextInput, { RichTextInputHandle } from './RichTextInput';
@@ -188,6 +190,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   const configService = useService<IConfigurationService>(IConfigurationServiceId);
   const chatService = useService<IChatService>(IChatServiceId);
   const uiStreamService = useService<IUIStreamService>(IUIStreamServiceId);
+  const telemetryService = useService<ITelemetryService>(ITelemetryServiceId);
   const { streamingBuffers } = useUIStreamUpdates();
   
   const [availableModels, setAvailableModels] = useState<AIModelConfig[]>([]);
@@ -417,6 +420,9 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
       const branchId = await branchConversation(conversationId, upToMessageId);
       console.log('[ConversationPane] 创建分支成功:', branchId);
       
+      // 统计：记录新建分支
+      telemetryService.trackBranchCreated();
+      
       // 如果提供了 onBranchInNewPane 回调，在新列中打开分支
       if (onBranchInNewPane) {
         onBranchInNewPane(branchId);
@@ -427,7 +433,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
     } catch (error) {
       console.error('[ConversationPane] 创建分支失败:', error);
     }
-  }, [conversationId, branchConversation, onBranchInNewPane, onConversationChange]);
+  }, [conversationId, branchConversation, onBranchInNewPane, onConversationChange, telemetryService]);
 
   // 渲染内联代码
   const renderInlineCode = (text: string) => {

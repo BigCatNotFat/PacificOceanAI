@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useService } from '../hooks/useService';
 import { IConfigurationServiceId } from '../../platform/configuration/configuration';
 import type { IConfigurationService, AIModelConfig, APIConfig } from '../../platform/configuration/configuration';
+import { API_ENDPOINTS } from '../../base/common/apiConfig';
 
 /**
  * Options 设置页面主组件
@@ -373,12 +374,12 @@ const OptionsApp: React.FC = () => {
                     <div style={styles.settingDescription}>
                       查询启动码的剩余使用额度，请访问：
                       <a 
-                        href="https://api.silicondream.top/query" 
+                        href={API_ENDPOINTS.ACTIVATION_QUERY_PAGE} 
                         target="_blank" 
                         rel="noopener noreferrer"
                         style={styles.link}
                       >
-                        https://api.silicondream.top/query
+                        {API_ENDPOINTS.ACTIVATION_QUERY_PAGE}
                       </a>
                     </div>
                   </div>

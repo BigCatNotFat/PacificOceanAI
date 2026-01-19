@@ -293,6 +293,7 @@ Good examples:
       for (const match of matchesToProcess) {
         suggestionInputs.push({
           toolCallId,
+          toolName: 'search_replace', // 添加工具名，用于统计
           targetFile: targetBaseName,
           startOffset: match.index,
           endOffset: match.index + match.oldContent.length,

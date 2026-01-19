@@ -269,9 +269,37 @@ export function completeStreamPreview(data) {
   const currentPreview = preview;
   const currentPreviewId = previewId;
   
+  // 创建决策回调（用于统计）
+  // 当用户接受/拒绝建议时，发送包含 action 的决策消息
+  const createDecisionCallbacks = function(action) {
+    return {
+      onAccept: function() {
+        // 发送决策消息，包含 action 用于统计
+        window.postMessage({
+          type: 'OVERLEAF_TEXT_ACTION_DECISION',
+          data: {
+            action: action,
+            accepted: true
+          }
+        }, '*');
+      },
+      onReject: function() {
+        // 发送决策消息，包含 action 用于统计
+        window.postMessage({
+          type: 'OVERLEAF_TEXT_ACTION_DECISION',
+          data: {
+            action: action,
+            accepted: false
+          }
+        }, '*');
+      }
+    };
+  };
+  
   waitForDiffAPI(function() {
     try {
       let suggestionId = null;
+      const callbacks = createDecisionCallbacks(currentPreview.action);
       
       if (currentPreview.isInsertMode) {
         // 插入模式：使用片段建议
@@ -279,7 +307,8 @@ export function completeStreamPreview(data) {
           'text-action-' + currentPreview.id,
           currentPreview.from,
           currentPreview.to,
-          newText
+          newText,
+          callbacks
         );
       } else if (currentPreview.isFullLine) {
         // 整行模式：使用行级建议
@@ -288,7 +317,8 @@ export function completeStreamPreview(data) {
           'text-action-' + currentPreview.id,
           lineRange.startLine,
           lineRange.endLine,
-          newText
+          newText,
+          callbacks
         );
       } else {
         // 片段模式：使用片段级建议
@@ -296,7 +326,8 @@ export function completeStreamPreview(data) {
           'text-action-' + currentPreview.id,
           currentPreview.from,
           currentPreview.to,
-          newText
+          newText,
+          callbacks
         );
       }
       
@@ -304,7 +335,8 @@ export function completeStreamPreview(data) {
       
       console.log('[OverleafBridge] Stream preview completed:', 
         'previewId:', currentPreviewId,
-        'suggestionId:', suggestionId);
+        'suggestionId:', suggestionId,
+        'action:', currentPreview.action);
       
       // 从 Map 中移除
       previewsMap.delete(currentPreviewId);

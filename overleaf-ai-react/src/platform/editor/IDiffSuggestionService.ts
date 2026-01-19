@@ -30,6 +30,8 @@ export interface DiffSuggestion {
   id: string;
   /** 关联的工具调用 ID */
   toolCallId: string;
+  /** 工具名称（用于统计） */
+  toolName?: string;
   /** 目标文件名 */
   targetFile: string;
   /** 建议类型 */
@@ -58,6 +60,8 @@ export interface DiffSuggestion {
 export interface CreateSuggestionInput {
   /** 关联的工具调用 ID */
   toolCallId: string;
+  /** 工具名称（用于统计） */
+  toolName?: string;
   /** 目标文件名 */
   targetFile: string;
   /** 起始行号（1-indexed） */
@@ -76,6 +80,8 @@ export interface CreateSuggestionInput {
 export interface CreateSegmentSuggestionInput {
   /** 关联的工具调用 ID */
   toolCallId: string;
+  /** 工具名称（用于统计） */
+  toolName?: string;
   /** 目标文件名 */
   targetFile: string;
   /** 片段起始字符偏移（0-indexed） */

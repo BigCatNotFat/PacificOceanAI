@@ -10,9 +10,12 @@ import { useSidebarResize } from '../hooks/useSidebarResize';
 import { useService } from '../hooks/useService';
 import { IConfigurationServiceId } from '../../platform/configuration/configuration';
 import type { IConfigurationService } from '../../platform/configuration/configuration';
+import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService';
+import type { ITelemetryService } from '../../platform/telemetry/ITelemetryService';
 import MultiPaneContainer, { MultiPaneContainerHandle } from './MultiPaneContainer';
 import ActivationModal from './ActivationModal';
 import 'katex/dist/katex.min.css';
+import { API_ENDPOINTS } from '../../base/common/apiConfig';
 
 type SidebarProps = {
   isOpen: boolean;
@@ -26,9 +29,27 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const sidebarRef = useRef<HTMLDivElement | null>(null);
   const handleRef = useRef<HTMLDivElement | null>(null);
   const multiPaneRef = useRef<MultiPaneContainerHandle | null>(null);
+  const isOpenRef = useRef(isOpen); // 用于在 paneCountGetter 中获取最新的 isOpen 值
   const configService = useService<IConfigurationService>(IConfigurationServiceId);
+  const telemetryService = useService<ITelemetryService>(ITelemetryServiceId);
   
   const [columnCount, setColumnCount] = useState(1);
+  
+  // 保持 isOpenRef 与 isOpen 同步
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+  }, [isOpen]);
+  
+  // 注册 paneCountGetter，让 telemetry 服务能在上报时获取当前列数
+  // 如果侧边栏未打开，返回 0（用户没有使用对话功能）
+  useEffect(() => {
+    telemetryService.setPaneCountGetter(() => {
+      if (!isOpenRef.current) {
+        return 0; // 侧边栏未打开，统计为 0 列
+      }
+      return multiPaneRef.current?.getColumnCount() ?? 1;
+    });
+  }, [telemetryService]);
   const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
   const [isActivationModalOpen, setIsActivationModalOpen] = useState(false);
 
@@ -61,7 +82,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const handleActivationSubmit = async (code: string) => {
     try {
       // 验证启动码（测试连通性）
-      const result = await configService.testConnectivity(code, 'https://api.silicondream.top/v1');
+      const result = await configService.testConnectivity(code, API_ENDPOINTS.LLM_BASE_URL);
       
       if (result.success) {
         // 验证成功，先保存基本配置
