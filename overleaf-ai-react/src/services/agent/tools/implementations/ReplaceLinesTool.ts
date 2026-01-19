@@ -96,7 +96,7 @@ Examples:
 
   // 预览配置常量
   private readonly MAX_LINES_PREVIEW = 5;   // 每个替换区域最多显示 5 行
-  private readonly MAX_LINE_CHARS = 80;     // 每行最多显示 80 字符
+  private readonly MAX_LINE_CHARS = 100;    // 每行最多显示 100 字符
 
   /**
    * 截断单行内容
@@ -105,7 +105,7 @@ Examples:
     if (line.length <= this.MAX_LINE_CHARS) {
       return line;
     }
-    return line.slice(0, 40) + '...' + line.slice(-30);
+    return line.slice(0, 50) + '...' + line.slice(-40);
   }
 
   /**
@@ -119,24 +119,23 @@ Examples:
     newLines: string[]
   ): string {
     const previewLines: string[] = [];
-    const border = '────────────────────────────────────────';
-    const separator = '----------------------------------------';
-
-    // Header
-    previewLines.push(border);
-    previewLines.push(`位置: ${fileName} (Lines ${startLine}-${endLine})`);
-    previewLines.push(separator);
+    
+    // 1. 使用标签包裹，属性中包含元数据，方便 AI 解析
+    previewLines.push(`<diff_chunk file="${fileName}" range="${startLine}-${endLine}">`);
 
     // Helper to add lines with limit
     const addLines = (lines: string[], prefix: string, startNum: number) => {
         const count = Math.min(lines.length, this.MAX_LINES_PREVIEW);
         for (let i = 0; i < count; i++) {
-            const lineNum = (startNum + i).toString().padStart(4);
+            const currentLineNum = startNum + i;
+            // 2. 使用 [Line N] 格式，让 AI 明确这是行号
+            const lineMarker = `[Line ${currentLineNum}]`.padEnd(12);
             const truncated = this.truncateLine(lines[i]);
-            previewLines.push(`${prefix} ${lineNum} | ${truncated}`);
+            previewLines.push(`${prefix} ${lineMarker} ${truncated}`);
         }
         if (lines.length > this.MAX_LINES_PREVIEW) {
-            previewLines.push(`${prefix}      | ... (还有 ${lines.length - this.MAX_LINES_PREVIEW} 行)`);
+            const remaining = lines.length - this.MAX_LINES_PREVIEW;
+            previewLines.push(`${prefix} [Line ...]   ... (skipping ${remaining} lines)`);
         }
     };
 
@@ -146,12 +145,12 @@ Examples:
     // New content (Green/Plus)
     addLines(newLines, '+', startLine);
 
-    previewLines.push(border);
+    previewLines.push(`</diff_chunk>`);
 
     // Summary/Warning
     const deletedCount = originalLines.length;
     const addedCount = newLines.length;
-    previewLines.push(`⚠️ 建议: 删除 ${deletedCount} 行，新增 ${addedCount} 行。等待用户确认。`);
+    previewLines.push(`⚠️ Status: Pending Approval (Deleted: ${deletedCount}, Added: ${addedCount})`);
 
     return previewLines.join('\n');
   }

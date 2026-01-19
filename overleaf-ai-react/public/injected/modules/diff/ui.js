@@ -43,7 +43,6 @@ const DIFF_CSS = `
   .diff-new-content {
     background: rgba(76, 175, 80, 0.1);
     padding: 8px 16px;
-    padding-right: 180px;
     border-left: 3px solid #81c784;
     margin: 2px 0;
     font-family: inherit;
@@ -56,11 +55,12 @@ const DIFF_CSS = `
   }
   
   .diff-new-content::before {
-    content: '+';
+    /* content: '+'; 已移除 */
     position: absolute;
     left: 5px;
-    color: #4caf50;
+    /* color: #4caf50; */
     font-weight: bold;
+    display: none; /* 隐藏加号 */
   }
   
   .diff-new-text {
@@ -69,10 +69,9 @@ const DIFF_CSS = `
   
   /* 行内按钮容器 */
   .diff-buttons {
-    position: absolute;
-    right: 8px;
-    bottom: 6px;
     display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
     gap: 8px;
     z-index: 10;
   }

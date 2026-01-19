@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-01-17T07:26:40.346Z
+ * 构建时间: 2026-01-19T02:54:39.516Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */
@@ -2160,7 +2160,6 @@
   .diff-new-content {
     background: rgba(76, 175, 80, 0.1);
     padding: 8px 16px;
-    padding-right: 180px;
     border-left: 3px solid #81c784;
     margin: 2px 0;
     font-family: inherit;
@@ -2173,11 +2172,12 @@
   }
   
   .diff-new-content::before {
-    content: '+';
+    /* content: '+'; \u5DF2\u79FB\u9664 */
     position: absolute;
     left: 5px;
-    color: #4caf50;
+    /* color: #4caf50; */
     font-weight: bold;
+    display: none; /* \u9690\u85CF\u52A0\u53F7 */
   }
   
   .diff-new-text {
@@ -2186,10 +2186,9 @@
   
   /* \u884C\u5185\u6309\u94AE\u5BB9\u5668 */
   .diff-buttons {
-    position: absolute;
-    right: 8px;
-    bottom: 6px;
     display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
     gap: 8px;
     z-index: 10;
   }
