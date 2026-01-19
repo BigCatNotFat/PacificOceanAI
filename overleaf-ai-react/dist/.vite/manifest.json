@@ -5,8 +5,8 @@
     "src": "../../../../../../../../../@crx/manifest",
     "isEntry": true
   },
-  "_StorageService-t_CsOJeT.js": {
-    "file": "assets/StorageService-t_CsOJeT.js",
+  "_StorageService-LItX3mFq.js": {
+    "file": "assets/StorageService-LItX3mFq.js",
     "name": "StorageService",
     "imports": [
       "_client-CLze4-QF.js"
@@ -21,7 +21,7 @@
     "name": "modulepreload-polyfill"
   },
   "main.tsx-loader.js": {
-    "file": "assets/main.tsx-loader-2QYy3NMw.js",
+    "file": "assets/main.tsx-loader-DsgiWci8.js",
     "src": "main.tsx-loader.js"
   },
   "node_modules/katex/dist/fonts/KaTeX_AMS-Regular.ttf": {
@@ -261,13 +261,13 @@
     "src": "node_modules/katex/dist/fonts/KaTeX_Typewriter-Regular.woff2"
   },
   "src/extension/content/main.tsx": {
-    "file": "assets/main.tsx-C6kSNEX-.js",
+    "file": "assets/main.tsx-ulHJyZrS.js",
     "name": "main.tsx",
     "src": "src/extension/content/main.tsx",
     "isEntry": true,
     "imports": [
       "_client-CLze4-QF.js",
-      "_StorageService-t_CsOJeT.js"
+      "_StorageService-LItX3mFq.js"
     ],
     "css": [
       "assets/main-DqZkLl__.css"
@@ -335,14 +335,14 @@
     ]
   },
   "src/extension/options/index.html": {
-    "file": "assets/index.html-wYSXQcQn.js",
+    "file": "assets/index.html-BYxwkt4o.js",
     "name": "index.html",
     "src": "src/extension/options/index.html",
     "isEntry": true,
     "imports": [
       "_modulepreload-polyfill-B5Qt9EMX.js",
       "_client-CLze4-QF.js",
-      "_StorageService-t_CsOJeT.js"
+      "_StorageService-LItX3mFq.js"
     ]
   },
   "src/extension/popup/index.html": {

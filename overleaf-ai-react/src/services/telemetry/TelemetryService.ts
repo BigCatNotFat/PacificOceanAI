@@ -26,6 +26,9 @@ import type {
 /** 默认上报间隔：120 秒 */
 const DEFAULT_UPLOAD_INTERVAL = 120 * 1000;
 
+/** 页面切换时的最小上报间隔：30 秒（防止频繁切换页面导致过多请求） */
+const MIN_VISIBILITY_UPLOAD_INTERVAL = 30 * 1000;
+
 /** 存储键：用户匿名 ID */
 const STORAGE_KEY_USER_ID = 'telemetry.anonymousId';
 
@@ -176,6 +179,9 @@ export class TelemetryService extends Disposable implements ITelemetryService {
   // 定时器
   private uploadTimer: ReturnType<typeof setInterval> | null = null;
 
+  // 上次上报时间戳（用于页面切换时的节流）
+  private lastUploadTime: number = 0;
+
   // 依赖的服务
   private readonly storageService: IStorageService;
 
@@ -222,6 +228,9 @@ export class TelemetryService extends Disposable implements ITelemetryService {
 
       // 处理离线队列
       this.processOfflineQueue();
+
+      // 注册页面可见性变化处理（切出去暂停计时）
+      this.registerVisibilityHandler();
 
       this.initialized = true;
       console.log('[TelemetryService] Initialized with userId:', this.userId);
@@ -393,6 +402,9 @@ export class TelemetryService extends Disposable implements ITelemetryService {
       console.log(`✅ 模拟上报成功: ${totalCount} 个操作${totalCount === 0 ? ' (用户活跃但未使用功能)' : ''}`);
       console.log('');
 
+      // 更新上次上报时间
+      this.lastUploadTime = Date.now();
+
       // 触发成功事件
       this._onDidUpload.fire({
         success: true,
@@ -414,6 +426,9 @@ export class TelemetryService extends Disposable implements ITelemetryService {
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
+
+      // 更新上次上报时间
+      this.lastUploadTime = Date.now();
 
       // 上传成功
       this._onDidUpload.fire({
@@ -596,6 +611,47 @@ export class TelemetryService extends Disposable implements ITelemetryService {
     this._register({
       dispose: () => {
         window.removeEventListener('beforeunload', handler);
+      },
+    });
+  }
+
+  /**
+   * 注册页面可见性变化处理
+   * 当用户切换到其他标签页时暂停定时上报，回来时恢复
+   * 包含节流逻辑：页面隐藏时，如果距离上次上报超过 30 秒才会触发上报
+   */
+  private registerVisibilityHandler(): void {
+    const handler = () => {
+      if (document.visibilityState === 'hidden') {
+        // 页面不可见时，检查是否需要上报
+        const now = Date.now();
+        const timeSinceLastUpload = now - this.lastUploadTime;
+        
+        if (timeSinceLastUpload >= MIN_VISIBILITY_UPLOAD_INTERVAL) {
+          // 距离上次上报超过 30 秒，先上报当前数据再暂停
+          this.flush();
+          console.log('[TelemetryService] Page hidden, flushed and paused');
+        } else {
+          // 距离上次上报不足 30 秒，跳过上报直接暂停（节流）
+          console.log('[TelemetryService] Page hidden, skipped flush (throttled), paused');
+        }
+        
+        this.stopUploadTimer();
+      } else if (document.visibilityState === 'visible') {
+        // 页面可见时恢复定时器（如果统计已启用）
+        if (this.enabled) {
+          this.startUploadTimer();
+          console.log('[TelemetryService] Page visible, upload timer resumed');
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handler);
+
+    // 注册清理
+    this._register({
+      dispose: () => {
+        document.removeEventListener('visibilitychange', handler);
       },
     });
   }
