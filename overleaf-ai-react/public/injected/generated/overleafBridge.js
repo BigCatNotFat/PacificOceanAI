@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-01-19T03:02:19.009Z
+ * 构建时间: 2026-01-19T04:06:09.103Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */

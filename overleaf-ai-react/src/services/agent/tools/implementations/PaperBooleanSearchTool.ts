@@ -40,7 +40,7 @@ interface PaperBooleanSearchResponse {
  * 使用布尔逻辑对论文标题和摘要执行精确搜索
  */
 export class PaperBooleanSearchTool extends BaseTool {
-  private readonly API_URL = 'http://api.silicondream.top/api/paper_boolean_search';
+  private readonly API_URL = 'https://api.silicondream.top/api/paper_boolean_search';
 
   protected metadata: ToolMetadata = {
     name: 'paper_boolean_search',

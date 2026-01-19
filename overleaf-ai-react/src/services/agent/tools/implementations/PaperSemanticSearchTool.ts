@@ -39,7 +39,7 @@ interface PaperSemanticSearchResponse {
  * 基于自然语言查询执行学术论文的语义搜索，按相关性排序结果
  */
 export class PaperSemanticSearchTool extends BaseTool {
-  private readonly API_URL = 'http://api.silicondream.top/api/paper_semantic_search';
+  private readonly API_URL = 'https://api.silicondream.top/api/paper_semantic_search';
 
   protected metadata: ToolMetadata = {
     name: 'paper_semantic_search',
