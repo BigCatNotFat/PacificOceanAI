@@ -12,15 +12,39 @@ interface PaperSemanticSearchArgs {
 }
 
 /**
- * 论文数据接口
+ * 作者数据接口（API原始响应）
+ */
+interface AuthorData {
+  authorId: string;
+  name: string;
+}
+
+/**
+ * 论文数据接口（API原始响应）
  */
 interface PaperData {
+  paperId: string;
   title: string;
+  abstract?: string;
+  publicationDate?: string;
   year: number;
-  citations: number;
-  authors: string;
-  venue: string;
-  content: string;
+  citationCount: number;
+  authors: AuthorData[];
+  venue?: string;
+  url: string;
+}
+
+/**
+ * 精简后的论文数据接口（发送给LLM）
+ */
+interface PaperDataForLLM {
+  title: string;
+  abstract?: string;
+  publicationDate?: string;
+  year: number;
+  citationCount: number;
+  authors: string[];  // 只保留作者名字
+  venue?: string;
 }
 
 /**
@@ -149,18 +173,29 @@ export class PaperSemanticSearchTool extends BaseTool {
   }
 
   /**
-   * 格式化搜索结果
+   * 格式化搜索结果（过滤掉 paperId, url, authorId 以节省 token）
    */
   private formatResult(result: PaperSemanticSearchResponse): {
     total: number;
     cursor: number;
-    papers: PaperData[];
+    papers: PaperDataForLLM[];
     message: string;
   } {
+    // 过滤掉 paperId, url, 以及 authors 中的 authorId
+    const filteredPapers: PaperDataForLLM[] = result.data.map(paper => ({
+      title: paper.title,
+      abstract: paper.abstract,
+      publicationDate: paper.publicationDate,
+      year: paper.year,
+      citationCount: paper.citationCount,
+      authors: paper.authors.map(author => author.name),  // 只保留作者名字
+      venue: paper.venue
+    }));
+
     return {
       total: result.total,
       cursor: result.cursor,
-      papers: result.data,
+      papers: filteredPapers,
       message: `Found ${result.total} papers. Showing ${result.data.length} results starting from position ${result.cursor - result.data.length}.`
     };
   }
