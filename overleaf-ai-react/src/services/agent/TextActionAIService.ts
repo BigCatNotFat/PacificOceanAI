@@ -143,10 +143,10 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
       this.cleanupStreamListener();
 
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`[TextActionAIService] 操作失败: ${action}`, error);
 
       // 检查是否是用户取消
-      if (errorMessage.includes('aborted') || errorMessage.includes('cancelled')) {
+      if (errorMessage.includes('aborted') || errorMessage.includes('cancelled') || (error instanceof Error && error.name === 'AbortError')) {
+        console.log(`[TextActionAIService] 操作已取消: ${action}`);
         return {
           success: false,
           error: '操作已取消',
@@ -154,6 +154,8 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
           originalText: text
         };
       }
+
+      console.error(`[TextActionAIService] 操作失败: ${action}`, error);
 
       return {
         success: false,

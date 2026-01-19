@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-01-19T04:38:03.373Z
+ * 构建时间: 2026-01-19T06:59:03.655Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */
@@ -1888,9 +1888,10 @@
   }
 
   // public/injected/modules/preview/stream.js
-  var streamPreviewText = "";
-  var isStreamingPreview = false;
-  var currentPreview = null;
+  var previewsMap = /* @__PURE__ */ new Map();
+  function generateStatusId() {
+    return "inline-status-" + Date.now() + "-" + Math.random().toString(36).substr(2, 9);
+  }
   function isFullLineSelection(view, from, to) {
     try {
       const startLine = view.state.doc.lineAt(from);
@@ -1975,24 +1976,28 @@
         console.error("[OverleafBridge] EditorView not available for stream preview");
         return;
       }
-      streamPreviewText = "";
-      isStreamingPreview = true;
+      const previewId = data.previewId || "legacy-" + Date.now() + "-" + Math.random().toString(36).substr(2, 9);
+      const statusId = generateStatusId();
       const isInsertMode = !data.originalText || data.originalText.trim().length === 0;
       const isFullLine = isFullLineSelection(view, data.from, data.to);
       const lineRange = getLineRange(view, data.from, data.to);
-      const statusId = "inline-status-" + Date.now() + "-" + Math.random().toString(36).substr(2, 9);
-      currentPreview = {
+      const preview = {
         id: statusId,
+        previewId,
         action: data.action,
         originalText: data.originalText,
         newText: "",
+        streamText: "",
+        // 用于累积流式文本
         from: data.from,
         to: data.to,
         isInsertMode,
         isFullLine,
         lineRange,
-        suggestionId: null
+        suggestionId: null,
+        isStreaming: true
       };
+      previewsMap.set(previewId, preview);
       const inlineStatusConfig = {
         id: statusId,
         fileName: getCurrentFileName(),
@@ -2008,7 +2013,10 @@
       };
       createInlineStatus(inlineStatusConfig);
       console.log(
-        "[OverleafBridge] Stream preview started with inline status:",
+        "[OverleafBridge] Stream preview started:",
+        "previewId:",
+        previewId,
+        "statusId:",
         statusId,
         "isFullLine:",
         isFullLine,
@@ -2021,26 +2029,45 @@
       console.error("[OverleafBridge] Failed to start stream preview:", e);
     }
   }
-  function updateStreamPreview(delta) {
-    if (!isStreamingPreview || !currentPreview) return;
-    streamPreviewText += delta;
-    currentPreview.newText = streamPreviewText;
+  function updateStreamPreview(previewId, delta) {
+    if (typeof previewId === "string" && delta === void 0) {
+      delta = previewId;
+      if (previewsMap.size === 0) return;
+      const lastEntry = Array.from(previewsMap.entries()).pop();
+      if (!lastEntry) return;
+      previewId = lastEntry[0];
+    }
+    const preview = previewsMap.get(previewId);
+    if (!preview || !preview.isStreaming) return;
+    preview.streamText += delta;
+    preview.newText = preview.streamText;
   }
   function completeStreamPreview(data) {
-    if (!currentPreview) return;
-    isStreamingPreview = false;
-    const newText = data && data.newText ? data.newText : streamPreviewText;
-    currentPreview.newText = newText;
-    removeInlineStatus(currentPreview.id);
+    let previewId = data && data.previewId;
+    if (!previewId) {
+      if (previewsMap.size === 0) return;
+      const lastEntry = Array.from(previewsMap.entries()).pop();
+      if (!lastEntry) return;
+      previewId = lastEntry[0];
+    }
+    const preview = previewsMap.get(previewId);
+    if (!preview) {
+      console.warn("[OverleafBridge] \u627E\u4E0D\u5230\u9884\u89C8:", previewId);
+      return;
+    }
+    preview.isStreaming = false;
+    const newText = data && data.newText ? data.newText : preview.streamText;
+    preview.newText = newText;
+    removeInlineStatus(preview.id);
     if (!newText || newText.trim().length === 0) {
-      console.log("[OverleafBridge] \u751F\u6210\u5931\u8D25\u6216\u8FD4\u56DE\u7A7A\u5185\u5BB9");
-      currentPreview = null;
+      console.log("[OverleafBridge] \u751F\u6210\u5931\u8D25\u6216\u8FD4\u56DE\u7A7A\u5185\u5BB9 previewId:", previewId);
+      previewsMap.delete(previewId);
       return;
     }
     const view = getEditorView();
     if (!view) {
       console.error("[OverleafBridge] EditorView not available for suggestion");
-      currentPreview = null;
+      previewsMap.delete(previewId);
       return;
     }
     const waitForDiffAPI = function(callback, retries) {
@@ -2054,6 +2081,8 @@
         console.error("[OverleafBridge] diffAPI not available");
       }
     };
+    const currentPreview = preview;
+    const currentPreviewId = previewId;
     waitForDiffAPI(function() {
       try {
         let suggestionId = null;
@@ -2080,31 +2109,59 @@
             newText
           );
         }
-        if (currentPreview) {
-          currentPreview.suggestionId = suggestionId;
-        }
-        console.log("[OverleafBridge] Stream preview completed with suggestion:", suggestionId);
-        currentPreview = null;
+        currentPreview.suggestionId = suggestionId;
+        console.log(
+          "[OverleafBridge] Stream preview completed:",
+          "previewId:",
+          currentPreviewId,
+          "suggestionId:",
+          suggestionId
+        );
+        previewsMap.delete(currentPreviewId);
       } catch (e) {
-        console.error("[OverleafBridge] Failed to create suggestion:", e);
+        console.error("[OverleafBridge] Failed to create suggestion:", e, "previewId:", currentPreviewId);
         updateInlineStatusState({
           id: currentPreview.id,
           state: "error"
         });
+        previewsMap.delete(currentPreviewId);
       }
     }, 10);
   }
+  function cancelStreamPreview(previewId) {
+    if (previewId) {
+      const preview = previewsMap.get(previewId);
+      if (preview) {
+        removeInlineStatus(preview.id);
+        previewsMap.delete(previewId);
+        console.log("[OverleafBridge] \u53D6\u6D88\u9884\u89C8:", previewId);
+      }
+    } else {
+      for (const [id, preview] of previewsMap) {
+        removeInlineStatus(preview.id);
+        console.log("[OverleafBridge] \u53D6\u6D88\u9884\u89C8:", id);
+      }
+      previewsMap.clear();
+    }
+  }
   function initStreamListeners() {
     window.addEventListener("keyup", function(event) {
-      if (event.key === "Escape" && currentPreview) {
+      if (event.key === "Escape" && previewsMap.size > 0) {
         window.postMessage({
           type: "OVERLEAF_STREAM_CANCEL",
           data: { reason: "user_escape" }
         }, "*");
-        if (currentPreview) {
-          removeInlineStatus(currentPreview.id);
-          currentPreview = null;
-          isStreamingPreview = false;
+        cancelStreamPreview();
+      }
+    });
+    window.addEventListener("message", function(event) {
+      if (event.source !== window) return;
+      const data = event.data;
+      if (!data) return;
+      if (data.type === "OVERLEAF_STREAM_PREVIEW_CANCELLED") {
+        const previewId = data.data && data.data.previewId;
+        if (previewId) {
+          cancelStreamPreview(previewId);
         }
       }
     });
@@ -2112,19 +2169,23 @@
 
   // public/injected/modules/preview/index.js
   function initPreview() {
-    console.log("[OverleafBridge] Initializing Preview System...");
+    console.log("[OverleafBridge] Initializing Preview System (multi-task parallel mode)...");
     initStreamListeners();
     window.addEventListener("message", function(event) {
       if (event.source !== window) return;
       const data = event.data;
       if (!data) return;
       if (data.type === "OVERLEAF_STREAM_PREVIEW_START") {
-        console.log("[OverleafBridge] Starting stream preview");
+        const previewId = data.data && data.data.previewId;
+        console.log("[OverleafBridge] Starting stream preview, previewId:", previewId || "(legacy)");
         startStreamPreview(data.data);
       } else if (data.type === "OVERLEAF_STREAM_PREVIEW_UPDATE") {
-        updateStreamPreview(data.data.delta);
+        const previewId = data.data && data.data.previewId;
+        const delta = data.data && data.data.delta;
+        updateStreamPreview(previewId, delta);
       } else if (data.type === "OVERLEAF_STREAM_PREVIEW_COMPLETE") {
-        console.log("[OverleafBridge] Stream preview complete");
+        const previewId = data.data && data.data.previewId;
+        console.log("[OverleafBridge] Stream preview complete, previewId:", previewId || "(legacy)");
         completeStreamPreview(data.data);
       }
     });

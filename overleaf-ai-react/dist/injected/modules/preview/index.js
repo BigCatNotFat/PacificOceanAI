@@ -1,11 +1,13 @@
 /**
  * 预览系统 - 入口
+ * 
+ * 支持多任务并行：每个预览通过 previewId 标识
  */
 
 import { startStreamPreview, updateStreamPreview, completeStreamPreview, initStreamListeners } from './stream.js';
 
 export function initPreview() {
-  console.log('[OverleafBridge] Initializing Preview System...');
+  console.log('[OverleafBridge] Initializing Preview System (multi-task parallel mode)...');
   
   initStreamListeners();
   
@@ -17,14 +19,19 @@ export function initPreview() {
     if (!data) return;
     
     if (data.type === 'OVERLEAF_STREAM_PREVIEW_START') {
-      console.log('[OverleafBridge] Starting stream preview');
+      const previewId = data.data && data.data.previewId;
+      console.log('[OverleafBridge] Starting stream preview, previewId:', previewId || '(legacy)');
       startStreamPreview(data.data);
     }
     else if (data.type === 'OVERLEAF_STREAM_PREVIEW_UPDATE') {
-      updateStreamPreview(data.data.delta);
+      // 传递 previewId 和 delta
+      const previewId = data.data && data.data.previewId;
+      const delta = data.data && data.data.delta;
+      updateStreamPreview(previewId, delta);
     }
     else if (data.type === 'OVERLEAF_STREAM_PREVIEW_COMPLETE') {
-      console.log('[OverleafBridge] Stream preview complete');
+      const previewId = data.data && data.data.previewId;
+      console.log('[OverleafBridge] Stream preview complete, previewId:', previewId || '(legacy)');
       completeStreamPreview(data.data);
     }
   });
