@@ -9,7 +9,8 @@
     "build:bridge": "node scripts/build-bridge-new.js",
     "build:bridge:old": "node scripts/build-bridge.js",
     "build:all": "npm run build:bridge && npm run build",
-    "prebuild": "npm run build:bridge"
+    "prebuild": "npm run build:bridge",
+    "pack": "npm run build:all && node scripts/pack-extension.js"
   },
   "dependencies": {
     "diff-match-patch": "^1.0.5",
@@ -29,6 +30,7 @@
     "@types/react-dom": "^18.2.15",
     "@vitejs/plugin-react": "^4.3.1",
     "esbuild": "^0.27.2",
+    "sharp": "^0.34.5",
     "typescript": "^5.3.3",
     "vite": "^5.0.0"
   }
