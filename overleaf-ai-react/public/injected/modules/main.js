@@ -14,15 +14,17 @@ import {
   getAllDocsWithContent 
 } from './search/index.js';
 import { initModelManagement } from './modelManagement/index.js';
-import { initSelectionTooltip } from './selectionTooltip/index.js';
+// import { initSelectionTooltip } from './selectionTooltip/index.js'; // 禁用自定义选区提示框
 import { initPreview } from './preview/index.js';
 import { initDiffSystem } from './diff/index.js';
+import { initReviewTooltipInjector } from './reviewTooltipInjector/index.js';
 
 // 初始化各个模块
 initModelManagement();
-initSelectionTooltip();
+// initSelectionTooltip(); // 禁用：改为使用原生 review-tooltip-menu 注入
 initPreview();
 initDiffSystem();
+initReviewTooltipInjector(); // 使用原生 Review Tooltip 注入 AI 控件
 
 // 创建方法处理器
 const methodHandlers = createMethodHandlers({

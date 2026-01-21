@@ -34,11 +34,57 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const telemetryService = useService<ITelemetryService>(ITelemetryServiceId);
   
   const [columnCount, setColumnCount] = useState(1);
+  const [selectionTooltipEnabled, setSelectionTooltipEnabled] = useState(true);
   
   // 保持 isOpenRef 与 isOpen 同步
   useEffect(() => {
     isOpenRef.current = isOpen;
   }, [isOpen]);
+
+  // 初始化 selection tooltip 状态
+  useEffect(() => {
+    // 从 localStorage 读取初始状态
+    const savedState = localStorage.getItem('ol-ai-selection-tooltip-enabled');
+    if (savedState !== null) {
+      setSelectionTooltipEnabled(savedState === 'true');
+    }
+
+    // 监听来自注入脚本的状态响应
+    const handleMessage = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      if (event.data?.type === 'OVERLEAF_SELECTION_TOOLTIP_STATE') {
+        const enabled = event.data.data?.enabled;
+        if (typeof enabled === 'boolean') {
+          setSelectionTooltipEnabled(enabled);
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+
+    // 请求当前状态
+    window.postMessage({ type: 'OVERLEAF_SELECTION_TOOLTIP_GET_STATE' }, '*');
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, []);
+
+  // 切换 selection tooltip 开关
+  const handleToggleSelectionTooltip = useCallback(() => {
+    const newState = !selectionTooltipEnabled;
+    setSelectionTooltipEnabled(newState);
+    
+    // 保存到 localStorage
+    localStorage.setItem('ol-ai-selection-tooltip-enabled', String(newState));
+    
+    // 通知注入脚本
+    window.postMessage({
+      type: 'OVERLEAF_SELECTION_TOOLTIP_TOGGLE',
+      data: { enabled: newState }
+    }, '*');
+    
+    console.log('[Sidebar] Selection tooltip toggled:', newState);
+  }, [selectionTooltipEnabled]);
   
   // 注册 paneCountGetter，让 telemetry 服务能在上报时获取当前列数
   // 如果侧边栏未打开，返回 0（用户没有使用对话功能）
@@ -221,6 +267,16 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
               </span>
             </div>
             <div className="ai-header-actions">
+              {/* Selection Tooltip 开关 */}
+              <button
+                className={`ai-icon-btn ai-toggle-btn ${selectionTooltipEnabled ? 'active' : ''}`}
+                onClick={handleToggleSelectionTooltip}
+                title={selectionTooltipEnabled ? '选区菜单已开启，点击关闭' : '选区菜单已关闭，点击开启'}
+              >
+                <span className="material-symbols">
+                  {selectionTooltipEnabled ? 'select_all' : 'deselect'}
+                </span>
+              </button>
               {/* 列数控制按钮 */}
               <div className="ai-column-selector">
                 <button

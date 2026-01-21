@@ -2806,3 +2806,22 @@
 .conversation-pane.compact .ai-welcome-history {
   display: none;
 }
+
+/* ==================== Selection Tooltip Toggle 按钮 ==================== */
+.ai-toggle-btn {
+  position: relative;
+}
+
+.ai-toggle-btn.active {
+  background-color: rgba(0, 119, 182, 0.12);
+  color: var(--accent-primary);
+}
+
+.ai-toggle-btn:not(.active) {
+  opacity: 0.6;
+}
+
+.ai-toggle-btn:not(.active):hover {
+  opacity: 1;
+  background-color: var(--bg-tertiary);
+}
