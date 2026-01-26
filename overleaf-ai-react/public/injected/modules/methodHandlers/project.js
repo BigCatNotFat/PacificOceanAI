@@ -11,6 +11,20 @@ export function createProjectHandlers(searchInternal, getProjectId, getAllDocsWi
       return await searchInternal(pattern, options);
     },
 
+    // 获取所有文档及其内容
+    getAllDocsWithContent: async function() {
+      try {
+        const projectId = getProjectId();
+        if (!projectId) {
+          throw new Error('无法获取项目 ID');
+        }
+        return await getAllDocsWithContent(projectId);
+      } catch (e) {
+        console.error('[OverleafBridge] getAllDocsWithContent failed:', e);
+        throw e;
+      }
+    },
+
     // 获取项目文件统计信息（行数、字符数）
     getProjectFileStats: async function() {
       try {

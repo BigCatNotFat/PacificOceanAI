@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-01-21T10:12:51.671Z
+ * 构建时间: 2026-01-26T12:39:01.989Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */
@@ -441,6 +441,19 @@
       searchProject: async function(pattern, options) {
         return await searchInternal2(pattern, options);
       },
+      // 获取所有文档及其内容
+      getAllDocsWithContent: async function() {
+        try {
+          const projectId = getProjectId2();
+          if (!projectId) {
+            throw new Error("\u65E0\u6CD5\u83B7\u53D6\u9879\u76EE ID");
+          }
+          return await getAllDocsWithContent2(projectId);
+        } catch (e) {
+          console.error("[OverleafBridge] getAllDocsWithContent failed:", e);
+          throw e;
+        }
+      },
       // 获取项目文件统计信息（行数、字符数）
       getProjectFileStats: async function() {
         try {
@@ -512,60 +525,46 @@
       return [];
     }
   }
-  async function fetchFileHashes(projectId) {
+  async function fetchDocContent(projectId, docId) {
     try {
-      const response = await fetch(`/project/${projectId}/latest/history`);
+      const response = await fetch(`/project/${projectId}/doc/${docId}/download`, {
+        credentials: "include"
+      });
       if (!response.ok) {
-        throw new Error(`\u83B7\u53D6 history \u5931\u8D25: ${response.status}`);
-      }
-      const data = await response.json();
-      const fileHashes = {};
-      if (data.chunk && data.chunk.history && data.chunk.history.changes) {
-        data.chunk.history.changes.forEach((change) => {
-          if (change.operations) {
-            change.operations.forEach((op) => {
-              if (op.pathname && op.file && op.file.hash) {
-                fileHashes[op.pathname] = op.file.hash;
-              }
-            });
-          }
-        });
-      }
-      if (data.chunk && data.chunk.history && data.chunk.history.snapshot && data.chunk.history.snapshot.files) {
-        const snapshotFiles = data.chunk.history.snapshot.files;
-        for (const [pathname, fileData] of Object.entries(snapshotFiles)) {
-          if (fileData && fileData.hash) {
-            fileHashes[pathname] = fileData.hash;
-          }
-        }
-      }
-      return fileHashes;
-    } catch (error) {
-      console.error("[OverleafBridge] \u83B7\u53D6 history \u5931\u8D25:", error);
-      return {};
-    }
-  }
-  async function fetchBlobContent(projectId, hash) {
-    try {
-      const response = await fetch(`/project/${projectId}/blob/${hash}`);
-      if (!response.ok) {
-        throw new Error(`\u83B7\u53D6 blob \u5931\u8D25: ${response.status}`);
+        throw new Error(`\u83B7\u53D6\u6587\u6863\u5185\u5BB9\u5931\u8D25: ${response.status}`);
       }
       return await response.text();
     } catch (error) {
-      console.error(`[OverleafBridge] \u83B7\u53D6 blob \u5931\u8D25 (hash: ${hash}):`, error);
+      console.error(`[OverleafBridge] \u83B7\u53D6\u6587\u6863\u5185\u5BB9\u5931\u8D25 (docId: ${docId}):`, error);
       return null;
     }
   }
+  function getDomFileIdMap() {
+    const map = /* @__PURE__ */ new Map();
+    try {
+      const fileItems = document.querySelectorAll("[data-file-id]");
+      fileItems.forEach((item) => {
+        const id = item.getAttribute("data-file-id");
+        if (!id) return;
+        const nameSpan = item.querySelector(".item-name-button span");
+        const name = nameSpan?.textContent?.trim();
+        if (!name) return;
+        map.set(name, id);
+      });
+    } catch (error) {
+      console.error("[OverleafBridge] \u83B7\u53D6 DOM \u6587\u4EF6 ID \u6620\u5C04\u5931\u8D25:", error);
+    }
+    return map;
+  }
   async function getAllDocsWithContent(projectId) {
     const files = [];
-    console.log("[OverleafBridge] \u4F7F\u7528 entities + history API \u83B7\u53D6\u6587\u4EF6");
+    console.log("[OverleafBridge] \u4F7F\u7528 entities + doc download API \u83B7\u53D6\u6587\u4EF6");
     const entities = await fetchEntities(projectId);
     console.log(`[OverleafBridge] \u627E\u5230 ${entities.length} \u4E2A\u5B9E\u4F53`);
-    const fileHashes = await fetchFileHashes(projectId);
-    console.log(`[OverleafBridge] \u627E\u5230 ${Object.keys(fileHashes).length} \u4E2A\u6587\u4EF6 hash`);
     const docs = entities.filter((e) => e.type === "doc");
     console.log(`[OverleafBridge] \u627E\u5230 ${docs.length} \u4E2A\u53EF\u7F16\u8F91\u6587\u6863`);
+    const domIdMap = getDomFileIdMap();
+    console.log(`[OverleafBridge] DOM \u6587\u4EF6 ID \u6620\u5C04: ${domIdMap.size} \u4E2A`);
     let currentDocPath = null;
     let currentDocContent = null;
     try {
@@ -577,7 +576,7 @@
           currentDocPath = store.get("editor.open_doc_name");
         }
         if (currentDocPath && currentDocContent) {
-          console.log(`[OverleafBridge] \u5F53\u524D\u7F16\u8F91\u5668\u6587\u6863: ${currentDocPath} (${currentDocContent.length} \u5B57\u7B26\uFF0C\u4F7F\u7528\u5B9E\u65F6\u5185\u5BB9)`);
+          console.log(`[OverleafBridge] \u5F53\u524D\u7F16\u8F91\u5668\u6587\u6863: ${currentDocPath} (\u4F7F\u7528\u5B9E\u65F6\u5185\u5BB9)`);
         }
       }
     } catch (e) {
@@ -589,15 +588,22 @@
       const contents = await Promise.all(
         batch.map(async (doc) => {
           const pathname = doc.path.startsWith("/") ? doc.path.substring(1) : doc.path;
+          const filename = pathname.split("/").pop();
           if (currentDocPath && currentDocContent && pathname === currentDocPath) {
             console.log(`[OverleafBridge] ${pathname}: \u4F7F\u7528\u7F16\u8F91\u5668\u5B9E\u65F6\u5185\u5BB9`);
             return currentDocContent;
           }
-          const hash = fileHashes[pathname];
-          if (hash) {
-            return await fetchBlobContent(projectId, hash);
+          let docId = doc._id || doc.id;
+          if (!docId && filename) {
+            docId = domIdMap.get(filename);
+            if (docId) {
+              console.log(`[OverleafBridge] ${pathname}: \u4ECE DOM \u83B7\u53D6 ID`);
+            }
+          }
+          if (docId) {
+            return await fetchDocContent(projectId, docId);
           } else {
-            console.warn(`[OverleafBridge] \u672A\u627E\u5230\u6587\u4EF6 hash: ${pathname}`);
+            console.warn(`[OverleafBridge] \u672A\u627E\u5230\u6587\u6863 ID: ${pathname}`);
             return null;
           }
         })
@@ -3236,11 +3242,503 @@
     });
   }
 
+  // public/injected/modules/citeTooltip/styles.js
+  var CITE_TOOLTIP_STYLES = `
+  .ol-cm-cite-tooltip-container {
+    position: fixed;
+    z-index: 99999;
+    pointer-events: none; /* \u5BB9\u5668\u7A7F\u900F\uFF0C\u907F\u514D\u906E\u6321\u5927\u9762\u79EF\u533A\u57DF */
+    display: none;
+    transition: top 0.05s ease-out, left 0.05s ease-out;
+  }
+
+  .ol-cm-cite-content {
+    pointer-events: auto; /* \u5185\u5BB9\u53EF\u4EA4\u4E92 */
+    user-select: text;    /* \u5185\u5BB9\u53EF\u9009\u4E2D */
+    cursor: text;         /* \u9F20\u6807\u6837\u5F0F */
+    
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    overflow: auto;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    max-width: 420px;
+    min-width: 200px;
+  }
+
+  /* \u6D45\u8272\u4E3B\u9898 */
+  .ol-cm-cite-content.light,
+  body:not(.dark) .ol-cm-cite-content {
+    box-shadow: 0px 4px 12px 0px rgba(30, 37, 48, 0.15);
+    border: 1px solid #e7e9ee !important;
+    background-color: white !important;
+    color: #333;
+  }
+
+  /* \u6DF1\u8272\u4E3B\u9898 */
+  .ol-cm-cite-content.dark,
+  body.dark .ol-cm-cite-content,
+  [data-theme="dark"] .ol-cm-cite-content {
+    box-shadow: 0px 4px 12px 0px rgba(0, 0, 0, 0.3);
+    border: 1px solid #2f3a4c !important;
+    background-color: #1b222c !important;
+    color: #e0e0e0;
+  }
+
+  /* \u6807\u9898 */
+  .ol-cm-cite-title {
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.4;
+    color: inherit;
+    margin: 0;
+  }
+
+  /* \u4F5C\u8005 */
+  .ol-cm-cite-authors {
+    font-size: 12px;
+    color: #666;
+    margin: 0;
+  }
+
+  body.dark .ol-cm-cite-authors,
+  [data-theme="dark"] .ol-cm-cite-authors {
+    color: #aaa;
+  }
+
+  /* \u5143\u4FE1\u606F\u884C */
+  .ol-cm-cite-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 11px;
+    margin-top: 4px;
+  }
+
+  .ol-cm-cite-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background-color: rgba(0, 119, 182, 0.1);
+    color: #0077B6;
+  }
+
+  body.dark .ol-cm-cite-meta-item,
+  [data-theme="dark"] .ol-cm-cite-meta-item {
+    background-color: rgba(0, 180, 216, 0.15);
+    color: #00B4D8;
+  }
+
+  /* \u5F15\u7528\u952E */
+  .ol-cm-cite-key {
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    font-size: 11px;
+    color: #888;
+    margin-top: 4px;
+  }
+
+  /* \u672A\u627E\u5230\u72B6\u6001 */
+  .ol-cm-cite-not-found {
+    font-style: italic;
+    color: #999;
+  }
+
+  /* \u52A0\u8F7D\u72B6\u6001 */
+  .ol-cm-cite-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #666;
+  }
+
+  .ol-cm-cite-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid #ddd;
+    border-top-color: #0077B6;
+    border-radius: 50%;
+    animation: ol-cite-spin 0.8s linear infinite;
+  }
+
+  @keyframes ol-cite-spin {
+    to { transform: rotate(360deg); }
+  }
+`;
+  function injectStyles2() {
+    if (document.getElementById("ol-cite-tooltip-styles")) {
+      return;
+    }
+    const style = document.createElement("style");
+    style.id = "ol-cite-tooltip-styles";
+    style.textContent = CITE_TOOLTIP_STYLES;
+    document.head.appendChild(style);
+    console.log("[CiteTooltip] Styles injected");
+  }
+
+  // public/injected/modules/citeTooltip/tooltip.js
+  var tooltipContainer = null;
+  var tooltipContent = null;
+  var currentCite = null;
+  var lastPos = -1;
+  var checkInterval = null;
+  var referenceCache = /* @__PURE__ */ new Map();
+  function createTooltipDOM() {
+    if (tooltipContainer) return;
+    tooltipContainer = document.createElement("div");
+    tooltipContainer.className = "ol-cm-cite-tooltip-container";
+    tooltipContent = document.createElement("div");
+    tooltipContent.className = "ol-cm-cite-content";
+    tooltipContainer.appendChild(tooltipContent);
+    document.body.appendChild(tooltipContainer);
+  }
+  function updateTheme() {
+    if (!tooltipContent) return;
+    const isDark = document.body.classList.contains("dark") || document.querySelector('[data-theme="dark"]');
+    if (isDark) {
+      tooltipContent.classList.add("dark");
+      tooltipContent.classList.remove("light");
+    } else {
+      tooltipContent.classList.add("light");
+      tooltipContent.classList.remove("dark");
+    }
+  }
+  function findCiteAtCursor(view) {
+    if (!view || !view.state) return null;
+    const selection = view.state.selection.main;
+    if (!selection.empty) return null;
+    const pos = selection.from;
+    const line = view.state.doc.lineAt(pos);
+    const colInLine = pos - line.from;
+    const citeRegex = /\\cite\{([^}]+)\}/g;
+    let match;
+    while ((match = citeRegex.exec(line.text)) !== null) {
+      const startCol = match.index;
+      const endCol = match.index + match[0].length;
+      if (colInLine >= startCol && colInLine <= endCol) {
+        const coords = view.coordsAtPos(line.from + startCol);
+        const keys = match[1].split(",").map((k) => k.trim()).filter((k) => k);
+        return {
+          keys,
+          fullMatch: match[0],
+          pos: line.from + startCol,
+          coords
+        };
+      }
+    }
+    return null;
+  }
+  var lastClickTime = 0;
+  function handleCiteClick(keys) {
+    const now = Date.now();
+    if (now - lastClickTime < 300) return;
+    lastClickTime = now;
+    window.postMessage({
+      type: "OVERLEAF_CITE_NAVIGATE",
+      keys
+    }, "*");
+    console.log("[CiteTooltip] Navigate to:", keys);
+  }
+  async function fetchReferenceInfo(keys) {
+    const cachedResults = [];
+    const uncachedKeys = [];
+    for (const key of keys) {
+      if (referenceCache.has(key)) {
+        cachedResults.push(referenceCache.get(key));
+      } else {
+        uncachedKeys.push(key);
+      }
+    }
+    if (uncachedKeys.length === 0) {
+      return cachedResults;
+    }
+    return new Promise((resolve) => {
+      const requestId = `cite_lookup_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const handleResponse = (event) => {
+        if (event.source !== window) return;
+        if (event.data?.type !== "OVERLEAF_CITE_LOOKUP_RESPONSE") return;
+        if (event.data?.requestId !== requestId) return;
+        window.removeEventListener("message", handleResponse);
+        const references = event.data.references || [];
+        for (const ref of references) {
+          if (ref && ref.id) {
+            referenceCache.set(ref.id, ref);
+          }
+        }
+        resolve([...cachedResults, ...references]);
+      };
+      window.addEventListener("message", handleResponse);
+      window.postMessage({
+        type: "OVERLEAF_CITE_LOOKUP_REQUEST",
+        requestId,
+        keys: uncachedKeys
+      }, "*");
+      setTimeout(() => {
+        window.removeEventListener("message", handleResponse);
+        resolve(cachedResults);
+      }, 2e3);
+    });
+  }
+  function renderReferenceInfo(references, keys) {
+    if (!tooltipContent) return;
+    if (!references || references.length === 0) {
+      tooltipContent.innerHTML = `
+      <div class="ol-cm-cite-not-found">
+        \u672A\u627E\u5230\u5F15\u7528: ${keys.join(", ")}
+      </div>
+      <div class="ol-cm-cite-key">\\cite{${keys.join(", ")}}</div>
+    `;
+      return;
+    }
+    const html = references.map((ref) => {
+      if (!ref) return "";
+      const venue = ref.journal || ref.booktitle || ref.publisher || "";
+      const metaItems = [];
+      if (ref.year) {
+        metaItems.push(`<span class="ol-cm-cite-meta-item">${ref.year}</span>`);
+      }
+      if (venue) {
+        metaItems.push(`<span class="ol-cm-cite-meta-item">${truncate(venue, 40)}</span>`);
+      }
+      return `
+      <div class="ol-cm-cite-title">${escapeHtml(ref.title || ref.id)}</div>
+      ${ref.authors ? `<div class="ol-cm-cite-authors">${escapeHtml(truncate(ref.authors, 80))}</div>` : ""}
+      ${metaItems.length > 0 ? `<div class="ol-cm-cite-meta">${metaItems.join("")}</div>` : ""}
+    `;
+    }).join('<hr style="margin: 8px 0; border: none; border-top: 1px solid #eee;">');
+    tooltipContent.innerHTML = html + `<div class="ol-cm-cite-key">\\cite{${keys.join(", ")}}</div>`;
+  }
+  function showLoading(keys) {
+    if (!tooltipContent) return;
+    tooltipContent.innerHTML = `
+    <div class="ol-cm-cite-loading">
+      <div class="ol-cm-cite-spinner"></div>
+      <span>\u67E5\u627E\u5F15\u7528...</span>
+    </div>
+    <div class="ol-cm-cite-key">\\cite{${keys.join(", ")}}</div>
+  `;
+  }
+  function updatePosition() {
+    if (!currentCite || !tooltipContainer) return;
+    const view = getEditorView();
+    if (!view) return;
+    const newCoords = view.coordsAtPos(currentCite.pos);
+    if (!newCoords) {
+      hideTooltip();
+      return;
+    }
+    const gap = 6;
+    const tooltipHeight = tooltipContainer.offsetHeight || 60;
+    let top = newCoords.top - tooltipHeight - gap;
+    let left = newCoords.left;
+    if (top < 10) {
+      top = newCoords.bottom + gap;
+    }
+    const maxLeft = window.innerWidth - tooltipContainer.offsetWidth - 10;
+    if (left > maxLeft) {
+      left = maxLeft;
+    }
+    tooltipContainer.style.top = top + "px";
+    tooltipContainer.style.left = Math.max(10, left) + "px";
+  }
+  async function showTooltip(cite) {
+    currentCite = cite;
+    updateTheme();
+    showLoading(cite.keys);
+    tooltipContainer.style.display = "block";
+    updatePosition();
+    const references = await fetchReferenceInfo(cite.keys);
+    if (currentCite !== cite) return;
+    renderReferenceInfo(references, cite.keys);
+    updatePosition();
+  }
+  function hideTooltip() {
+    if (tooltipContainer) {
+      tooltipContainer.style.display = "none";
+    }
+    currentCite = null;
+  }
+  function check() {
+    const view = getEditorView();
+    if (!view) return;
+    const cite = findCiteAtCursor(view);
+    if (cite) {
+      const sameKeys = currentCite && currentCite.keys.length === cite.keys.length && currentCite.keys.every((k, i) => k === cite.keys[i]);
+      if (sameKeys) {
+        currentCite = cite;
+        updatePosition();
+      } else {
+        handleCiteClick(cite.keys);
+        showTooltip(cite);
+      }
+    } else {
+      hideTooltip();
+    }
+  }
+  function startCiteTooltip() {
+    createTooltipDOM();
+    if (checkInterval) {
+      clearInterval(checkInterval);
+    }
+    checkInterval = setInterval(() => {
+      const view = getEditorView();
+      if (view) {
+        const pos = view.state.selection.main.from;
+        if (pos !== lastPos) {
+          lastPos = pos;
+          check();
+        }
+      }
+    }, 50);
+    window.addEventListener("scroll", () => {
+      if (currentCite) {
+        updatePosition();
+      }
+    }, true);
+    window.addEventListener("resize", () => {
+      if (currentCite) {
+        updatePosition();
+      }
+    });
+    console.log("[CiteTooltip] Started");
+  }
+  function stopCiteTooltip() {
+    if (checkInterval) {
+      clearInterval(checkInterval);
+      checkInterval = null;
+    }
+    hideTooltip();
+    console.log("[CiteTooltip] Stopped");
+  }
+  function updateReferenceCache(references) {
+    if (!Array.isArray(references)) return;
+    for (const ref of references) {
+      if (ref && ref.id) {
+        referenceCache.set(ref.id, ref);
+      }
+    }
+    console.log("[CiteTooltip] Cache updated with", references.length, "references");
+  }
+  function clearReferenceCache() {
+    referenceCache.clear();
+    console.log("[CiteTooltip] Cache cleared");
+  }
+  function escapeHtml(str) {
+    if (!str) return "";
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function truncate(str, maxLen) {
+    if (!str) return "";
+    if (str.length <= maxLen) return str;
+    return str.substring(0, maxLen - 3) + "...";
+  }
+  function findAllCitePositions(key) {
+    const view = getEditorView();
+    if (!view) return [];
+    const positions = [];
+    const doc = view.state.doc;
+    const text = doc.toString();
+    const citeRegex = /\\cite\{([^}]+)\}/g;
+    let match;
+    while ((match = citeRegex.exec(text)) !== null) {
+      const keys = match[1].split(",").map((k) => k.trim());
+      if (keys.includes(key)) {
+        const pos = match.index;
+        const line = doc.lineAt(pos);
+        positions.push({
+          line: line.number,
+          column: pos - line.from,
+          pos,
+          context: line.text.substring(0, 80)
+          // 上下文预览
+        });
+      }
+    }
+    return positions;
+  }
+  function navigateToPosition(pos) {
+    const view = getEditorView();
+    if (!view) return false;
+    try {
+      view.dispatch({
+        selection: { anchor: pos },
+        scrollIntoView: true
+      });
+      view.focus();
+      return true;
+    } catch (e) {
+      console.error("[CiteTooltip] Navigate failed:", e);
+      return false;
+    }
+  }
+
+  // public/injected/modules/citeTooltip/index.js
+  var isInitialized = false;
+  var isEnabled2 = true;
+  function initCiteTooltip() {
+    if (isInitialized) {
+      console.log("[CiteTooltip] Already initialized");
+      return;
+    }
+    console.log("[CiteTooltip] Initializing...");
+    injectStyles2();
+    const savedState = localStorage.getItem("ol-ai-cite-tooltip-enabled");
+    isEnabled2 = savedState !== "false";
+    if (isEnabled2) {
+      startCiteTooltip();
+    }
+    setupMessageListener2();
+    isInitialized = true;
+    console.log("[CiteTooltip] Initialized successfully, enabled:", isEnabled2);
+  }
+  function setupMessageListener2() {
+    window.addEventListener("message", (event) => {
+      if (event.source !== window) return;
+      const data = event.data;
+      if (!data) return;
+      if (data.type === "OVERLEAF_REFERENCES_UPDATE") {
+        const references = data.references;
+        if (Array.isArray(references)) {
+          updateReferenceCache(references);
+        }
+      }
+      if (data.type === "OVERLEAF_REFERENCES_CLEAR") {
+        clearReferenceCache();
+      }
+      if (data.type === "OVERLEAF_CITE_TOOLTIP_TOGGLE") {
+        const enabled = data.data?.enabled;
+        if (typeof enabled === "boolean") {
+          isEnabled2 = enabled;
+          localStorage.setItem("ol-ai-cite-tooltip-enabled", String(enabled));
+          if (enabled) {
+            startCiteTooltip();
+            console.log("[CiteTooltip] Enabled");
+          } else {
+            stopCiteTooltip();
+            console.log("[CiteTooltip] Disabled");
+          }
+        }
+      }
+      if (data.type === "OVERLEAF_CITE_TOOLTIP_GET_STATE") {
+        window.postMessage({
+          type: "OVERLEAF_CITE_TOOLTIP_STATE",
+          data: { enabled: isEnabled2 }
+        }, "*");
+      }
+    });
+  }
+
   // public/injected/modules/main.js
   initModelManagement();
   initPreview();
   initDiffSystem();
   initReviewTooltipInjector();
+  initCiteTooltip();
   var methodHandlers2 = createMethodHandlers({
     getEditorView,
     searchInternal,
@@ -3266,6 +3764,12 @@
   methodHandlers2.showTextActionPreview = function(previewData) {
     startStreamPreview(previewData);
     return { success: true };
+  };
+  methodHandlers2.findAllCitePositions = function(key) {
+    return findAllCitePositions(key);
+  };
+  methodHandlers2.navigateToPosition = function(pos) {
+    return navigateToPosition(pos);
   };
   window.addEventListener("message", function(event) {
     if (event.source !== window) return;

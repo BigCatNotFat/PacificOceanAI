@@ -13,9 +13,14 @@ import type { IConfigurationService } from '../../platform/configuration/configu
 import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService';
 import type { ITelemetryService } from '../../platform/telemetry/ITelemetryService';
 import MultiPaneContainer, { MultiPaneContainerHandle } from './MultiPaneContainer';
+import LiteraturePanel from './LiteraturePanel';
 import ActivationModal from './ActivationModal';
 import 'katex/dist/katex.min.css';
+import '../styles/literature.css';
 import { API_ENDPOINTS } from '../../base/common/apiConfig';
+
+/** 侧边栏标签页类型 */
+type SidebarTab = 'chat' | 'literature';
 
 type SidebarProps = {
   isOpen: boolean;
@@ -35,18 +40,26 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   
   const [columnCount, setColumnCount] = useState(1);
   const [selectionTooltipEnabled, setSelectionTooltipEnabled] = useState(true);
+  const [citeTooltipEnabled, setCiteTooltipEnabled] = useState(true);
+  const [isTooltipMenuOpen, setIsTooltipMenuOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<SidebarTab>('chat');
   
   // 保持 isOpenRef 与 isOpen 同步
   useEffect(() => {
     isOpenRef.current = isOpen;
   }, [isOpen]);
 
-  // 初始化 selection tooltip 状态
+  // 初始化 selection tooltip 和 cite tooltip 状态
   useEffect(() => {
     // 从 localStorage 读取初始状态
-    const savedState = localStorage.getItem('ol-ai-selection-tooltip-enabled');
-    if (savedState !== null) {
-      setSelectionTooltipEnabled(savedState === 'true');
+    const savedSelectionState = localStorage.getItem('ol-ai-selection-tooltip-enabled');
+    if (savedSelectionState !== null) {
+      setSelectionTooltipEnabled(savedSelectionState === 'true');
+    }
+    
+    const savedCiteState = localStorage.getItem('ol-ai-cite-tooltip-enabled');
+    if (savedCiteState !== null) {
+      setCiteTooltipEnabled(savedCiteState === 'true');
     }
 
     // 监听来自注入脚本的状态响应
@@ -58,11 +71,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
           setSelectionTooltipEnabled(enabled);
         }
       }
+      if (event.data?.type === 'OVERLEAF_CITE_TOOLTIP_STATE') {
+        const enabled = event.data.data?.enabled;
+        if (typeof enabled === 'boolean') {
+          setCiteTooltipEnabled(enabled);
+        }
+      }
     };
     window.addEventListener('message', handleMessage);
 
     // 请求当前状态
     window.postMessage({ type: 'OVERLEAF_SELECTION_TOOLTIP_GET_STATE' }, '*');
+    window.postMessage({ type: 'OVERLEAF_CITE_TOOLTIP_GET_STATE' }, '*');
 
     return () => {
       window.removeEventListener('message', handleMessage);
@@ -85,6 +105,23 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
     
     console.log('[Sidebar] Selection tooltip toggled:', newState);
   }, [selectionTooltipEnabled]);
+  
+  // 切换 cite tooltip 开关
+  const handleToggleCiteTooltip = useCallback(() => {
+    const newState = !citeTooltipEnabled;
+    setCiteTooltipEnabled(newState);
+    
+    // 保存到 localStorage
+    localStorage.setItem('ol-ai-cite-tooltip-enabled', String(newState));
+    
+    // 通知注入脚本
+    window.postMessage({
+      type: 'OVERLEAF_CITE_TOOLTIP_TOGGLE',
+      data: { enabled: newState }
+    }, '*');
+    
+    console.log('[Sidebar] Cite tooltip toggled:', newState);
+  }, [citeTooltipEnabled]);
   
   // 注册 paneCountGetter，让 telemetry 服务能在上报时获取当前列数
   // 如果侧边栏未打开，返回 0（用户没有使用对话功能）
@@ -267,63 +304,104 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
               </span>
             </div>
             <div className="ai-header-actions">
-              {/* Selection Tooltip 开关 */}
-              <button
-                className={`ai-icon-btn ai-toggle-btn ${selectionTooltipEnabled ? 'active' : ''}`}
-                onClick={handleToggleSelectionTooltip}
-                title={selectionTooltipEnabled ? '选区菜单已开启，点击关闭' : '选区菜单已关闭，点击开启'}
-              >
-                <span className="material-symbols">
-                  {selectionTooltipEnabled ? 'select_all' : 'deselect'}
-                </span>
-              </button>
-              {/* 列数控制按钮 */}
-              <div className="ai-column-selector">
+              {/* 提示框设置菜单 */}
+              <div className="ai-tooltip-settings">
                 <button
-                  className="ai-icon-btn"
+                  className={`ai-icon-btn ai-toggle-btn ${selectionTooltipEnabled || citeTooltipEnabled ? 'active' : ''}`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setIsColumnMenuOpen(!isColumnMenuOpen);
+                    setIsTooltipMenuOpen(!isTooltipMenuOpen);
                   }}
-                  title={`当前 ${columnCount} 列，点击调整`}
+                  title="提示框设置"
                 >
-                  <span className="material-symbols">view_column</span>
-                  {columnCount > 1 && <span className="ai-column-badge">{columnCount}</span>}
+                  <span className="material-symbols">
+                    {selectionTooltipEnabled && citeTooltipEnabled ? 'toggle_on' : 
+                     !selectionTooltipEnabled && !citeTooltipEnabled ? 'toggle_off' : 'tune'}
+                  </span>
                 </button>
-                {isColumnMenuOpen && (
-                  <div className="ai-column-dropdown">
-                    <div className="ai-column-dropdown-header">
-                      <span>列数设置</span>
+                {isTooltipMenuOpen && (
+                  <div className="ai-tooltip-dropdown">
+                    <div className="ai-tooltip-dropdown-header">
+                      <span>提示框设置</span>
                     </div>
-                    <div className="ai-column-dropdown-options">
-                      {[1, 2, 3, 4].map((count) => (
-                        <button
-                          key={count}
-                          className={`ai-column-option ${columnCount === count ? 'active' : ''}`}
-                          onClick={() => handleSetColumnCount(count)}
-                        >
-                          <span className="material-symbols">
-                            {count === 1 ? 'view_agenda' : count === 2 ? 'view_column_2' : 'view_week'}
-                          </span>
-                          <span>{count} 列</span>
-                          {columnCount === count && (
-                            <span className="material-symbols ai-column-check">check</span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="ai-column-dropdown-footer">
+                    <div className="ai-tooltip-dropdown-options">
                       <button
-                        className="ai-column-add-btn"
-                        onClick={handleAddColumn}
+                        className={`ai-tooltip-option ${selectionTooltipEnabled ? 'active' : ''}`}
+                        onClick={handleToggleSelectionTooltip}
                       >
-                        <span className="material-symbols">add</span>
-                        添加一列
+                        <span className="material-symbols">
+                          {selectionTooltipEnabled ? 'check_box' : 'check_box_outline_blank'}
+                        </span>
+                        <span className="ai-tooltip-option-text">
+                          <span className="ai-tooltip-option-title">选区菜单</span>
+                          <span className="ai-tooltip-option-desc">选中文本时显示 AI 操作菜单</span>
+                        </span>
+                      </button>
+                      <button
+                        className={`ai-tooltip-option ${citeTooltipEnabled ? 'active' : ''}`}
+                        onClick={handleToggleCiteTooltip}
+                      >
+                        <span className="material-symbols">
+                          {citeTooltipEnabled ? 'check_box' : 'check_box_outline_blank'}
+                        </span>
+                        <span className="ai-tooltip-option-text">
+                          <span className="ai-tooltip-option-title">文献提示</span>
+                          <span className="ai-tooltip-option-desc">光标在 \cite 时显示文献信息</span>
+                        </span>
                       </button>
                     </div>
                   </div>
                 )}
               </div>
+              {/* 列数控制按钮（仅在聊天标签页显示） */}
+              {activeTab === 'chat' && (
+                <div className="ai-column-selector">
+                  <button
+                    className="ai-icon-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsColumnMenuOpen(!isColumnMenuOpen);
+                    }}
+                    title={`当前 ${columnCount} 列，点击调整`}
+                  >
+                    <span className="material-symbols">view_column</span>
+                    {columnCount > 1 && <span className="ai-column-badge">{columnCount}</span>}
+                  </button>
+                  {isColumnMenuOpen && (
+                    <div className="ai-column-dropdown">
+                      <div className="ai-column-dropdown-header">
+                        <span>列数设置</span>
+                      </div>
+                      <div className="ai-column-dropdown-options">
+                        {[1, 2, 3, 4].map((count) => (
+                          <button
+                            key={count}
+                            className={`ai-column-option ${columnCount === count ? 'active' : ''}`}
+                            onClick={() => handleSetColumnCount(count)}
+                          >
+                            <span className="material-symbols">
+                              {count === 1 ? 'view_agenda' : count === 2 ? 'view_column_2' : 'view_week'}
+                            </span>
+                            <span>{count} 列</span>
+                            {columnCount === count && (
+                              <span className="material-symbols ai-column-check">check</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="ai-column-dropdown-footer">
+                        <button
+                          className="ai-column-add-btn"
+                          onClick={handleAddColumn}
+                        >
+                          <span className="material-symbols">add</span>
+                          添加一列
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <button className="ai-icon-btn" type="button" onClick={openSettings} title="设置">
                 <span className="material-symbols">settings</span>
               </button>
@@ -333,11 +411,33 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
             </div>
           </div>
 
-          {/* 多列对话容器 */}
-          <MultiPaneContainer 
-            ref={multiPaneRef}
-            onColumnCountChange={handleColumnCountChange} 
-          />
+          {/* 标签切换 */}
+          <div className="sidebar-tabs">
+            <button 
+              className={`sidebar-tab ${activeTab === 'chat' ? 'active' : ''}`}
+              onClick={() => setActiveTab('chat')}
+            >
+              <span className="material-symbols">chat</span>
+              <span>AI 对话</span>
+            </button>
+            <button 
+              className={`sidebar-tab ${activeTab === 'literature' ? 'active' : ''}`}
+              onClick={() => setActiveTab('literature')}
+            >
+              <span className="material-symbols">menu_book</span>
+              <span>文献库</span>
+            </button>
+          </div>
+
+          {/* 内容区域 */}
+          {activeTab === 'chat' ? (
+            <MultiPaneContainer 
+              ref={multiPaneRef}
+              onColumnCountChange={handleColumnCountChange} 
+            />
+          ) : (
+            <LiteraturePanel />
+          )}
         </div>
       </div>
 

@@ -2825,3 +2825,91 @@
   opacity: 1;
   background-color: var(--bg-tertiary);
 }
+
+/* ==================== 提示框设置下拉菜单 ==================== */
+.ai-tooltip-settings {
+  position: relative;
+}
+
+.ai-tooltip-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  background: #ffffff;
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 119, 182, 0.12),
+              0 0 0 1px rgba(0, 119, 182, 0.04);
+  z-index: 1000;
+  min-width: 240px;
+  overflow: hidden;
+  backdrop-filter: blur(16px);
+}
+
+.ai-tooltip-dropdown-header {
+  padding: 10px 12px;
+  border-bottom: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--bg-secondary);
+  border-radius: 12px 12px 0 0;
+}
+
+.ai-tooltip-dropdown-options {
+  padding: 6px;
+}
+
+.ai-tooltip-option {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.ai-tooltip-option:hover {
+  background: var(--bg-secondary);
+}
+
+.ai-tooltip-option.active {
+  background: rgba(0, 119, 182, 0.08);
+}
+
+.ai-tooltip-option .material-symbols {
+  font-size: 20px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.ai-tooltip-option.active .material-symbols {
+  color: var(--accent-primary);
+}
+
+.ai-tooltip-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-tooltip-option-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.ai-tooltip-option-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.3;
+}

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useService } from '../hooks/useService';
 import { SIDEBAR_CONFIG } from '../../base/common/constants';
 import { getMainContainer, setTransition, triggerResize } from '../../base/browser/dom';
 import Sidebar from './Sidebar';
@@ -25,6 +26,8 @@ import { TelemetryService } from '../../services/telemetry/TelemetryService';
 import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService';
 import { diffSuggestionService } from '../../services/editor/DiffSuggestionService';
 import { API_ENDPOINTS } from '../../base/common/apiConfig';
+import { LiteratureService, ILiteratureServiceId } from '../../services/literature/LiteratureService';
+import type { ILiteratureService } from '../../platform/literature/ILiteratureService';
 
 const App: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -149,6 +152,25 @@ const App: React.FC = () => {
       )
     );
 
+    // 注册文献管理服务（基础服务，无依赖）
+    di.registerDescriptor(
+      new ServiceDescriptor(
+        ILiteratureServiceId,
+        LiteratureService,
+        getServiceDependencies(LiteratureService)
+      )
+    );
+
+    // 延迟自动扫描文献（确保注入脚本已加载）
+    setTimeout(() => {
+      const literatureService = di.getService<ILiteratureService>(ILiteratureServiceId);
+      literatureService.scanAndParseReferences().then((result) => {
+        console.log(`[App] 自动扫描文献完成: ${result.references.length} 篇`);
+      }).catch((err) => {
+        console.warn('[App] 自动扫描文献失败:', err);
+      });
+    }, 1000);
+
     return di;
   });
 
@@ -176,6 +198,7 @@ const App: React.FC = () => {
   return (
     <DIProvider container={container}>
       <ModelListSyncProvider />
+      <CiteLookupProvider />
       <TextActionProvider showStatusToast>
         <ToolbarButtonPortal onClick={toggleSidebar} />
         <Sidebar
@@ -196,6 +219,58 @@ const App: React.FC = () => {
  */
 const ModelListSyncProvider: React.FC = () => {
   useModelListSync();
+  return null;
+};
+
+/**
+ * 引用查找监听组件
+ * 负责响应注入脚本的引用查找请求
+ */
+const CiteLookupProvider: React.FC = () => {
+  const literatureService = useService<ILiteratureService>(ILiteratureServiceId);
+  
+  useEffect(() => {
+    if (!literatureService) return;
+    
+    const handleMessage = (event: MessageEvent) => {
+      if (event.source !== window) return;
+      
+      const data = event.data;
+      if (!data || data.type !== 'OVERLEAF_CITE_LOOKUP_REQUEST') return;
+      
+      const { requestId, keys } = data;
+      if (!requestId || !Array.isArray(keys)) return;
+      
+      // 从文献服务中查找引用
+      const allRefs = literatureService.getReferences();
+      const foundRefs = keys.map(key => 
+        allRefs.find(ref => ref.id === key) || null
+      ).filter(Boolean);
+      
+      // 发送响应
+      window.postMessage({
+        type: 'OVERLEAF_CITE_LOOKUP_RESPONSE',
+        requestId,
+        references: foundRefs
+      }, '*');
+    };
+    
+    window.addEventListener('message', handleMessage);
+    
+    // 当文献列表更新时，推送到注入脚本
+    const disposable = literatureService.onDidReferencesChange((refs) => {
+      window.postMessage({
+        type: 'OVERLEAF_REFERENCES_UPDATE',
+        references: refs
+      }, '*');
+    });
+    
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      disposable.dispose();
+    };
+  }, [literatureService]);
+  
   return null;
 };
 

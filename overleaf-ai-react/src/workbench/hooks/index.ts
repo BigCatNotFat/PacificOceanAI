@@ -13,3 +13,4 @@ export {
 export { useUIStreamUpdates } from './useUIStreamUpdates';
 export { useTextAction } from './useTextAction';
 export { useModelListSync } from './useModelListSync';
+export { useLiterature } from './useLiterature';

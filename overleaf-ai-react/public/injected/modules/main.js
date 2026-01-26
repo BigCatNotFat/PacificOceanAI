@@ -18,6 +18,8 @@ import { initModelManagement } from './modelManagement/index.js';
 import { initPreview } from './preview/index.js';
 import { initDiffSystem } from './diff/index.js';
 import { initReviewTooltipInjector } from './reviewTooltipInjector/index.js';
+import { initCiteTooltip } from './citeTooltip/index.js';
+import { findAllCitePositions, navigateToPosition } from './citeTooltip/tooltip.js';
 
 // 初始化各个模块
 initModelManagement();
@@ -25,6 +27,7 @@ initModelManagement();
 initPreview();
 initDiffSystem();
 initReviewTooltipInjector(); // 使用原生 Review Tooltip 注入 AI 控件
+initCiteTooltip(); // 引用工具提示（显示 \cite{} 的文献信息）
 
 // 创建方法处理器
 const methodHandlers = createMethodHandlers({
@@ -72,6 +75,16 @@ import { startStreamPreview } from './preview/stream.js';
 methodHandlers.showTextActionPreview = function(previewData) {
   startStreamPreview(previewData);
       return { success: true };
+};
+
+// 补充处理器：查找所有引用位置
+methodHandlers.findAllCitePositions = function(key) {
+  return findAllCitePositions(key);
+};
+
+// 补充处理器：跳转到指定位置
+methodHandlers.navigateToPosition = function(pos) {
+  return navigateToPosition(pos);
 };
 
 // 补充处理器：处理预览决策
