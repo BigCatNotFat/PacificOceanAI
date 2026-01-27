@@ -161,13 +161,17 @@ const App: React.FC = () => {
       )
     );
 
-    // 延迟自动扫描文献（确保注入脚本已加载）
+    // 延迟自动同步文献（确保注入脚本已加载）
+    // 使用 initializeWithSync 进行本地库和 bib 文件的同步
     setTimeout(() => {
       const literatureService = di.getService<ILiteratureService>(ILiteratureServiceId);
-      literatureService.scanAndParseReferences().then((result) => {
-        console.log(`[App] 自动扫描文献完成: ${result.references.length} 篇`);
+      literatureService.initializeWithSync().then((result) => {
+        console.log(`[App] 文献库同步完成: ${result.references.length} 篇`);
+        if (result.errors.length > 0) {
+          console.warn('[App] 文献库同步警告:', result.errors);
+        }
       }).catch((err) => {
-        console.warn('[App] 自动扫描文献失败:', err);
+        console.warn('[App] 文献库同步失败:', err);
       });
     }, 1000);
 

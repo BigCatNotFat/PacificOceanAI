@@ -2,7 +2,7 @@
 
 > 本文档是 Overleaf AI Assistant 浏览器插件的开发指南。所有代码提交必须严格遵守本文档定义的架构原则、目录结构和代码模式。
 
-**最后更新**: 2026-01-16
+**最后更新**: 2026-01-26
 
 ---
 
@@ -93,11 +93,13 @@
 - 7.4 搜索功能详解
 - 7.5 文本操作预览系统
 - 7.6 选区工具提示
-- 7.7 桥接系统最佳实践
-  - 7.7.1 方法命名规范
-  - 7.7.2 参数设计
-  - 7.7.3 错误处理
-  - 7.7.4 性能优化
+- 7.7 文献引用提示（Cite Tooltip）
+- 7.8 提示框设置系统
+- 7.9 桥接系统最佳实践
+  - 7.9.1 方法命名规范
+  - 7.9.2 参数设计
+  - 7.9.3 错误处理
+  - 7.9.4 性能优化
 
 #### [8. 存储系统](#8-存储系统)
 - 8.1 存储需求
@@ -1372,7 +1374,13 @@ public/injected/
     ├── selectionTooltip/      # 选区工具提示
     │   ├── activation.js     # 激活状态管理
     │   ├── modelSelector.js  # 模型选择器
+    │   ├── ui.js             # 选区菜单 UI
+    │   ├── textActions.js    # 文本操作处理
     │   └── index.js          # 统一导出
+    ├── citeTooltip/           # 文献引用提示 ✅ (新增)
+    │   ├── styles.js         # 样式注入
+    │   ├── tooltip.js        # 提示框逻辑
+    │   └── index.js          # 模块入口（含开关控制）
     ├── preview/               # 预览系统（占位符）
     │   └── index.js          
     ├── diff/                  # Diff 建议系统（占位符）
@@ -1476,6 +1484,36 @@ dist/injected/
 - `createModelSelector()`: 创建模型选择器 UI
 - `updateModelSelectorOptions()`: 更新选项
 - localStorage 持久化
+
+**6. 文献引用提示 (citeTooltip/)** ✅ 新增
+
+**功能概述**
+- 当光标移动到 `\cite{...}` 上时，自动显示对应文献的标题、作者、年份等信息
+- 支持点击引用跳转到文献库中对应条目
+- 支持通过 Sidebar 设置菜单开启/关闭
+
+**styles.js**
+- `injectStyles()`: 注入提示框 CSS 样式
+- 支持亮色/暗色主题自动切换
+- 样式支持文本选择和复制
+
+**tooltip.js**
+- `startCiteTooltip()`: 启动光标检测循环
+- `stopCiteTooltip()`: 停止检测
+- `findCiteAtCursor()`: 检测光标是否在 `\cite{...}` 内
+- `showTooltip()` / `hideTooltip()`: 显示/隐藏提示框
+- `updateReferenceCache()`: 更新文献缓存
+- `findAllCitePositions()`: 查找某引用在文档中的所有位置
+- `navigateToPosition()`: 跳转到指定位置
+
+**index.js**
+- `initCiteTooltip()`: 初始化模块
+- `destroyCiteTooltip()`: 销毁模块
+- 消息监听器：
+  - `OVERLEAF_REFERENCES_UPDATE`: 接收文献数据更新
+  - `OVERLEAF_CITE_TOOLTIP_TOGGLE`: 切换开关状态
+  - `OVERLEAF_CITE_TOOLTIP_GET_STATE`: 返回当前状态
+- localStorage 持久化开关状态
 
 **构建系统**：
 
@@ -1797,27 +1835,114 @@ overleafBridge.js 实现了强大的项目级搜索功能：
 - 无需选中文本（在光标处操作）
 - 支持插入模式（AI 生成新内容）
 
-### 7.7 桥接系统最佳实践
+### 7.7 文献引用提示（Cite Tooltip）
 
-#### 7.7.1 方法命名规范
+**功能**：
+- 光标移动到 `\cite{...}` 时自动显示文献信息
+- 显示文献标题、作者、年份等元数据
+- 点击引用时在文献库中高亮对应条目
+- 支持文本选择和复制
+
+**工作原理**：
+
+1. **光标检测**
+   - 定时检测光标位置（50ms 间隔）
+   - 解析当前行是否包含 `\cite{key}`
+   - 判断光标是否在引用范围内
+
+2. **显示提示框**
+   - 在引用位置上方显示悬浮提示
+   - 从文献缓存中查找对应条目
+   - 支持亮色/暗色主题
+
+3. **文献联动**
+   - 点击引用时发送 `OVERLEAF_CITE_NAVIGATE` 消息
+   - Sidebar 文献库接收消息并高亮条目
+   - 支持定位功能（查找所有引用位置）
+
+**消息协议**：
+- `OVERLEAF_REFERENCES_UPDATE`: 更新文献缓存
+- `OVERLEAF_CITE_LOOKUP_REQUEST/RESPONSE`: 查询单个文献
+- `OVERLEAF_CITE_NAVIGATE`: 导航到文献库条目
+- `OVERLEAF_CITE_TOOLTIP_TOGGLE`: 切换开关
+- `OVERLEAF_CITE_TOOLTIP_GET_STATE`: 获取状态
+
+### 7.8 提示框设置系统
+
+**功能**：
+- 统一管理选区菜单和文献提示的开关
+- 通过 Sidebar 顶部按钮访问设置菜单
+- 状态持久化到 localStorage
+
+**UI 组件**：
+
+```
+┌─────────────────────────────┐
+│     提示框设置              │
+├─────────────────────────────┤
+│ ☑ 选区菜单                  │
+│   选中文本时显示 AI 操作菜单 │
+├─────────────────────────────┤
+│ ☑ 文献提示                  │
+│   光标在 \cite 时显示文献信息│
+└─────────────────────────────┘
+```
+
+**实现架构**：
+
+```
+Sidebar.tsx (React)
+├── selectionTooltipEnabled 状态
+├── citeTooltipEnabled 状态
+├── handleToggleSelectionTooltip()
+├── handleToggleCiteTooltip()
+└── 下拉菜单 UI
+         │
+         │ window.postMessage
+         ▼
+注入脚本 (overleafBridge.js)
+├── selectionTooltip/index.js
+│   └── 监听 OVERLEAF_SELECTION_TOOLTIP_TOGGLE
+└── citeTooltip/index.js
+    └── 监听 OVERLEAF_CITE_TOOLTIP_TOGGLE
+```
+
+**消息协议**：
+
+| 消息类型 | 方向 | 说明 |
+|---------|------|------|
+| `OVERLEAF_SELECTION_TOOLTIP_TOGGLE` | Sidebar → 注入 | 切换选区菜单 |
+| `OVERLEAF_SELECTION_TOOLTIP_GET_STATE` | Sidebar → 注入 | 获取状态 |
+| `OVERLEAF_SELECTION_TOOLTIP_STATE` | 注入 → Sidebar | 返回状态 |
+| `OVERLEAF_CITE_TOOLTIP_TOGGLE` | Sidebar → 注入 | 切换文献提示 |
+| `OVERLEAF_CITE_TOOLTIP_GET_STATE` | Sidebar → 注入 | 获取状态 |
+| `OVERLEAF_CITE_TOOLTIP_STATE` | 注入 → Sidebar | 返回状态 |
+
+**持久化**：
+- `ol-ai-selection-tooltip-enabled`: 选区菜单开关
+- `ol-ai-cite-tooltip-enabled`: 文献提示开关
+
+### 7.9 桥接系统最佳实践
+
+#### 7.9.1 方法命名规范
 
 - 使用动词开头：get, set, read, write, insert, replace
 - 清晰表达意图：getDocText, replaceRange
 - 避免缩写：使用 document 而非 doc
 
-#### 7.7.2 参数设计
+#### 7.9.2 参数设计
 
 - 使用对象参数传递多个选项
 - 提供合理的默认值
 - 参数应该是可序列化的（不能传递函数）
 
-#### 7.7.3 错误处理
+#### 7.9.3 错误处理
 
 - 所有方法都应该捕获异常
 - 返回统一的错误格式
 - 错误信息应该清晰描述问题
 
-#### 7.7.4 性能优化
+#### 7.9.4 性能优化
 
 - 批量操作优于单个操作
 - 缓存不常变化的数据
@@ -3770,11 +3895,12 @@ to solve problems in various domains.
 - 包含对话面板
 - 包含设置面板
 - 管理面板切换
+- 提示框设置管理
 
 **布局结构**：
 ```
 ┌─────────────────────────────────────┐
-│  Header (Logo + Settings Button)   │
+│  Header (Logo + Tooltip + Settings) │
 ├─────────────────────────────────────┤
 │                                     │
 │  ConversationPane                   │
@@ -3785,6 +3911,13 @@ to solve problems in various domains.
 │  Footer (Version + Status)          │
 └─────────────────────────────────────┘
 ```
+
+**提示框设置**：
+- `selectionTooltipEnabled`：选区菜单开关状态
+- `citeTooltipEnabled`：文献提示开关状态
+- `isTooltipMenuOpen`：设置菜单是否展开
+- 通过 `window.postMessage` 与注入脚本通信
+- 状态持久化到 localStorage
 
 **响应式设计**：
 - 支持拖拽调整宽度

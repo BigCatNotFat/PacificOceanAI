@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useService } from './useService';
 import { ILiteratureServiceId } from '../../platform/literature/ILiteratureService';
-import type { ILiteratureService, BibReference } from '../../platform/literature/ILiteratureService';
+import type { ILiteratureService, BibReference, LiteratureTag } from '../../platform/literature/ILiteratureService';
 
 export interface UseLiteratureResult {
   /** 文献列表 */
@@ -31,6 +31,28 @@ export interface UseLiteratureResult {
   applyCitation: (id: string) => Promise<boolean>;
   /** 应用所有引用到编辑器 */
   applyAllCitations: () => Promise<boolean>;
+  /** 手动添加文献 */
+  addManualReference: (bibtex: string, isEnriched?: boolean) => BibReference[];
+  /** 标记文献为待删除 */
+  markForDeletion: (id: string) => void;
+  /** 取消文献的待删除标记 */
+  unmarkForDeletion: (id: string) => void;
+  /** 确认删除所有标记为待删除的文献 */
+  confirmDeletions: () => void;
+  /** 使用补全后的 BibTeX 更新文献 */
+  enrichReference: (id: string, enrichedBibtex: string) => boolean;
+  /** 清除所有文献的待应用状态 */
+  clearPendingStatus: () => void;
+  /** 更新文献的原始 BibTeX 内容 */
+  updateReferenceRawBibtex: (id: string, rawBibtex: string) => boolean;
+  /** 检查并去除文献库中的重复文献 */
+  deduplicateReferences: () => number;
+  /** 为文献添加标签 */
+  addTag: (id: string, tag: LiteratureTag) => boolean;
+  /** 从文献移除标签 */
+  removeTag: (id: string, tagName: string) => boolean;
+  /** 获取所有已使用的标签 */
+  getAllTags: () => LiteratureTag[];
 }
 
 export function useLiterature(): UseLiteratureResult {
@@ -144,6 +166,68 @@ export function useLiterature(): UseLiteratureResult {
     }
   }, [literatureService, references]);
   
+  // 手动添加文献
+  const addManualReference = useCallback((bibtex: string, isEnriched?: boolean): BibReference[] => {
+    if (!literatureService) return [];
+    return literatureService.addManualReference(bibtex, isEnriched);
+  }, [literatureService]);
+  
+  // 标记文献为待删除
+  const markForDeletion = useCallback((id: string) => {
+    literatureService?.markForDeletion(id);
+  }, [literatureService]);
+  
+  // 取消文献的待删除标记
+  const unmarkForDeletion = useCallback((id: string) => {
+    literatureService?.unmarkForDeletion(id);
+  }, [literatureService]);
+  
+  // 确认删除所有标记为待删除的文献
+  const confirmDeletions = useCallback(() => {
+    literatureService?.confirmDeletions();
+  }, [literatureService]);
+  
+  // 使用补全后的 BibTeX 更新文献
+  const enrichReference = useCallback((id: string, enrichedBibtex: string): boolean => {
+    if (!literatureService) return false;
+    return literatureService.enrichReference(id, enrichedBibtex);
+  }, [literatureService]);
+  
+  // 清除所有文献的待应用状态
+  const clearPendingStatus = useCallback(() => {
+    literatureService?.clearPendingStatus();
+  }, [literatureService]);
+  
+  // 更新文献的原始 BibTeX 内容
+  const updateReferenceRawBibtex = useCallback((id: string, rawBibtex: string): boolean => {
+    if (!literatureService) return false;
+    return literatureService.updateReferenceRawBibtex(id, rawBibtex);
+  }, [literatureService]);
+  
+  // 检查并去除文献库中的重复文献
+  const deduplicateReferences = useCallback((): number => {
+    if (!literatureService) return 0;
+    return literatureService.deduplicateReferences();
+  }, [literatureService]);
+  
+  // 为文献添加标签
+  const addTag = useCallback((id: string, tag: LiteratureTag): boolean => {
+    if (!literatureService) return false;
+    return literatureService.addTag(id, tag);
+  }, [literatureService]);
+  
+  // 从文献移除标签
+  const removeTag = useCallback((id: string, tagName: string): boolean => {
+    if (!literatureService) return false;
+    return literatureService.removeTag(id, tagName);
+  }, [literatureService]);
+  
+  // 获取所有已使用的标签
+  const getAllTags = useCallback((): LiteratureTag[] => {
+    if (!literatureService) return [];
+    return literatureService.getAllTags();
+  }, [literatureService]);
+  
   return {
     references,
     isLoading,
@@ -155,7 +239,18 @@ export function useLiterature(): UseLiteratureResult {
     generateCitations,
     clearReferences,
     applyCitation,
-    applyAllCitations
+    applyAllCitations,
+    addManualReference,
+    markForDeletion,
+    unmarkForDeletion,
+    confirmDeletions,
+    enrichReference,
+    clearPendingStatus,
+    updateReferenceRawBibtex,
+    deduplicateReferences,
+    addTag,
+    removeTag,
+    getAllTags
   };
 }
 
