@@ -4,6 +4,7 @@
  */
 
 import { getEditorView } from '../core/editorView.js';
+import { debug, warn } from '../core/logger.js';
 
 // 通过 entities API 获取文件列表
 export async function fetchEntities(projectId) {
@@ -121,19 +122,19 @@ function getDomFileIdMap() {
 export async function getAllDocsWithContent(projectId) {
   const files = [];
   
-  console.log('[OverleafBridge] 使用 entities + doc download API 获取文件');
+  debug('[OverleafBridge] 使用 entities + doc download API 获取文件');
   
   // 1. 获取文件列表
   const entities = await fetchEntities(projectId);
-  console.log(`[OverleafBridge] 找到 ${entities.length} 个实体`);
+  debug(`[OverleafBridge] 找到 ${entities.length} 个实体`);
   
   // 2. 过滤出可编辑的文档（type === 'doc'）
   const docs = entities.filter(e => e.type === 'doc');
-  console.log(`[OverleafBridge] 找到 ${docs.length} 个可编辑文档`);
+  debug(`[OverleafBridge] 找到 ${docs.length} 个可编辑文档`);
   
   // 3. 获取 DOM 中的文件 ID 映射（作为 fallback）
   const domIdMap = getDomFileIdMap();
-  console.log(`[OverleafBridge] DOM 文件 ID 映射: ${domIdMap.size} 个`);
+  debug(`[OverleafBridge] DOM 文件 ID 映射: ${domIdMap.size} 个`);
   
   // 获取当前编辑器文档的实时内容（优先使用，因为可能有未保存的修改）
   let currentDocPath = null;
@@ -148,11 +149,11 @@ export async function getAllDocsWithContent(projectId) {
         currentDocPath = store.get('editor.open_doc_name');
       }
       if (currentDocPath && currentDocContent) {
-        console.log(`[OverleafBridge] 当前编辑器文档: ${currentDocPath} (使用实时内容)`);
+        debug(`[OverleafBridge] 当前编辑器文档: ${currentDocPath} (使用实时内容)`);
       }
     }
   } catch (e) {
-    console.warn('[OverleafBridge] 无法获取当前编辑器内容:', e);
+    warn('[OverleafBridge] 无法获取当前编辑器内容:', e);
   }
   
   // 4. 获取每个文档的内容（使用 doc download API）
@@ -167,7 +168,7 @@ export async function getAllDocsWithContent(projectId) {
         
         // 当前文档优先使用编辑器实时内容
         if (currentDocPath && currentDocContent && pathname === currentDocPath) {
-          console.log(`[OverleafBridge] ${pathname}: 使用编辑器实时内容`);
+          debug(`[OverleafBridge] ${pathname}: 使用编辑器实时内容`);
           return currentDocContent;
         }
         
@@ -178,14 +179,14 @@ export async function getAllDocsWithContent(projectId) {
         if (!docId && filename) {
           docId = domIdMap.get(filename);
           if (docId) {
-            console.log(`[OverleafBridge] ${pathname}: 从 DOM 获取 ID`);
+            debug(`[OverleafBridge] ${pathname}: 从 DOM 获取 ID`);
           }
         }
         
         if (docId) {
           return await fetchDocContent(projectId, docId);
         } else {
-          console.warn(`[OverleafBridge] 未找到文档 ID: ${pathname}`);
+          warn(`[OverleafBridge] 未找到文档 ID: ${pathname}`);
           return null;
         }
       })
@@ -202,6 +203,6 @@ export async function getAllDocsWithContent(projectId) {
     }
   }
   
-  console.log(`[OverleafBridge] 成功加载 ${files.length} 个文档内容`);
+  debug(`[OverleafBridge] 成功加载 ${files.length} 个文档内容`);
   return files;
 }

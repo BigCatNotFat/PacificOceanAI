@@ -20,6 +20,7 @@ import { initDiffSystem } from './diff/index.js';
 import { initReviewTooltipInjector } from './reviewTooltipInjector/index.js';
 import { initCiteTooltip } from './citeTooltip/index.js';
 import { findAllCitePositions, navigateToPosition } from './citeTooltip/tooltip.js';
+import { debug } from './core/logger.js';
 
 // 初始化各个模块
 initModelManagement();
@@ -56,7 +57,7 @@ methodHandlers.replaceSelection = function(from, to, text) {
       throw new Error('EditorView not available');
     }
   
-  console.log('[OverleafBridge] replaceSelection called:', {
+  debug('[OverleafBridge] replaceSelection called:', {
       from: from,
       to: to,
     textLength: text.length
@@ -146,4 +147,4 @@ window.addEventListener('message', function(event) {
   window.postMessage(response, '*');
 });
 
-console.log('[OverleafBridge] Modular architecture initialized (ESM)');
+debug('[OverleafBridge] Modular architecture initialized (ESM)');

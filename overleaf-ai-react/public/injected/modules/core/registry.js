@@ -3,6 +3,8 @@
  * 用于存储所有 API 方法处理器，供 BridgeClient 调用
  */
 
+import { warn } from './logger.js';
+
 export const methodHandlers = {};
 
 /**
@@ -12,7 +14,7 @@ export const methodHandlers = {};
  */
 export function registerMethod(name, handler) {
   if (methodHandlers[name]) {
-    console.warn(`[OverleafBridge] Warning: Method '${name}' is already registered. Overwriting.`);
+    warn(`[OverleafBridge] Warning: Method '${name}' is already registered. Overwriting.`);
   }
   methodHandlers[name] = handler;
 }

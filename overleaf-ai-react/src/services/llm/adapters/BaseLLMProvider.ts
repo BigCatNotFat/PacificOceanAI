@@ -19,12 +19,29 @@ export interface APIConfig {
  */
 export abstract class BaseLLMProvider {
   /**
-   * 聊天接口 - 所有 Provider 必须实现
+   * 聊天接口 - 所有 Provider 必须实现（流式输出，更新 UI）
    * @param messages - 消息列表
    * @param config - LLM 配置
    * @returns 完整的最终响应
    */
   abstract chat(
+    messages: LLMMessage[],
+    config: LLMConfig
+  ): Promise<import('../../../platform/llm/ILLMService').LLMFinalMessage>;
+
+  /**
+   * Manager 聊天接口 - 用于 MultiAgent 模式的 ManagerAgent
+   * 
+   * 与 chat 的区别：
+   * - 不流式输出
+   * - 不更新 UI
+   * - 只返回结果
+   * 
+   * @param messages - 消息列表
+   * @param config - LLM 配置
+   * @returns 完整的最终响应
+   */
+  abstract managerChat(
     messages: LLMMessage[],
     config: LLMConfig
   ): Promise<import('../../../platform/llm/ILLMService').LLMFinalMessage>;

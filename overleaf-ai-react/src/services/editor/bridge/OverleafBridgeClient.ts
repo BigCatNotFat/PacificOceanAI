@@ -10,12 +10,14 @@ import type {
   OverleafBridgeResponse,
   PendingRequest
 } from './types';
+import { logger } from '../../../utils/logger';
 
 export class OverleafBridgeClient {
   private static instance: OverleafBridgeClient | null = null;
   private pendingRequests = new Map<string, PendingRequest>();
   private requestIdCounter = 0;
   private injected = false;
+  private consolePatched = false;
   private readonly defaultTimeout = 10000; // 10秒超时
 
   private constructor() {
@@ -34,8 +36,11 @@ export class OverleafBridgeClient {
    * 注入桥接脚本到页面主世界
    */
   injectScript(): void {
+    // 先确保 console 过滤补丁生效（即使脚本已注入过，也要确保刷屏日志被屏蔽）
+    this.injectConsoleFilterScript();
+
     if (this.injected) {
-      console.log('[OverleafBridgeClient] Script already injected');
+      logger.debug('[OverleafBridgeClient] Script already injected');
       return;
     }
 
@@ -43,7 +48,7 @@ export class OverleafBridgeClient {
       const script = document.createElement('script');
       script.src = chrome.runtime.getURL('injected/generated/overleafBridge.js');
       script.onload = () => {
-        console.log('[OverleafBridgeClient] Bridge script injected successfully');
+        logger.debug('[OverleafBridgeClient] Bridge script injected successfully');
         this.injected = true;
       };
       script.onerror = (error) => {
@@ -52,6 +57,69 @@ export class OverleafBridgeClient {
       (document.head || document.documentElement).appendChild(script);
     } catch (error) {
       console.error('[OverleafBridgeClient] Error injecting script:', error);
+    }
+  }
+
+  /**
+   * 注入一个极小的补丁到页面主世界：过滤掉 `[OverleafBridge] ...` 这类调试日志。
+   *
+   * 说明：
+   * - 这些日志来源于自动生成的 injected 脚本（用户要求不直接改 generated 文件）
+   * - 因此这里通过“先注入补丁脚本，再注入 bridge 脚本”的方式实现静音
+   */
+  private injectConsoleFilterScript(): void {
+    if (this.consolePatched) return;
+    this.consolePatched = true;
+
+    try {
+      const patch = document.createElement('script');
+      patch.type = 'text/javascript';
+      patch.textContent = `
+(function () {
+  try {
+    if (window.__OVERLEAF_BRIDGE_CONSOLE_PATCHED__) return;
+    window.__OVERLEAF_BRIDGE_CONSOLE_PATCHED__ = true;
+
+    function shouldMute(args) {
+      try {
+        if (!args || !args.length) return false;
+        for (var i = 0; i < args.length; i++) {
+          var a = args[i];
+          if (typeof a === 'string' && a.indexOf('OverleafBridge') !== -1) {
+            return true;
+          }
+        }
+      } catch (e) {}
+      return false;
+    }
+
+    var origLog = console.log;
+    var origInfo = console.info;
+    var origDebug = console.debug;
+    var origWarn = console.warn;
+
+    console.log = function () {
+      if (shouldMute(arguments)) return;
+      return origLog.apply(console, arguments);
+    };
+    console.info = function () {
+      if (shouldMute(arguments)) return;
+      return origInfo.apply(console, arguments);
+    };
+    console.debug = function () {
+      if (shouldMute(arguments)) return;
+      return origDebug.apply(console, arguments);
+    };
+    console.warn = function () {
+      if (shouldMute(arguments)) return;
+      return origWarn.apply(console, arguments);
+    };
+  } catch (e) {}
+})();`;
+
+      (document.head || document.documentElement).appendChild(patch);
+    } catch (e) {
+      // 静默失败：不影响桥接功能
     }
   }
 

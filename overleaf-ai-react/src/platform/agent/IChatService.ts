@@ -14,8 +14,9 @@ import { Event } from '../../base/common/event';
  * - agent: 启用全部工具调用，可进行latex代码编辑等操作，但需要用户同意
  * - chat: 普通对话模式，部分工具启动，修改类的工具不能启用
  * - normal: 单纯的llm对话
+ * - plan: 计划模式，使用 ManagerAgentLoopService 进行多 Agent 协作
  */
-export type ChatMode = 'agent' | 'chat' | 'normal';
+export type ChatMode = 'agent' | 'chat' | 'normal' | 'plan';
 
 /**
  * 上下文条目类型

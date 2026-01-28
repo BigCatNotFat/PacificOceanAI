@@ -22,6 +22,7 @@ import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import { diffSuggestionService } from '../../../editor/DiffSuggestionService';
 import type { CreateSegmentSuggestionInput } from '../../../../platform/editor/IDiffSuggestionService';
+import { logger } from '../../../../utils/logger';
 
 /**
  * 匹配位置信息（片段级）
@@ -166,7 +167,7 @@ Good examples:
     try {
       const replaceAll = args.replace_all ?? false;
       
-      console.log('[SearchReplaceTool] execute called with:', {
+      logger.debug('[SearchReplaceTool] execute called with:', {
         target_file: args.target_file,
         old_string_len: args.old_string?.length,
         new_string_len: args.new_string?.length,
@@ -202,10 +203,10 @@ Good examples:
         currentFileName === args.target_file ||
         args.target_file.endsWith(currentFileName || '');
 
-      console.log('[SearchReplaceTool] Current file:', currentFileName, 'Target:', targetBaseName, 'Is current:', isCurrentFile);
+      logger.debug('[SearchReplaceTool] Current file:', currentFileName, 'Target:', targetBaseName, 'Is current:', isCurrentFile);
 
       if (!isCurrentFile) {
-        console.log(`[SearchReplaceTool] Switching to file "${targetBaseName}"...`);
+        logger.debug(`[SearchReplaceTool] Switching to file "${targetBaseName}"...`);
         const switchResult = await overleafEditor.file.switchFile(targetBaseName);
 
         if (!switchResult.success) {
@@ -307,10 +308,10 @@ Good examples:
       }
 
       // 7. 批量创建片段级 diff 建议
-      console.log('[SearchReplaceTool] Creating segment diff suggestions...');
+      logger.debug('[SearchReplaceTool] Creating segment diff suggestions...');
       const suggestionIds = await diffSuggestionService.createBatchSegmentSuggestions(suggestionInputs);
 
-      console.log(`[SearchReplaceTool] Created ${suggestionIds.length} segment diff suggestions:`, suggestionIds);
+      logger.debug(`[SearchReplaceTool] Created ${suggestionIds.length} segment diff suggestions:`, suggestionIds);
 
       // 8. 生成预览
       const lineNumbers = matchesToProcess.map(m => m.startLine);

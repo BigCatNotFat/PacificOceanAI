@@ -8,6 +8,7 @@
 import { getEditorView } from '../core/editorView.js';
 import { checkIsActivated, showActivationRequiredHint } from '../modelManagement/state.js';
 import { getSelectedTextActionModel, setSelectedTextActionModel, getAvailableModels } from '../modelManagement/models.js';
+import { debug, warn } from '../core/logger.js';
 
 // 标记已注入的 class
 const INJECTED_MARKER = 'ol-ai-controls-injected';
@@ -96,20 +97,20 @@ function getCurrentSelectionInfo() {
  */
 function sendTextActionRequest(action, customPrompt = '') {
   if (!checkIsActivated()) {
-    console.warn('[ReviewTooltipInjector] Not activated');
+    warn('[ReviewTooltipInjector] Not activated');
     showActivationRequiredHint();
     return false;
   }
   
   const selectionInfo = getCurrentSelectionInfo();
   if (!selectionInfo) {
-    console.warn('[ReviewTooltipInjector] No selection available');
+    warn('[ReviewTooltipInjector] No selection available');
     return false;
   }
   
   const selectedModel = getSelectedTextActionModel();
   
-  console.log('[ReviewTooltipInjector] Sending text action:', action, 'model:', selectedModel);
+  debug('[ReviewTooltipInjector] Sending text action:', action, 'model:', selectedModel);
   
   window.postMessage({
     type: 'OVERLEAF_TEXT_ACTION_REQUEST',
@@ -182,7 +183,7 @@ function transformAddCommentButton(menu) {
     });
     
     addCommentBtn.title = addCommentBtn.title || '添加评论';
-    console.log('[ReviewTooltipInjector] Add comment button transformed');
+    debug('[ReviewTooltipInjector] Add comment button transformed');
   }
   return addCommentBtn;
 }
@@ -370,7 +371,7 @@ export function processMenu(menu) {
   const aiControls = createAIControls(addCommentBtn);
   menu.appendChild(aiControls);
   
-  console.log('[ReviewTooltipInjector] AI controls injected into review tooltip');
+  debug('[ReviewTooltipInjector] AI controls injected into review tooltip');
 }
 
 /**

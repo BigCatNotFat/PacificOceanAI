@@ -8,6 +8,7 @@
 
 import { injectStyles } from './styles.js';
 import { processMenu, findMenusInElement } from './injector.js';
+import { debug, warn } from '../core/logger.js';
 
 let observer = null;
 let isEnabled = true; // 默认启用
@@ -24,7 +25,7 @@ export function getSelectionTooltipEnabled() {
  */
 export function setSelectionTooltipEnabled(enabled) {
   isEnabled = enabled;
-  console.log('[ReviewTooltipInjector] Selection tooltip', enabled ? 'enabled' : 'disabled');
+  debug('[ReviewTooltipInjector] Selection tooltip', enabled ? 'enabled' : 'disabled');
   
   // 如果禁用，隐藏所有已注入的 AI 控件
   if (!enabled) {
@@ -88,7 +89,7 @@ function createObserver() {
  */
 function startObserver() {
   if (observer) {
-    console.log('[ReviewTooltipInjector] Observer already running');
+    debug('[ReviewTooltipInjector] Observer already running');
     return;
   }
   
@@ -101,7 +102,7 @@ function startObserver() {
     attributeFilter: ['style', 'class']
   });
   
-  console.log('[ReviewTooltipInjector] MutationObserver started');
+  debug('[ReviewTooltipInjector] MutationObserver started');
 }
 
 /**
@@ -111,7 +112,7 @@ function stopObserver() {
   if (observer) {
     observer.disconnect();
     observer = null;
-    console.log('[ReviewTooltipInjector] MutationObserver stopped');
+    debug('[ReviewTooltipInjector] MutationObserver stopped');
   }
 }
 
@@ -122,7 +123,7 @@ function processExistingMenus() {
   const existingMenus = document.querySelectorAll('.review-tooltip-menu');
   existingMenus.forEach(processMenu);
   if (existingMenus.length > 0) {
-    console.log('[ReviewTooltipInjector] Processed', existingMenus.length, 'existing menus');
+    debug('[ReviewTooltipInjector] Processed', existingMenus.length, 'existing menus');
   }
 }
 
@@ -130,17 +131,17 @@ function processExistingMenus() {
  * 初始化 Review Tooltip 注入器
  */
 export function initReviewTooltipInjector() {
-  console.log('[ReviewTooltipInjector] Initializing...');
+  debug('[ReviewTooltipInjector] Initializing...');
   
   // 0. 从 localStorage 读取初始状态
   try {
     const savedState = localStorage.getItem('ol-ai-selection-tooltip-enabled');
     if (savedState !== null) {
       isEnabled = savedState === 'true';
-      console.log('[ReviewTooltipInjector] Loaded saved state:', isEnabled);
+      debug('[ReviewTooltipInjector] Loaded saved state:', isEnabled);
     }
   } catch (e) {
-    console.warn('[ReviewTooltipInjector] Failed to load saved state:', e);
+    warn('[ReviewTooltipInjector] Failed to load saved state:', e);
   }
   
   // 1. 注入样式
@@ -157,7 +158,7 @@ export function initReviewTooltipInjector() {
   // 4. 监听来自 Sidepanel 的启用/禁用消息
   setupMessageListener();
   
-  console.log('[ReviewTooltipInjector] Initialized successfully, enabled:', isEnabled);
+  debug('[ReviewTooltipInjector] Initialized successfully, enabled:', isEnabled);
 }
 
 /**
@@ -179,7 +180,7 @@ function setupMessageListener() {
         try {
           localStorage.setItem('ol-ai-selection-tooltip-enabled', String(enabled));
         } catch (e) {
-          console.warn('[ReviewTooltipInjector] Failed to save state:', e);
+          warn('[ReviewTooltipInjector] Failed to save state:', e);
         }
       }
     }
@@ -199,7 +200,7 @@ function setupMessageListener() {
  */
 export function destroyReviewTooltipInjector() {
   stopObserver();
-  console.log('[ReviewTooltipInjector] Destroyed');
+  debug('[ReviewTooltipInjector] Destroyed');
 }
 
 // 导出给其他模块使用

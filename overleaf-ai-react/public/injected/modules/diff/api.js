@@ -4,6 +4,7 @@
  */
 
 import { methodHandlers } from '../core/registry.js';
+import { debug, warn } from '../core/logger.js';
 import { 
   diffSuggestionsByFile, 
   diffCurrentIndex, 
@@ -30,7 +31,7 @@ function getLatestSuggestionPosition(suggestionId) {
       return field.suggestions.get(suggestionId);
     }
   } catch (e) {
-    console.warn('[DiffAPI] 获取最新行级建议位置失败:', e);
+    warn('[DiffAPI] 获取最新行级建议位置失败:', e);
   }
   return null;
 }
@@ -46,7 +47,7 @@ function getLatestSegmentPosition(suggestionId) {
       return field.segments.get(suggestionId);
     }
   } catch (e) {
-    console.warn('[DiffAPI] 获取最新片段建议位置失败:', e);
+    warn('[DiffAPI] 获取最新片段建议位置失败:', e);
   }
   return null;
 }
@@ -109,7 +110,7 @@ function scrollToSuggestion(suggestionId, config) {
         effects: EditorView.scrollIntoView(targetConfig.lineFrom, { y: 'center' })
       });
     } catch (e) {
-      console.warn('[DiffAPI] 滚动失败:', e);
+      warn('[DiffAPI] 滚动失败:', e);
     }
   }
 }
@@ -126,7 +127,7 @@ export function jumpToDiffSuggestion(index) {
   
   // 如果目标建议不在当前文件，需要先切换文件
   if (item.fileName !== diffCurrentFileName) {
-    console.log('[DiffAPI] 跨文件跳转:', diffCurrentFileName, '->', item.fileName);
+    debug('[DiffAPI] 跨文件跳转:', diffCurrentFileName, '->', item.fileName);
     methodHandlers.switchFile(item.fileName);
     
     // 延迟后滚动到目标位置
@@ -149,11 +150,11 @@ export function jumpToNextFileWithSuggestions() {
   const nextFile = filesInfo.nextFile;
   
   if (!nextFile) {
-    console.log('[DiffAPI] 没有其他文件有建议');
+    debug('[DiffAPI] 没有其他文件有建议');
     return false;
   }
   
-  console.log('[DiffAPI] 跳转到文件:', nextFile.fileName, '(' + nextFile.count + '个建议)');
+  debug('[DiffAPI] 跳转到文件:', nextFile.fileName, '(' + nextFile.count + '个建议)');
   methodHandlers.switchFile(nextFile.fileName);
   
   // 切换后更新索引到该文件的第一个建议
@@ -222,7 +223,7 @@ export function setupDiffAPI() {
               const totalCount = getTotalSuggestionsCount();
               if (diffCurrentIndex >= totalCount) setDiffCurrentIndex(Math.max(0, totalCount - 1));
               updateDiffControlBar();
-              console.log('[DiffAPI] 已接受建议:', suggestionId);
+              debug('[DiffAPI] 已接受建议:', suggestionId);
               if (callbacks.onAccept) callbacks.onAccept(oldContent, newContent);
             }
           },
@@ -239,7 +240,7 @@ export function setupDiffAPI() {
             const totalCount = getTotalSuggestionsCount();
             if (diffCurrentIndex >= totalCount) setDiffCurrentIndex(Math.max(0, totalCount - 1));
             updateDiffControlBar();
-            console.log('[DiffAPI] 已拒绝建议:', suggestionId);
+            debug('[DiffAPI] 已拒绝建议:', suggestionId);
             if (callbacks.onReject) callbacks.onReject(oldContent, newContent);
           }
         };
@@ -249,7 +250,7 @@ export function setupDiffAPI() {
           diffCurrentView.dispatch({ effects: diffEffects.addDiffSuggestionEffect.of(config) });
         }
         updateDiffControlBar();
-        console.log('[DiffAPI] 建议已创建:', id, '第', lineNum, '行', '文件:', fileName);
+        debug('[DiffAPI] 建议已创建:', id, '第', lineNum, '行', '文件:', fileName);
         return id;
       } catch (e) {
         console.error('[DiffAPI] 创建建议失败:', e);
@@ -323,7 +324,7 @@ export function setupDiffAPI() {
             diffCurrentView.dispatch({ effects: diffEffects.addDiffSuggestionEffect.of(config) });
           }
           updateDiffControlBar();
-          console.log('[DiffAPI] 建议已创建（外部ID）:', externalId, '第', startLine, '-', endLine, '行', '文件:', fileName);
+          debug('[DiffAPI] 建议已创建（外部ID）:', externalId, '第', startLine, '-', endLine, '行', '文件:', fileName);
           return externalId;
         } catch (e) {
           console.error('[DiffAPI] 创建建议失败:', e);
@@ -390,7 +391,7 @@ export function setupDiffAPI() {
             diffCurrentView.dispatch({ effects: diffEffects.addSegmentSuggestionEffect.of(config) });
           }
           updateDiffControlBar();
-          console.log('[DiffAPI] 片段建议已创建（外部ID）:', externalId, '偏移', startOffset, '-', endOffset, '文件:', fileName);
+          debug('[DiffAPI] 片段建议已创建（外部ID）:', externalId, '偏移', startOffset, '-', endOffset, '文件:', fileName);
           return externalId;
         } catch (e) {
           console.error('[DiffAPI] 创建片段建议失败:', e);
@@ -441,7 +442,7 @@ export function setupDiffAPI() {
           config.onAccept(diffCurrentView, ids[i]);
         }
       }
-      console.log('[DiffAPI] 已接受当前文件所有建议');
+      debug('[DiffAPI] 已接受当前文件所有建议');
     },
     
     rejectAll: function() {
@@ -453,7 +454,7 @@ export function setupDiffAPI() {
           config.onReject(diffCurrentView, ids[j]);
         }
       }
-      console.log('[DiffAPI] 已拒绝当前文件所有建议');
+      debug('[DiffAPI] 已拒绝当前文件所有建议');
     },
     
     clearAll: function() {
@@ -478,7 +479,7 @@ export function setupDiffAPI() {
         });
       }
       updateDiffControlBar();
-      console.log('[DiffAPI] 当前文件所有建议已清除');
+      debug('[DiffAPI] 当前文件所有建议已清除');
     },
 
     clearAllFiles: function() {
@@ -502,11 +503,11 @@ export function setupDiffAPI() {
         });
       }
       updateDiffControlBar();
-      console.log('[DiffAPI] 所有文件的建议已清除');
+      debug('[DiffAPI] 所有文件的建议已清除');
     }
   };
   
-  console.log('[DiffAPI] Diff API 准备就绪!');
+  debug('[DiffAPI] Diff API 准备就绪!');
 }
 
 /**

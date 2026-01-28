@@ -4,6 +4,7 @@
 
 import { getCurrentFileName } from '../core/utils.js';
 import { methodHandlers } from '../core/registry.js';
+import { debug, warn } from '../core/logger.js';
 import { 
   diffCurrentFileName, 
   diffCurrentView, 
@@ -49,12 +50,12 @@ function restoreSuggestionsForCurrentFile() {
   } catch (e) {}
   
   if (suggestions.size === 0 && inlineStatus.size === 0) {
-    console.log('[DiffAPI] 当前文件无建议:', diffCurrentFileName);
+    debug('[DiffAPI] 当前文件无建议:', diffCurrentFileName);
     updateDiffControlBar();
     return;
   }
   
-  console.log('[DiffAPI] 恢复文件建议:', diffCurrentFileName, '共', suggestions.size, '个建议,', inlineStatus.size, '个内联状态');
+  debug('[DiffAPI] 恢复文件建议:', diffCurrentFileName, '共', suggestions.size, '个建议,', inlineStatus.size, '个内联状态');
   
   // 恢复建议
   const toRemove = [];
@@ -71,7 +72,7 @@ function restoreSuggestionsForCurrentFile() {
           config.widgetPos = config.endOffset;
           diffCurrentView.dispatch({ effects: diffEffects.addSegmentSuggestionEffect.of(config) });
         } else {
-          console.warn('[DiffAPI] 恢复片段建议失败，找不到原始内容:', id);
+          warn('[DiffAPI] 恢复片段建议失败，找不到原始内容:', id);
           toRemove.push(id);
         }
       } else {
@@ -83,7 +84,7 @@ function restoreSuggestionsForCurrentFile() {
         diffCurrentView.dispatch({ effects: diffEffects.addDiffSuggestionEffect.of(config) });
       }
     } catch (e) {
-      console.warn('[DiffAPI] 恢复建议失败:', id, e);
+      warn('[DiffAPI] 恢复建议失败:', id, e);
       toRemove.push(id);
     }
   }
@@ -107,14 +108,14 @@ function restoreSuggestionsForCurrentFile() {
           config.widgetPos = foundIndex;
           diffCurrentView.dispatch({ effects: diffEffects.addInlineStatusEffect.of(config) });
         } else {
-          console.warn('[InlineStatus] 恢复内联状态失败，找不到原始内容:', id);
+          warn('[InlineStatus] 恢复内联状态失败，找不到原始内容:', id);
           statusToRemove.push(id);
         }
       } else {
         diffCurrentView.dispatch({ effects: diffEffects.addInlineStatusEffect.of(config) });
       }
     } catch (e) {
-      console.warn('[InlineStatus] 恢复内联状态失败:', id, e);
+      warn('[InlineStatus] 恢复内联状态失败:', id, e);
       statusToRemove.push(id);
     }
   }
@@ -147,7 +148,7 @@ function checkFileChange() {
     const newFileName = currentFile ? currentFile.name : null;
     
     if (newFileName && newFileName !== diffCurrentFileName) {
-      console.log('[DiffAPI] 检测到文件切换:', diffCurrentFileName, '->', newFileName);
+      debug('[DiffAPI] 检测到文件切换:', diffCurrentFileName, '->', newFileName);
       const oldFileName = diffCurrentFileName;
       setDiffCurrentFileName(newFileName);
       onFileChanged(oldFileName, newFileName);
@@ -168,7 +169,7 @@ function startFileChangeListener() {
       ? methodHandlers.getCurrentFile() 
       : { name: getCurrentFileName() };
     setDiffCurrentFileName(currentFile ? currentFile.name : null);
-    console.log('[DiffAPI] 初始文件:', diffCurrentFileName);
+    debug('[DiffAPI] 初始文件:', diffCurrentFileName);
   } catch (e) {}
   
   const interval = setInterval(checkFileChange, 500);
@@ -179,7 +180,7 @@ function startFileChangeListener() {
  * 初始化 Diff 系统
  */
 export function initDiffSystem() {
-  console.log('[OverleafBridge] Initializing Diff System...');
+  debug('[OverleafBridge] Initializing Diff System...');
   
   injectDiffStyles();
   initDiffMessageListeners();
@@ -190,11 +191,11 @@ export function initDiffSystem() {
     const CM = detail.CodeMirror;
     const extensions = detail.extensions;
     diffCodeMirror = CM;
-    console.log('[DiffAPI] 捕获到 CodeMirror 实例');
+    debug('[DiffAPI] 捕获到 CodeMirror 实例');
     
     const diffSuggestionExtension = createDiffSuggestionExtension(CM);
     extensions.push(diffSuggestionExtension);
-    console.log('[DiffAPI] Diff 建议扩展已注册');
+    debug('[DiffAPI] Diff 建议扩展已注册');
   });
   
   // 触发加载
@@ -209,7 +210,7 @@ export function initDiffSystem() {
       setDiffCurrentView(view);
       
       if (view) {
-        console.log('[DiffAPI] 编辑器视图已获取');
+        debug('[DiffAPI] 编辑器视图已获取');
         
         createDiffControlBar({
           onPrev: () => window.diffAPI && window.diffAPI.prev(),
@@ -222,14 +223,14 @@ export function initDiffSystem() {
         setupDiffAPI();
         startFileChangeListener();
       } else {
-        console.warn('[DiffAPI] 无法获取编辑器视图，稍后重试');
+        warn('[DiffAPI] 无法获取编辑器视图，稍后重试');
         // 简单重试逻辑
         setTimeout(() => {
            const retryView = (window.overleaf?.unstable?.store?.get('editor.view')) || 
                              (document.querySelector('.cm-content')?.cmView?.view);
            if (retryView) {
              setDiffCurrentView(retryView);
-             console.log('[DiffAPI] 编辑器视图已获取（重试）');
+             debug('[DiffAPI] 编辑器视图已获取（重试）');
              createDiffControlBar({
                 onPrev: () => window.diffAPI && window.diffAPI.prev(),
                 onNext: () => window.diffAPI && window.diffAPI.next(),

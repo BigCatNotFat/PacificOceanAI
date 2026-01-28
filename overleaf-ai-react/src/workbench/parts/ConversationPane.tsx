@@ -196,7 +196,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   const [availableModels, setAvailableModels] = useState<AIModelConfig[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [thinkingStates, setThinkingStates] = useState<Record<string, boolean>>({});
-  const [chatMode, setChatMode] = useState<'agent' | 'chat' | 'normal'>('agent');
+  const [chatMode, setChatMode] = useState<'agent' | 'chat' | 'normal' | 'plan'>('agent');
   const [hasApiKey, setHasApiKey] = useState<boolean>(false);
   const [isCheckingApiKey, setIsCheckingApiKey] = useState<boolean>(true);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -921,7 +921,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                 className="ai-mode-select-inline"
                 onClick={() => setIsModeMenuOpen(!isModeMenuOpen)}
               >
-                {chatMode === 'agent' ? 'Agent' : chatMode === 'chat' ? 'Chat' : 'Normal'}
+                {chatMode === 'agent' ? 'Agent' : chatMode === 'chat' ? 'Chat' : chatMode === 'plan' ? 'Plan' : 'Normal'}
               </button>
               {isModeMenuOpen && (
                 <div className="ai-inline-dropdown">
@@ -931,6 +931,13 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                     onClick={() => { setChatMode('agent'); setIsModeMenuOpen(false); }}
                   >
                     Agent
+                  </button>
+                  <button
+                    type="button"
+                    className={`ai-inline-dropdown-item ${chatMode === 'plan' ? 'active' : ''}`}
+                    onClick={() => { setChatMode('plan'); setIsModeMenuOpen(false); }}
+                  >
+                    Plan
                   </button>
                   <button
                     type="button"

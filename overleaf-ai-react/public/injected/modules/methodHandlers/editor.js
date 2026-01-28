@@ -3,6 +3,8 @@
  * 负责文档编辑相关的方法
  */
 
+import { debug } from '../core/logger.js';
+
 // 创建编辑器相关的方法处理器
 export function createEditorHandlers(getEditorView) {
   return {
@@ -86,7 +88,7 @@ export function createEditorHandlers(getEditorView) {
       const from = firstIndex;
       const to = firstIndex + searchText.length;
 
-      console.log('[OverleafBridge] replaceFirstMatch called:', {
+      debug('[OverleafBridge] replaceFirstMatch called:', {
         searchTextLength: searchText.length,
         replaceTextLength: replaceText ? replaceText.length : 0,
         from: from,
@@ -118,7 +120,7 @@ export function createEditorHandlers(getEditorView) {
       const doc = view.state.doc;
       const oldLength = doc.length;
       
-      console.log('[OverleafBridge] setDocContent called:', {
+      debug('[OverleafBridge] setDocContent called:', {
         oldLength: oldLength,
         newLength: newContent.length
       });
@@ -146,7 +148,7 @@ export function createEditorHandlers(getEditorView) {
         return { success: true, appliedCount: 0 };
       }
       
-      console.log('[OverleafBridge] applyEdits called:', {
+      debug('[OverleafBridge] applyEdits called:', {
         editCount: edits.length
       });
       

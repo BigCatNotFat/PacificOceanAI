@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-01-27T07:26:16.037Z
+ * 构建时间: 2026-01-28T07:19:20.579Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */
@@ -186,6 +186,25 @@
     };
   }
 
+  // public/injected/modules/core/logger.js
+  function isBridgeDebugEnabled() {
+    try {
+      const v1 = localStorage.getItem("OVERLEAF_BRIDGE_DEBUG");
+      const v2 = localStorage.getItem("OVERLEAF_AGENT_DEBUG");
+      return v1 === "1" || v2 === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+  function debug() {
+    if (!isBridgeDebugEnabled()) return;
+    console.log.apply(console, arguments);
+  }
+  function warn() {
+    if (!isBridgeDebugEnabled()) return;
+    console.warn.apply(console, arguments);
+  }
+
   // public/injected/modules/methodHandlers/editor.js
   function createEditorHandlers(getEditorView2) {
     return {
@@ -257,7 +276,7 @@
         }
         const from = firstIndex;
         const to = firstIndex + searchText.length;
-        console.log("[OverleafBridge] replaceFirstMatch called:", {
+        debug("[OverleafBridge] replaceFirstMatch called:", {
           searchTextLength: searchText.length,
           replaceTextLength: replaceText ? replaceText.length : 0,
           from,
@@ -284,7 +303,7 @@
         }
         const doc = view.state.doc;
         const oldLength = doc.length;
-        console.log("[OverleafBridge] setDocContent called:", {
+        debug("[OverleafBridge] setDocContent called:", {
           oldLength,
           newLength: newContent.length
         });
@@ -306,7 +325,7 @@
         if (!edits || edits.length === 0) {
           return { success: true, appliedCount: 0 };
         }
-        console.log("[OverleafBridge] applyEdits called:", {
+        debug("[OverleafBridge] applyEdits called:", {
           editCount: edits.length
         });
         var sortedEdits = edits.slice().sort(function(a, b) {
@@ -342,7 +361,7 @@
         try {
           fileInfo = methodHandlers3.getCurrentFile();
         } catch (e) {
-          console.warn("[getFileInfo] Failed to get current file info:", e);
+          warn("[getFileInfo] Failed to get current file info:", e);
         }
         return {
           totalLines: doc.lines,
@@ -362,7 +381,7 @@
             const fileType = entityDiv ? entityDiv.getAttribute("data-file-type") : null;
             const fileId = entityDiv ? entityDiv.getAttribute("data-file-id") : null;
             if (fileName) {
-              console.log(`[OverleafBridge] Found file via file tree: ${fileName} (${fileType}, ${fileId})`);
+              debug(`[OverleafBridge] Found file via file tree: ${fileName} (${fileType}, ${fileId})`);
               return {
                 name: fileName,
                 id: fileId,
@@ -372,7 +391,7 @@
             }
           }
         } catch (e) {
-          console.warn("[OverleafBridge] File tree check failed:", e);
+          warn("[OverleafBridge] File tree check failed:", e);
         }
         try {
           const store = window.overleaf?.unstable?.store;
@@ -380,7 +399,7 @@
             const docName = store.get("editor.open_doc_name");
             const docId = store.get("editor.open_doc_id");
             if (docName) {
-              console.log(`[OverleafBridge] Found file via store: ${docName} (${docId})`);
+              debug(`[OverleafBridge] Found file via store: ${docName} (${docId})`);
               return {
                 name: docName,
                 id: docId,
@@ -391,13 +410,13 @@
             }
           }
         } catch (e) {
-          console.warn("[OverleafBridge] Store check failed:", e);
+          warn("[OverleafBridge] Store check failed:", e);
         }
         try {
           const breadcrumb = document.querySelector(".ol-cm-breadcrumbs div:last-child, .breadcrumbs div:last-child");
           if (breadcrumb && breadcrumb.textContent) {
             const fileName = breadcrumb.textContent.trim();
-            console.log(`[OverleafBridge] Found file via breadcrumb: ${fileName}`);
+            debug(`[OverleafBridge] Found file via breadcrumb: ${fileName}`);
             return {
               name: fileName,
               id: null,
@@ -406,25 +425,25 @@
             };
           }
         } catch (e) {
-          console.warn("[OverleafBridge] Breadcrumb check failed:", e);
+          warn("[OverleafBridge] Breadcrumb check failed:", e);
         }
         return null;
       },
       // 切换当前编辑的文件
       switchFile: function(targetFilename) {
-        console.log(`[OverleafBridge] Attempting to switch to file: "${targetFilename}"`);
+        debug(`[OverleafBridge] Attempting to switch to file: "${targetFilename}"`);
         const fileNode = document.querySelector(`li[role="treeitem"][aria-label="${targetFilename}"]`);
         if (fileNode) {
-          console.log("[OverleafBridge] Found file node DOM, clicking...");
+          debug("[OverleafBridge] Found file node DOM, clicking...");
           const clickTarget = fileNode.querySelector(".entity") || fileNode;
           const eventOptions = { bubbles: true, cancelable: true, view: window };
           clickTarget.dispatchEvent(new MouseEvent("mousedown", eventOptions));
           clickTarget.dispatchEvent(new MouseEvent("mouseup", eventOptions));
           clickTarget.dispatchEvent(new MouseEvent("click", eventOptions));
-          console.log(`[OverleafBridge] Switch command sent to "${targetFilename}"`);
+          debug(`[OverleafBridge] Switch command sent to "${targetFilename}"`);
           return { success: true };
         } else {
-          console.warn(`[OverleafBridge] DOM node not found for file "${targetFilename}"`);
+          warn(`[OverleafBridge] DOM node not found for file "${targetFilename}"`);
           return {
             success: false,
             error: "File not found in file tree (it might be in a collapsed folder)"
@@ -558,13 +577,13 @@
   }
   async function getAllDocsWithContent(projectId) {
     const files = [];
-    console.log("[OverleafBridge] \u4F7F\u7528 entities + doc download API \u83B7\u53D6\u6587\u4EF6");
+    debug("[OverleafBridge] \u4F7F\u7528 entities + doc download API \u83B7\u53D6\u6587\u4EF6");
     const entities = await fetchEntities(projectId);
-    console.log(`[OverleafBridge] \u627E\u5230 ${entities.length} \u4E2A\u5B9E\u4F53`);
+    debug(`[OverleafBridge] \u627E\u5230 ${entities.length} \u4E2A\u5B9E\u4F53`);
     const docs = entities.filter((e) => e.type === "doc");
-    console.log(`[OverleafBridge] \u627E\u5230 ${docs.length} \u4E2A\u53EF\u7F16\u8F91\u6587\u6863`);
+    debug(`[OverleafBridge] \u627E\u5230 ${docs.length} \u4E2A\u53EF\u7F16\u8F91\u6587\u6863`);
     const domIdMap = getDomFileIdMap();
-    console.log(`[OverleafBridge] DOM \u6587\u4EF6 ID \u6620\u5C04: ${domIdMap.size} \u4E2A`);
+    debug(`[OverleafBridge] DOM \u6587\u4EF6 ID \u6620\u5C04: ${domIdMap.size} \u4E2A`);
     let currentDocPath = null;
     let currentDocContent = null;
     try {
@@ -576,11 +595,11 @@
           currentDocPath = store.get("editor.open_doc_name");
         }
         if (currentDocPath && currentDocContent) {
-          console.log(`[OverleafBridge] \u5F53\u524D\u7F16\u8F91\u5668\u6587\u6863: ${currentDocPath} (\u4F7F\u7528\u5B9E\u65F6\u5185\u5BB9)`);
+          debug(`[OverleafBridge] \u5F53\u524D\u7F16\u8F91\u5668\u6587\u6863: ${currentDocPath} (\u4F7F\u7528\u5B9E\u65F6\u5185\u5BB9)`);
         }
       }
     } catch (e) {
-      console.warn("[OverleafBridge] \u65E0\u6CD5\u83B7\u53D6\u5F53\u524D\u7F16\u8F91\u5668\u5185\u5BB9:", e);
+      warn("[OverleafBridge] \u65E0\u6CD5\u83B7\u53D6\u5F53\u524D\u7F16\u8F91\u5668\u5185\u5BB9:", e);
     }
     const batchSize = 5;
     for (let i = 0; i < docs.length; i += batchSize) {
@@ -590,20 +609,20 @@
           const pathname = doc.path.startsWith("/") ? doc.path.substring(1) : doc.path;
           const filename = pathname.split("/").pop();
           if (currentDocPath && currentDocContent && pathname === currentDocPath) {
-            console.log(`[OverleafBridge] ${pathname}: \u4F7F\u7528\u7F16\u8F91\u5668\u5B9E\u65F6\u5185\u5BB9`);
+            debug(`[OverleafBridge] ${pathname}: \u4F7F\u7528\u7F16\u8F91\u5668\u5B9E\u65F6\u5185\u5BB9`);
             return currentDocContent;
           }
           let docId = doc._id || doc.id;
           if (!docId && filename) {
             docId = domIdMap.get(filename);
             if (docId) {
-              console.log(`[OverleafBridge] ${pathname}: \u4ECE DOM \u83B7\u53D6 ID`);
+              debug(`[OverleafBridge] ${pathname}: \u4ECE DOM \u83B7\u53D6 ID`);
             }
           }
           if (docId) {
             return await fetchDocContent(projectId, docId);
           } else {
-            console.warn(`[OverleafBridge] \u672A\u627E\u5230\u6587\u6863 ID: ${pathname}`);
+            warn(`[OverleafBridge] \u672A\u627E\u5230\u6587\u6863 ID: ${pathname}`);
             return null;
           }
         })
@@ -618,7 +637,7 @@
         }
       }
     }
-    console.log(`[OverleafBridge] \u6210\u529F\u52A0\u8F7D ${files.length} \u4E2A\u6587\u6863\u5185\u5BB9`);
+    debug(`[OverleafBridge] \u6210\u529F\u52A0\u8F7D ${files.length} \u4E2A\u6587\u6863\u5185\u5BB9`);
     return files;
   }
 
@@ -666,16 +685,16 @@
   }
   async function searchInternal(pattern, options = {}) {
     const startTime = Date.now();
-    console.log(`[OverleafBridge] \u{1F50D} \u6B63\u5728\u641C\u7D22: "${pattern}"`);
-    console.log("[OverleafBridge] \u641C\u7D22\u9009\u9879:", options);
+    debug(`[OverleafBridge] \u{1F50D} \u6B63\u5728\u641C\u7D22: "${pattern}"`);
+    debug("[OverleafBridge] \u641C\u7D22\u9009\u9879:", options);
     try {
       const projectId = getProjectId();
-      console.log(`[OverleafBridge] \u{1F4C2} \u9879\u76EE ID: ${projectId}`);
-      console.log("[OverleafBridge] \u{1F4E5} \u6B63\u5728\u83B7\u53D6\u9879\u76EE\u6587\u6863...");
+      debug(`[OverleafBridge] \u{1F4C2} \u9879\u76EE ID: ${projectId}`);
+      debug("[OverleafBridge] \u{1F4E5} \u6B63\u5728\u83B7\u53D6\u9879\u76EE\u6587\u6863...");
       const files = await getAllDocsWithContent(projectId);
-      console.log(`[OverleafBridge] \u2705 \u5DF2\u52A0\u8F7D ${files.length} \u4E2A\u6587\u6863`);
+      debug(`[OverleafBridge] \u2705 \u5DF2\u52A0\u8F7D ${files.length} \u4E2A\u6587\u6863`);
       if (files.length === 0) {
-        console.warn("[OverleafBridge] \u26A0\uFE0F \u672A\u627E\u5230\u4EFB\u4F55\u6587\u6863\uFF0C\u641C\u7D22\u5C06\u8FD4\u56DE\u7A7A\u7ED3\u679C");
+        warn("[OverleafBridge] \u26A0\uFE0F \u672A\u627E\u5230\u4EFB\u4F55\u6587\u6863\uFF0C\u641C\u7D22\u5C06\u8FD4\u56DE\u7A7A\u7ED3\u679C");
         return {
           results: [],
           totalMatches: 0,
@@ -685,7 +704,7 @@
         };
       }
       const regex = createSearchRegex(pattern, options);
-      console.log("[OverleafBridge] \u{1F50E} \u6B63\u5728\u641C\u7D22...");
+      debug("[OverleafBridge] \u{1F50E} \u6B63\u5728\u641C\u7D22...");
       const results = [];
       let totalMatches = 0;
       for (const file of files) {
@@ -701,7 +720,7 @@
       }
       const endTime = Date.now();
       const duration = ((endTime - startTime) / 1e3).toFixed(2);
-      console.log(`[OverleafBridge] \u2728 \u641C\u7D22\u5B8C\u6210\uFF01\u7528\u65F6: ${duration}\u79D2, \u627E\u5230 ${totalMatches} \u4E2A\u5339\u914D\u9879`);
+      debug(`[OverleafBridge] \u2728 \u641C\u7D22\u5B8C\u6210\uFF01\u7528\u65F6: ${duration}\u79D2, \u627E\u5230 ${totalMatches} \u4E2A\u5339\u914D\u9879`);
       return {
         results,
         totalMatches,
@@ -739,7 +758,7 @@
         type: "OVERLEAF_TEXT_ACTION_MODEL_CHANGED",
         data: { modelId }
       }, "*");
-      console.log("[OverleafBridge] Text action model changed to:", modelId);
+      debug("[OverleafBridge] Text action model changed to:", modelId);
     } catch (e) {
       console.error("[OverleafBridge] Failed to save model selection:", e);
     }
@@ -764,14 +783,14 @@
     })) {
       select.value = models[0]?.id || "";
     }
-    console.log("[OverleafBridge] Model selector updated with", models.length, "models");
+    debug("[OverleafBridge] Model selector updated with", models.length, "models");
   }
   function requestModelList() {
     window.postMessage({
       type: "OVERLEAF_REQUEST_MODEL_LIST",
       data: {}
     }, "*");
-    console.log("[OverleafBridge] Requesting model list from React app");
+    debug("[OverleafBridge] Requesting model list from React app");
   }
   function initModelListeners() {
     window.addEventListener("message", function(event) {
@@ -780,7 +799,7 @@
       if (!data || data.type !== "OVERLEAF_UPDATE_MODEL_LIST") return;
       var models = data.data?.models;
       if (!Array.isArray(models)) {
-        console.warn("[OverleafBridge] Invalid model list received");
+        warn("[OverleafBridge] Invalid model list received");
         return;
       }
       availableModels = models.map(function(model) {
@@ -790,7 +809,7 @@
           provider: model.provider
         };
       });
-      console.log("[OverleafBridge] Model list updated:", availableModels.length, "models");
+      debug("[OverleafBridge] Model list updated:", availableModels.length, "models");
       updateModelSelectorOptions();
     });
     setTimeout(requestModelList, 100);
@@ -817,14 +836,14 @@
       type: "OVERLEAF_SHOW_ACTIVATION_MODAL",
       data: {}
     }, "*");
-    console.log("[OverleafBridge] Requesting to show activation modal");
+    debug("[OverleafBridge] Requesting to show activation modal");
   }
   function requestActivationStatus() {
     window.postMessage({
       type: "OVERLEAF_REQUEST_ACTIVATION_STATUS",
       data: {}
     }, "*");
-    console.log("[OverleafBridge] Requesting activation status from React app");
+    debug("[OverleafBridge] Requesting activation status from React app");
   }
   function initStateListeners() {
     window.addEventListener("message", function(event) {
@@ -835,7 +854,7 @@
       if (typeof newStatus === "boolean") {
         var oldStatus = isActivated;
         isActivated = newStatus;
-        console.log("[OverleafBridge] Activation status updated:", isActivated, "(was:", oldStatus, ")");
+        debug("[OverleafBridge] Activation status updated:", isActivated, "(was:", oldStatus, ")");
       }
     });
     setTimeout(requestActivationStatus, 200);
@@ -843,7 +862,7 @@
 
   // public/injected/modules/modelManagement/index.js
   function initModelManagement() {
-    console.log("[OverleafBridge] Initializing Model Management...");
+    debug("[OverleafBridge] Initializing Model Management...");
     initStateListeners();
     initModelListeners();
   }
@@ -1289,7 +1308,7 @@
     const effects = window._diffSuggestionEffects || diffEffects;
     const view = getEditorView();
     if (!effects || !view) {
-      console.warn("[InlineStatus] Effects or view not available");
+      warn("[InlineStatus] Effects or view not available");
       return null;
     }
     try {
@@ -1301,7 +1320,7 @@
         inlineStatusByFile.set(fileName, /* @__PURE__ */ new Map());
       }
       inlineStatusByFile.get(fileName).set(config.id, config);
-      console.log("[InlineStatus] \u521B\u5EFA\u5185\u8054\u72B6\u6001:", config.id);
+      debug("[InlineStatus] \u521B\u5EFA\u5185\u8054\u72B6\u6001:", config.id);
       return config.id;
     } catch (e) {
       console.error("[InlineStatus] \u521B\u5EFA\u5931\u8D25:", e);
@@ -1335,7 +1354,7 @@
           break;
         }
       }
-      console.log("[InlineStatus] \u79FB\u9664\u5185\u8054\u72B6\u6001:", id);
+      debug("[InlineStatus] \u79FB\u9664\u5185\u8054\u72B6\u6001:", id);
     } catch (e) {
       console.error("[InlineStatus] \u79FB\u9664\u5931\u8D25:", e);
     }
@@ -1384,7 +1403,7 @@
         action: data.action
       };
       createInlineStatus(inlineStatusConfig);
-      console.log(
+      debug(
         "[OverleafBridge] Stream preview started:",
         "previewId:",
         previewId,
@@ -1424,7 +1443,7 @@
     }
     const preview = previewsMap.get(previewId);
     if (!preview) {
-      console.warn("[OverleafBridge] \u627E\u4E0D\u5230\u9884\u89C8:", previewId);
+      warn("[OverleafBridge] \u627E\u4E0D\u5230\u9884\u89C8:", previewId);
       return;
     }
     preview.isStreaming = false;
@@ -1432,7 +1451,7 @@
     preview.newText = newText;
     removeInlineStatus(preview.id);
     if (!newText || newText.trim().length === 0) {
-      console.log("[OverleafBridge] \u751F\u6210\u5931\u8D25\u6216\u8FD4\u56DE\u7A7A\u5185\u5BB9 previewId:", previewId);
+      debug("[OverleafBridge] \u751F\u6210\u5931\u8D25\u6216\u8FD4\u56DE\u7A7A\u5185\u5BB9 previewId:", previewId);
       previewsMap.delete(previewId);
       return;
     }
@@ -1508,7 +1527,7 @@
           );
         }
         currentPreview.suggestionId = suggestionId;
-        console.log(
+        debug(
           "[OverleafBridge] Stream preview completed:",
           "previewId:",
           currentPreviewId,
@@ -1534,12 +1553,12 @@
       if (preview) {
         removeInlineStatus(preview.id);
         previewsMap.delete(previewId);
-        console.log("[OverleafBridge] \u53D6\u6D88\u9884\u89C8:", previewId);
+        debug("[OverleafBridge] \u53D6\u6D88\u9884\u89C8:", previewId);
       }
     } else {
       for (const [id, preview] of previewsMap) {
         removeInlineStatus(preview.id);
-        console.log("[OverleafBridge] \u53D6\u6D88\u9884\u89C8:", id);
+        debug("[OverleafBridge] \u53D6\u6D88\u9884\u89C8:", id);
       }
       previewsMap.clear();
     }
@@ -1569,7 +1588,7 @@
 
   // public/injected/modules/preview/index.js
   function initPreview() {
-    console.log("[OverleafBridge] Initializing Preview System (multi-task parallel mode)...");
+    debug("[OverleafBridge] Initializing Preview System (multi-task parallel mode)...");
     initStreamListeners();
     window.addEventListener("message", function(event) {
       if (event.source !== window) return;
@@ -1577,7 +1596,7 @@
       if (!data) return;
       if (data.type === "OVERLEAF_STREAM_PREVIEW_START") {
         const previewId = data.data && data.data.previewId;
-        console.log("[OverleafBridge] Starting stream preview, previewId:", previewId || "(legacy)");
+        debug("[OverleafBridge] Starting stream preview, previewId:", previewId || "(legacy)");
         startStreamPreview(data.data);
       } else if (data.type === "OVERLEAF_STREAM_PREVIEW_UPDATE") {
         const previewId = data.data && data.data.previewId;
@@ -1585,7 +1604,7 @@
         updateStreamPreview(previewId, delta);
       } else if (data.type === "OVERLEAF_STREAM_PREVIEW_COMPLETE") {
         const previewId = data.data && data.data.previewId;
-        console.log("[OverleafBridge] Stream preview complete, previewId:", previewId || "(legacy)");
+        debug("[OverleafBridge] Stream preview complete, previewId:", previewId || "(legacy)");
         completeStreamPreview(data.data);
       }
     });
@@ -2046,7 +2065,7 @@
         return field.suggestions.get(suggestionId);
       }
     } catch (e) {
-      console.warn("[DiffAPI] \u83B7\u53D6\u6700\u65B0\u884C\u7EA7\u5EFA\u8BAE\u4F4D\u7F6E\u5931\u8D25:", e);
+      warn("[DiffAPI] \u83B7\u53D6\u6700\u65B0\u884C\u7EA7\u5EFA\u8BAE\u4F4D\u7F6E\u5931\u8D25:", e);
     }
     return null;
   }
@@ -2058,7 +2077,7 @@
         return field.segments.get(suggestionId);
       }
     } catch (e) {
-      console.warn("[DiffAPI] \u83B7\u53D6\u6700\u65B0\u7247\u6BB5\u5EFA\u8BAE\u4F4D\u7F6E\u5931\u8D25:", e);
+      warn("[DiffAPI] \u83B7\u53D6\u6700\u65B0\u7247\u6BB5\u5EFA\u8BAE\u4F4D\u7F6E\u5931\u8D25:", e);
     }
     return null;
   }
@@ -2104,7 +2123,7 @@
           effects: EditorView.scrollIntoView(targetConfig.lineFrom, { y: "center" })
         });
       } catch (e) {
-        console.warn("[DiffAPI] \u6EDA\u52A8\u5931\u8D25:", e);
+        warn("[DiffAPI] \u6EDA\u52A8\u5931\u8D25:", e);
       }
     }
   }
@@ -2114,7 +2133,7 @@
     setDiffCurrentIndex(index);
     const item = sortedList[index];
     if (item.fileName !== diffCurrentFileName) {
-      console.log("[DiffAPI] \u8DE8\u6587\u4EF6\u8DF3\u8F6C:", diffCurrentFileName, "->", item.fileName);
+      debug("[DiffAPI] \u8DE8\u6587\u4EF6\u8DF3\u8F6C:", diffCurrentFileName, "->", item.fileName);
       methodHandlers.switchFile(item.fileName);
       setTimeout(function() {
         scrollToSuggestion(item.id, item.config);
@@ -2128,10 +2147,10 @@
     const filesInfo = getFilesWithSuggestions(diffCurrentFileName);
     const nextFile = filesInfo.nextFile;
     if (!nextFile) {
-      console.log("[DiffAPI] \u6CA1\u6709\u5176\u4ED6\u6587\u4EF6\u6709\u5EFA\u8BAE");
+      debug("[DiffAPI] \u6CA1\u6709\u5176\u4ED6\u6587\u4EF6\u6709\u5EFA\u8BAE");
       return false;
     }
-    console.log("[DiffAPI] \u8DF3\u8F6C\u5230\u6587\u4EF6:", nextFile.fileName, "(" + nextFile.count + "\u4E2A\u5EFA\u8BAE)");
+    debug("[DiffAPI] \u8DF3\u8F6C\u5230\u6587\u4EF6:", nextFile.fileName, "(" + nextFile.count + "\u4E2A\u5EFA\u8BAE)");
     methodHandlers.switchFile(nextFile.fileName);
     setTimeout(function() {
       const sortedList = getSortedSuggestionsAcrossFiles();
@@ -2190,7 +2209,7 @@
                 const totalCount = getTotalSuggestionsCount();
                 if (diffCurrentIndex >= totalCount) setDiffCurrentIndex(Math.max(0, totalCount - 1));
                 updateDiffControlBar();
-                console.log("[DiffAPI] \u5DF2\u63A5\u53D7\u5EFA\u8BAE:", suggestionId);
+                debug("[DiffAPI] \u5DF2\u63A5\u53D7\u5EFA\u8BAE:", suggestionId);
                 if (callbacks.onAccept) callbacks.onAccept(oldContent, newContent);
               }
             },
@@ -2207,7 +2226,7 @@
               const totalCount = getTotalSuggestionsCount();
               if (diffCurrentIndex >= totalCount) setDiffCurrentIndex(Math.max(0, totalCount - 1));
               updateDiffControlBar();
-              console.log("[DiffAPI] \u5DF2\u62D2\u7EDD\u5EFA\u8BAE:", suggestionId);
+              debug("[DiffAPI] \u5DF2\u62D2\u7EDD\u5EFA\u8BAE:", suggestionId);
               if (callbacks.onReject) callbacks.onReject(oldContent, newContent);
             }
           };
@@ -2216,7 +2235,7 @@
             diffCurrentView.dispatch({ effects: diffEffects.addDiffSuggestionEffect.of(config) });
           }
           updateDiffControlBar();
-          console.log("[DiffAPI] \u5EFA\u8BAE\u5DF2\u521B\u5EFA:", id, "\u7B2C", lineNum, "\u884C", "\u6587\u4EF6:", fileName);
+          debug("[DiffAPI] \u5EFA\u8BAE\u5DF2\u521B\u5EFA:", id, "\u7B2C", lineNum, "\u884C", "\u6587\u4EF6:", fileName);
           return id;
         } catch (e) {
           console.error("[DiffAPI] \u521B\u5EFA\u5EFA\u8BAE\u5931\u8D25:", e);
@@ -2285,7 +2304,7 @@
             diffCurrentView.dispatch({ effects: diffEffects.addDiffSuggestionEffect.of(config) });
           }
           updateDiffControlBar();
-          console.log("[DiffAPI] \u5EFA\u8BAE\u5DF2\u521B\u5EFA\uFF08\u5916\u90E8ID\uFF09:", externalId, "\u7B2C", startLine, "-", endLine, "\u884C", "\u6587\u4EF6:", fileName);
+          debug("[DiffAPI] \u5EFA\u8BAE\u5DF2\u521B\u5EFA\uFF08\u5916\u90E8ID\uFF09:", externalId, "\u7B2C", startLine, "-", endLine, "\u884C", "\u6587\u4EF6:", fileName);
           return externalId;
         } catch (e) {
           console.error("[DiffAPI] \u521B\u5EFA\u5EFA\u8BAE\u5931\u8D25:", e);
@@ -2348,7 +2367,7 @@
             diffCurrentView.dispatch({ effects: diffEffects.addSegmentSuggestionEffect.of(config) });
           }
           updateDiffControlBar();
-          console.log("[DiffAPI] \u7247\u6BB5\u5EFA\u8BAE\u5DF2\u521B\u5EFA\uFF08\u5916\u90E8ID\uFF09:", externalId, "\u504F\u79FB", startOffset, "-", endOffset, "\u6587\u4EF6:", fileName);
+          debug("[DiffAPI] \u7247\u6BB5\u5EFA\u8BAE\u5DF2\u521B\u5EFA\uFF08\u5916\u90E8ID\uFF09:", externalId, "\u504F\u79FB", startOffset, "-", endOffset, "\u6587\u4EF6:", fileName);
           return externalId;
         } catch (e) {
           console.error("[DiffAPI] \u521B\u5EFA\u7247\u6BB5\u5EFA\u8BAE\u5931\u8D25:", e);
@@ -2392,7 +2411,7 @@
             config.onAccept(diffCurrentView, ids[i]);
           }
         }
-        console.log("[DiffAPI] \u5DF2\u63A5\u53D7\u5F53\u524D\u6587\u4EF6\u6240\u6709\u5EFA\u8BAE");
+        debug("[DiffAPI] \u5DF2\u63A5\u53D7\u5F53\u524D\u6587\u4EF6\u6240\u6709\u5EFA\u8BAE");
       },
       rejectAll: function() {
         const fileSuggestions = getCurrentFileSuggestions();
@@ -2403,7 +2422,7 @@
             config.onReject(diffCurrentView, ids[j]);
           }
         }
-        console.log("[DiffAPI] \u5DF2\u62D2\u7EDD\u5F53\u524D\u6587\u4EF6\u6240\u6709\u5EFA\u8BAE");
+        debug("[DiffAPI] \u5DF2\u62D2\u7EDD\u5F53\u524D\u6587\u4EF6\u6240\u6709\u5EFA\u8BAE");
       },
       clearAll: function() {
         const fileSuggestions = getCurrentFileSuggestions();
@@ -2426,7 +2445,7 @@
           });
         }
         updateDiffControlBar();
-        console.log("[DiffAPI] \u5F53\u524D\u6587\u4EF6\u6240\u6709\u5EFA\u8BAE\u5DF2\u6E05\u9664");
+        debug("[DiffAPI] \u5F53\u524D\u6587\u4EF6\u6240\u6709\u5EFA\u8BAE\u5DF2\u6E05\u9664");
       },
       clearAllFiles: function() {
         for (const entry of diffSuggestionsByFile) {
@@ -2449,10 +2468,10 @@
           });
         }
         updateDiffControlBar();
-        console.log("[DiffAPI] \u6240\u6709\u6587\u4EF6\u7684\u5EFA\u8BAE\u5DF2\u6E05\u9664");
+        debug("[DiffAPI] \u6240\u6709\u6587\u4EF6\u7684\u5EFA\u8BAE\u5DF2\u6E05\u9664");
       }
     };
-    console.log("[DiffAPI] Diff API \u51C6\u5907\u5C31\u7EEA!");
+    debug("[DiffAPI] Diff API \u51C6\u5907\u5C31\u7EEA!");
   }
   function initDiffMessageListeners() {
     window.addEventListener("message", function(event) {
@@ -2527,11 +2546,11 @@
     } catch (e) {
     }
     if (suggestions.size === 0 && inlineStatus.size === 0) {
-      console.log("[DiffAPI] \u5F53\u524D\u6587\u4EF6\u65E0\u5EFA\u8BAE:", diffCurrentFileName);
+      debug("[DiffAPI] \u5F53\u524D\u6587\u4EF6\u65E0\u5EFA\u8BAE:", diffCurrentFileName);
       updateDiffControlBar();
       return;
     }
-    console.log("[DiffAPI] \u6062\u590D\u6587\u4EF6\u5EFA\u8BAE:", diffCurrentFileName, "\u5171", suggestions.size, "\u4E2A\u5EFA\u8BAE,", inlineStatus.size, "\u4E2A\u5185\u8054\u72B6\u6001");
+    debug("[DiffAPI] \u6062\u590D\u6587\u4EF6\u5EFA\u8BAE:", diffCurrentFileName, "\u5171", suggestions.size, "\u4E2A\u5EFA\u8BAE,", inlineStatus.size, "\u4E2A\u5185\u8054\u72B6\u6001");
     const toRemove = [];
     for (const entry of suggestions) {
       const id = entry[0];
@@ -2546,7 +2565,7 @@
             config.widgetPos = config.endOffset;
             diffCurrentView.dispatch({ effects: diffEffects.addSegmentSuggestionEffect.of(config) });
           } else {
-            console.warn("[DiffAPI] \u6062\u590D\u7247\u6BB5\u5EFA\u8BAE\u5931\u8D25\uFF0C\u627E\u4E0D\u5230\u539F\u59CB\u5185\u5BB9:", id);
+            warn("[DiffAPI] \u6062\u590D\u7247\u6BB5\u5EFA\u8BAE\u5931\u8D25\uFF0C\u627E\u4E0D\u5230\u539F\u59CB\u5185\u5BB9:", id);
             toRemove.push(id);
           }
         } else {
@@ -2558,7 +2577,7 @@
           diffCurrentView.dispatch({ effects: diffEffects.addDiffSuggestionEffect.of(config) });
         }
       } catch (e) {
-        console.warn("[DiffAPI] \u6062\u590D\u5EFA\u8BAE\u5931\u8D25:", id, e);
+        warn("[DiffAPI] \u6062\u590D\u5EFA\u8BAE\u5931\u8D25:", id, e);
         toRemove.push(id);
       }
     }
@@ -2579,14 +2598,14 @@
             config.widgetPos = foundIndex;
             diffCurrentView.dispatch({ effects: diffEffects.addInlineStatusEffect.of(config) });
           } else {
-            console.warn("[InlineStatus] \u6062\u590D\u5185\u8054\u72B6\u6001\u5931\u8D25\uFF0C\u627E\u4E0D\u5230\u539F\u59CB\u5185\u5BB9:", id);
+            warn("[InlineStatus] \u6062\u590D\u5185\u8054\u72B6\u6001\u5931\u8D25\uFF0C\u627E\u4E0D\u5230\u539F\u59CB\u5185\u5BB9:", id);
             statusToRemove.push(id);
           }
         } else {
           diffCurrentView.dispatch({ effects: diffEffects.addInlineStatusEffect.of(config) });
         }
       } catch (e) {
-        console.warn("[InlineStatus] \u6062\u590D\u5185\u8054\u72B6\u6001\u5931\u8D25:", id, e);
+        warn("[InlineStatus] \u6062\u590D\u5185\u8054\u72B6\u6001\u5931\u8D25:", id, e);
         statusToRemove.push(id);
       }
     }
@@ -2605,7 +2624,7 @@
       const currentFile = methodHandlers.getCurrentFile ? methodHandlers.getCurrentFile() : { name: getCurrentFileName() };
       const newFileName = currentFile ? currentFile.name : null;
       if (newFileName && newFileName !== diffCurrentFileName) {
-        console.log("[DiffAPI] \u68C0\u6D4B\u5230\u6587\u4EF6\u5207\u6362:", diffCurrentFileName, "->", newFileName);
+        debug("[DiffAPI] \u68C0\u6D4B\u5230\u6587\u4EF6\u5207\u6362:", diffCurrentFileName, "->", newFileName);
         const oldFileName = diffCurrentFileName;
         setDiffCurrentFileName(newFileName);
         onFileChanged(oldFileName, newFileName);
@@ -2618,14 +2637,14 @@
     try {
       const currentFile = methodHandlers.getCurrentFile ? methodHandlers.getCurrentFile() : { name: getCurrentFileName() };
       setDiffCurrentFileName(currentFile ? currentFile.name : null);
-      console.log("[DiffAPI] \u521D\u59CB\u6587\u4EF6:", diffCurrentFileName);
+      debug("[DiffAPI] \u521D\u59CB\u6587\u4EF6:", diffCurrentFileName);
     } catch (e) {
     }
     const interval = setInterval(checkFileChange, 500);
     setDiffFileCheckInterval(interval);
   }
   function initDiffSystem() {
-    console.log("[OverleafBridge] Initializing Diff System...");
+    debug("[OverleafBridge] Initializing Diff System...");
     injectDiffStyles();
     initDiffMessageListeners();
     window.addEventListener("UNSTABLE_editor:extensions", function(evt) {
@@ -2633,10 +2652,10 @@
       const CM = detail.CodeMirror;
       const extensions = detail.extensions;
       diffCodeMirror = CM;
-      console.log("[DiffAPI] \u6355\u83B7\u5230 CodeMirror \u5B9E\u4F8B");
+      debug("[DiffAPI] \u6355\u83B7\u5230 CodeMirror \u5B9E\u4F8B");
       const diffSuggestionExtension = createDiffSuggestionExtension(CM);
       extensions.push(diffSuggestionExtension);
-      console.log("[DiffAPI] Diff \u5EFA\u8BAE\u6269\u5C55\u5DF2\u6CE8\u518C");
+      debug("[DiffAPI] Diff \u5EFA\u8BAE\u6269\u5C55\u5DF2\u6CE8\u518C");
     });
     setTimeout(() => {
       window.dispatchEvent(new CustomEvent("editor:extension-loaded"));
@@ -2645,7 +2664,7 @@
         const view = store && store.get("editor.view") || document.querySelector(".cm-content") && document.querySelector(".cm-content").cmView && document.querySelector(".cm-content").cmView.view;
         setDiffCurrentView(view);
         if (view) {
-          console.log("[DiffAPI] \u7F16\u8F91\u5668\u89C6\u56FE\u5DF2\u83B7\u53D6");
+          debug("[DiffAPI] \u7F16\u8F91\u5668\u89C6\u56FE\u5DF2\u83B7\u53D6");
           createDiffControlBar({
             onPrev: () => window.diffAPI && window.diffAPI.prev(),
             onNext: () => window.diffAPI && window.diffAPI.next(),
@@ -2656,12 +2675,12 @@
           setupDiffAPI();
           startFileChangeListener();
         } else {
-          console.warn("[DiffAPI] \u65E0\u6CD5\u83B7\u53D6\u7F16\u8F91\u5668\u89C6\u56FE\uFF0C\u7A0D\u540E\u91CD\u8BD5");
+          warn("[DiffAPI] \u65E0\u6CD5\u83B7\u53D6\u7F16\u8F91\u5668\u89C6\u56FE\uFF0C\u7A0D\u540E\u91CD\u8BD5");
           setTimeout(() => {
             const retryView = window.overleaf?.unstable?.store?.get("editor.view") || document.querySelector(".cm-content")?.cmView?.view;
             if (retryView) {
               setDiffCurrentView(retryView);
-              console.log("[DiffAPI] \u7F16\u8F91\u5668\u89C6\u56FE\u5DF2\u83B7\u53D6\uFF08\u91CD\u8BD5\uFF09");
+              debug("[DiffAPI] \u7F16\u8F91\u5668\u89C6\u56FE\u5DF2\u83B7\u53D6\uFF08\u91CD\u8BD5\uFF09");
               createDiffControlBar({
                 onPrev: () => window.diffAPI && window.diffAPI.prev(),
                 onNext: () => window.diffAPI && window.diffAPI.next(),
@@ -2865,7 +2884,7 @@
     }
   `;
     document.head.appendChild(style);
-    console.log("[ReviewTooltipInjector] Styles injected");
+    debug("[ReviewTooltipInjector] Styles injected");
   }
 
   // public/injected/modules/reviewTooltipInjector/injector.js
@@ -2930,17 +2949,17 @@
   }
   function sendTextActionRequest(action, customPrompt = "") {
     if (!checkIsActivated()) {
-      console.warn("[ReviewTooltipInjector] Not activated");
+      warn("[ReviewTooltipInjector] Not activated");
       showActivationRequiredHint();
       return false;
     }
     const selectionInfo = getCurrentSelectionInfo();
     if (!selectionInfo) {
-      console.warn("[ReviewTooltipInjector] No selection available");
+      warn("[ReviewTooltipInjector] No selection available");
       return false;
     }
     const selectedModel = getSelectedTextActionModel();
-    console.log("[ReviewTooltipInjector] Sending text action:", action, "model:", selectedModel);
+    debug("[ReviewTooltipInjector] Sending text action:", action, "model:", selectedModel);
     window.postMessage({
       type: "OVERLEAF_TEXT_ACTION_REQUEST",
       data: {
@@ -2993,7 +3012,7 @@
         }
       });
       addCommentBtn.title = addCommentBtn.title || "\u6DFB\u52A0\u8BC4\u8BBA";
-      console.log("[ReviewTooltipInjector] Add comment button transformed");
+      debug("[ReviewTooltipInjector] Add comment button transformed");
     }
     return addCommentBtn;
   }
@@ -3108,7 +3127,7 @@
     menu.classList.add("ol-ai-enhanced");
     const aiControls = createAIControls(addCommentBtn);
     menu.appendChild(aiControls);
-    console.log("[ReviewTooltipInjector] AI controls injected into review tooltip");
+    debug("[ReviewTooltipInjector] AI controls injected into review tooltip");
   }
   function isTargetMenu(element) {
     if (!element || element.nodeType !== Node.ELEMENT_NODE) {
@@ -3138,7 +3157,7 @@
   var isEnabled = true;
   function setSelectionTooltipEnabled(enabled) {
     isEnabled = enabled;
-    console.log("[ReviewTooltipInjector] Selection tooltip", enabled ? "enabled" : "disabled");
+    debug("[ReviewTooltipInjector] Selection tooltip", enabled ? "enabled" : "disabled");
     if (!enabled) {
       hideAllInjectedControls();
     } else {
@@ -3179,7 +3198,7 @@
   }
   function startObserver() {
     if (observer) {
-      console.log("[ReviewTooltipInjector] Observer already running");
+      debug("[ReviewTooltipInjector] Observer already running");
       return;
     }
     observer = createObserver();
@@ -3189,25 +3208,25 @@
       attributes: true,
       attributeFilter: ["style", "class"]
     });
-    console.log("[ReviewTooltipInjector] MutationObserver started");
+    debug("[ReviewTooltipInjector] MutationObserver started");
   }
   function processExistingMenus() {
     const existingMenus = document.querySelectorAll(".review-tooltip-menu");
     existingMenus.forEach(processMenu);
     if (existingMenus.length > 0) {
-      console.log("[ReviewTooltipInjector] Processed", existingMenus.length, "existing menus");
+      debug("[ReviewTooltipInjector] Processed", existingMenus.length, "existing menus");
     }
   }
   function initReviewTooltipInjector() {
-    console.log("[ReviewTooltipInjector] Initializing...");
+    debug("[ReviewTooltipInjector] Initializing...");
     try {
       const savedState = localStorage.getItem("ol-ai-selection-tooltip-enabled");
       if (savedState !== null) {
         isEnabled = savedState === "true";
-        console.log("[ReviewTooltipInjector] Loaded saved state:", isEnabled);
+        debug("[ReviewTooltipInjector] Loaded saved state:", isEnabled);
       }
     } catch (e) {
-      console.warn("[ReviewTooltipInjector] Failed to load saved state:", e);
+      warn("[ReviewTooltipInjector] Failed to load saved state:", e);
     }
     injectStyles();
     startObserver();
@@ -3215,7 +3234,7 @@
       processExistingMenus();
     }
     setupMessageListener();
-    console.log("[ReviewTooltipInjector] Initialized successfully, enabled:", isEnabled);
+    debug("[ReviewTooltipInjector] Initialized successfully, enabled:", isEnabled);
   }
   function setupMessageListener() {
     window.addEventListener("message", (event) => {
@@ -3229,7 +3248,7 @@
           try {
             localStorage.setItem("ol-ai-selection-tooltip-enabled", String(enabled));
           } catch (e) {
-            console.warn("[ReviewTooltipInjector] Failed to save state:", e);
+            warn("[ReviewTooltipInjector] Failed to save state:", e);
           }
         }
       }
@@ -3378,7 +3397,7 @@
     style.id = "ol-cite-tooltip-styles";
     style.textContent = CITE_TOOLTIP_STYLES;
     document.head.appendChild(style);
-    console.log("[CiteTooltip] Styles injected");
+    debug("[CiteTooltip] Styles injected");
   }
 
   // public/injected/modules/citeTooltip/tooltip.js
@@ -3442,7 +3461,7 @@
       type: "OVERLEAF_CITE_NAVIGATE",
       keys
     }, "*");
-    console.log("[CiteTooltip] Navigate to:", keys);
+    debug("[CiteTooltip] Navigate to:", keys);
   }
   async function fetchReferenceInfo(keys) {
     const cachedResults = [];
@@ -3605,7 +3624,7 @@
         updatePosition();
       }
     });
-    console.log("[CiteTooltip] Started");
+    debug("[CiteTooltip] Started");
   }
   function stopCiteTooltip() {
     if (checkInterval) {
@@ -3613,7 +3632,7 @@
       checkInterval = null;
     }
     hideTooltip();
-    console.log("[CiteTooltip] Stopped");
+    debug("[CiteTooltip] Stopped");
   }
   function updateReferenceCache(references) {
     if (!Array.isArray(references)) return;
@@ -3622,11 +3641,11 @@
         referenceCache.set(ref.id, ref);
       }
     }
-    console.log("[CiteTooltip] Cache updated with", references.length, "references");
+    debug("[CiteTooltip] Cache updated with", references.length, "references");
   }
   function clearReferenceCache() {
     referenceCache.clear();
-    console.log("[CiteTooltip] Cache cleared");
+    debug("[CiteTooltip] Cache cleared");
   }
   function escapeHtml(str) {
     if (!str) return "";
@@ -3682,10 +3701,10 @@
   var isEnabled2 = true;
   function initCiteTooltip() {
     if (isInitialized) {
-      console.log("[CiteTooltip] Already initialized");
+      debug("[CiteTooltip] Already initialized");
       return;
     }
-    console.log("[CiteTooltip] Initializing...");
+    debug("[CiteTooltip] Initializing...");
     injectStyles2();
     const savedState = localStorage.getItem("ol-ai-cite-tooltip-enabled");
     isEnabled2 = savedState !== "false";
@@ -3694,7 +3713,7 @@
     }
     setupMessageListener2();
     isInitialized = true;
-    console.log("[CiteTooltip] Initialized successfully, enabled:", isEnabled2);
+    debug("[CiteTooltip] Initialized successfully, enabled:", isEnabled2);
   }
   function setupMessageListener2() {
     window.addEventListener("message", (event) => {
@@ -3717,10 +3736,10 @@
           localStorage.setItem("ol-ai-cite-tooltip-enabled", String(enabled));
           if (enabled) {
             startCiteTooltip();
-            console.log("[CiteTooltip] Enabled");
+            debug("[CiteTooltip] Enabled");
           } else {
             stopCiteTooltip();
-            console.log("[CiteTooltip] Disabled");
+            debug("[CiteTooltip] Disabled");
           }
         }
       }
@@ -3751,7 +3770,7 @@
     if (!view) {
       throw new Error("EditorView not available");
     }
-    console.log("[OverleafBridge] replaceSelection called:", {
+    debug("[OverleafBridge] replaceSelection called:", {
       from,
       to,
       textLength: text.length
@@ -3809,5 +3828,5 @@
     }
     window.postMessage(response, "*");
   });
-  console.log("[OverleafBridge] Modular architecture initialized (ESM)");
+  debug("[OverleafBridge] Modular architecture initialized (ESM)");
 })();

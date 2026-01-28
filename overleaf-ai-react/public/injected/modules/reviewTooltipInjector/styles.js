@@ -5,6 +5,8 @@
  * 只是添加在原生 review-tooltip-menu 上
  */
 
+import { debug } from '../core/logger.js';
+
 const STYLE_ID = 'overleaf-ai-review-tooltip-styles';
 
 /**
@@ -196,7 +198,7 @@ export function injectStyles() {
     }
   `;
   document.head.appendChild(style);
-  console.log('[ReviewTooltipInjector] Styles injected');
+  debug('[ReviewTooltipInjector] Styles injected');
 }
 
 /**
@@ -206,6 +208,6 @@ export function removeStyles() {
   const style = document.getElementById(STYLE_ID);
   if (style) {
     style.remove();
-    console.log('[ReviewTooltipInjector] Styles removed');
+    debug('[ReviewTooltipInjector] Styles removed');
   }
 }

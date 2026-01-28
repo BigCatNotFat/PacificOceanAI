@@ -6,6 +6,7 @@ import { getEditorView } from '../core/editorView.js';
 import { checkIsActivated, showActivationRequiredHint } from '../modelManagement/state.js';
 import { getSelectedTextActionModel } from '../modelManagement/models.js';
 import { getCurrentSelection, showNoSelectionHint, hideSelectionTooltip, showTextActionMenuAtCursor } from './ui.js';
+import { debug, warn } from '../core/logger.js';
 
 /**
  * 获取选区上下文
@@ -49,7 +50,7 @@ function getSelectionContext(view, from, to, contextLines = 15) {
  */
 export function handleCustomRequest() {
   if (!checkIsActivated()) {
-    console.warn('[OverleafBridge] Not activated, showing activation hint');
+    warn('[OverleafBridge] Not activated, showing activation hint');
     showActivationRequiredHint();
     return;
   }
@@ -90,14 +91,14 @@ export function handleCustomRequest() {
   }
   
   if (!selectionData) {
-    console.warn('[OverleafBridge] No cursor position available');
+    warn('[OverleafBridge] No cursor position available');
     return;
   }
   
   const selectedModel = getSelectedTextActionModel();
   const hasSelection = selectionData.text && selectionData.text.trim().length > 0;
   
-  console.log('[OverleafBridge] Custom request:', customPrompt, 'model:', selectedModel);
+  debug('[OverleafBridge] Custom request:', customPrompt, 'model:', selectedModel);
   
   let contextBefore = '';
   let contextAfter = '';
@@ -137,7 +138,7 @@ export function handleCustomRequest() {
  */
 export function handleTextActionRequest(actionType) {
   if (!checkIsActivated()) {
-    console.warn('[OverleafBridge] Not activated, showing activation hint');
+    warn('[OverleafBridge] Not activated, showing activation hint');
     showActivationRequiredHint();
     return;
   }
@@ -145,19 +146,19 @@ export function handleTextActionRequest(actionType) {
   const currentSelection = getCurrentSelection();
   
   if (!currentSelection) {
-    console.warn('[OverleafBridge] No selection for text action');
+    warn('[OverleafBridge] No selection for text action');
     showNoSelectionHint();
     return;
   }
   
   if (currentSelection.isEmpty || !currentSelection.text || currentSelection.text.trim().length === 0) {
-    console.warn('[OverleafBridge] Empty selection for text action');
+    warn('[OverleafBridge] Empty selection for text action');
     showNoSelectionHint();
     return;
   }
   
   const selectedModel = getSelectedTextActionModel();
-  console.log('[OverleafBridge] Text action requested:', actionType, 'model:', selectedModel);
+  debug('[OverleafBridge] Text action requested:', actionType, 'model:', selectedModel);
   
   let contextBefore = '';
   let contextAfter = '';
@@ -196,7 +197,7 @@ export function initActionListeners() {
     if (!data || (data.type !== 'OVERLEAF_TRANSLATE_RESPONSE' && data.type !== 'OVERLEAF_TEXT_ACTION_RESPONSE')) return;
     
     const actionType = data.data.action || 'translate';
-    console.log('[OverleafBridge] Received text action result:', actionType);
+    debug('[OverleafBridge] Received text action result:', actionType);
     
     try {
       const view = getEditorView();
@@ -213,7 +214,7 @@ export function initActionListeners() {
         }
       });
       
-      console.log('[OverleafBridge] Text action applied successfully');
+      debug('[OverleafBridge] Text action applied successfully');
     } catch (error) {
       console.error('[OverleafBridge] Failed to apply text action:', error);
     }
@@ -227,7 +228,7 @@ export function initActionListeners() {
       event.preventDefault();
       event.stopPropagation();
       
-      console.log('[OverleafBridge] Shortcut Ctrl+Alt+/ detected');
+      debug('[OverleafBridge] Shortcut Ctrl+Alt+/ detected');
       
       const tooltip = document.getElementById('ol-ai-selection-tooltip');
       if (tooltip && tooltip.style.display === 'flex') {

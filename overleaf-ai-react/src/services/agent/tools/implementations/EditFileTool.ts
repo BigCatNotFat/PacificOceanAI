@@ -10,6 +10,7 @@
 import { BaseTool } from '../base/BaseTool';
 import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
+import { logger } from '../../../../utils/logger';
 
 /**
  * 编辑文件工具
@@ -77,7 +78,7 @@ old_string = "regularization is a crucial technique..."
     const startTime = Date.now();
     
     try {
-      console.log('[EditFileTool] execute called with:', {
+      logger.debug('[EditFileTool] execute called with:', {
         target_file: args.target_file,
         instructions: args.instructions,
         old_string_len: args.old_string?.length,
@@ -93,18 +94,18 @@ old_string = "regularization is a crucial technique..."
       }
 
       // 1. 检查目标文件是否是当前打开的文件
-      console.log('[EditFileTool] Step 1: Checking if target file is current file');
+      logger.debug('[EditFileTool] Step 1: Checking if target file is current file');
       const currentFileName = await this.getCurrentFileName();
       const targetBaseName = args.target_file.split('/').pop() || args.target_file;
       const isCurrentFile = currentFileName === targetBaseName || 
                            currentFileName === args.target_file ||
                            args.target_file.endsWith(currentFileName || '');
       
-      console.log('[EditFileTool] Current file:', currentFileName, 'Target:', targetBaseName, 'Is current:', isCurrentFile);
+      logger.debug('[EditFileTool] Current file:', currentFileName, 'Target:', targetBaseName, 'Is current:', isCurrentFile);
 
       // 2. 如果不是当前文件，尝试切换
       if (!isCurrentFile) {
-        console.log(`[EditFileTool] Target file "${targetBaseName}" is not active (current: "${currentFileName}"). Attempting to switch...`);
+        logger.debug(`[EditFileTool] Target file "${targetBaseName}" is not active (current: "${currentFileName}"). Attempting to switch...`);
         
         // 尝试切换文件
         const switchResult = await overleafEditor.file.switchFile(targetBaseName);
@@ -129,7 +130,7 @@ old_string = "regularization is a crucial technique..."
           };
         }
 
-        console.log('[EditFileTool] Switch command sent. Waiting for editor to update...');
+        logger.debug('[EditFileTool] Switch command sent. Waiting for editor to update...');
         
         // 等待文件切换完成
         const switchSuccess = await this.waitForFileSwitch(targetBaseName);
@@ -142,15 +143,15 @@ old_string = "regularization is a crucial technique..."
           };
         }
         
-        console.log('[EditFileTool] File switched successfully.');
+        logger.debug('[EditFileTool] File switched successfully.');
       }
 
       // 3. 获取当前文件内容
-      console.log('[EditFileTool] Step 2: Getting content from editor');
+      logger.debug('[EditFileTool] Step 2: Getting content from editor');
       let originalContent = await overleafEditor.document.getText();
       
       // 4. 执行替换
-      console.log('[EditFileTool] Step 3: Performing replacement');
+      logger.debug('[EditFileTool] Step 3: Performing replacement');
       
       let matchString = args.old_string;
 
@@ -160,7 +161,7 @@ old_string = "regularization is a crucial technique..."
         const ellipsisMatch = this.findMatchWithEllipsis(originalContent, args.old_string);
         
         if (ellipsisMatch) {
-          console.log('[EditFileTool] Found match using ellipsis wildcard');
+          logger.debug('[EditFileTool] Found match using ellipsis wildcard');
           matchString = ellipsisMatch;
         } else {
           // 尝试进行一些基本的清理（例如标准化换行符）再试一次
@@ -195,7 +196,7 @@ old_string = "regularization is a crucial technique..."
 
       // 5. 检查内容是否真的有变化
       if (newContent === originalContent) {
-        console.log('[EditFileTool] No changes detected');
+        logger.debug('[EditFileTool] No changes detected');
         return {
           success: true,
           data: {
@@ -210,9 +211,9 @@ old_string = "regularization is a crucial technique..."
       }
 
       // 6. 应用编辑到编辑器
-      console.log('[EditFileTool] Step 5: Setting document content');
+      logger.debug('[EditFileTool] Step 5: Setting document content');
       const setResult = await overleafEditor.editor.setDocContent(newContent);
-      console.log('[EditFileTool] Set result:', setResult);
+      logger.debug('[EditFileTool] Set result:', setResult);
 
       if (!setResult.success) {
         return {
@@ -222,7 +223,7 @@ old_string = "regularization is a crucial technique..."
         };
       }
 
-      console.log('[EditFileTool] Edit successful:', setResult.oldLength, '->', setResult.newLength);
+      logger.debug('[EditFileTool] Edit successful:', setResult.oldLength, '->', setResult.newLength);
 
       return {
         success: true,

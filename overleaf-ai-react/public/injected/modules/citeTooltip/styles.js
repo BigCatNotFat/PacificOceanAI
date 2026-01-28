@@ -2,6 +2,8 @@
  * Cite Tooltip 样式
  */
 
+import { debug } from '../core/logger.js';
+
 export const CITE_TOOLTIP_STYLES = `
   .ol-cm-cite-tooltip-container {
     position: fixed;
@@ -143,6 +145,6 @@ export function injectStyles() {
   style.textContent = CITE_TOOLTIP_STYLES;
   document.head.appendChild(style);
   
-  console.log('[CiteTooltip] Styles injected');
+  debug('[CiteTooltip] Styles injected');
 }
 

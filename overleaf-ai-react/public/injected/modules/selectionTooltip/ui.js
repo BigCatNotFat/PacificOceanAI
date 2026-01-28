@@ -5,6 +5,7 @@
 import { getEditorView } from '../core/editorView.js';
 import { createModelSelector, getSelectedTextActionModel } from '../modelManagement/models.js';
 import { handleTextActionRequest, handleCustomRequest } from './textActions.js';
+import { debug, warn } from '../core/logger.js';
 
 // 选区操作按钮配置 (仿照图片样式)
 const SELECTION_ACTION_BUTTONS = [
@@ -356,7 +357,7 @@ export function showInsertOnlyMode() {
     inputEl.placeholder = '输入要生成的内容...';
   }
   
-  console.log('[OverleafBridge] Switched to insert-only mode');
+  debug('[OverleafBridge] Switched to insert-only mode');
 }
 
 /**
@@ -382,7 +383,7 @@ export function showFullMenuMode() {
     inputEl.placeholder = '输入您的要求...';
   }
   
-  console.log('[OverleafBridge] Switched to full menu mode');
+  debug('[OverleafBridge] Switched to full menu mode');
 }
 
 // 兼容别名
@@ -401,7 +402,7 @@ export function showTextActionMenuAtCursor() {
   try {
     const view = getEditorView();
     if (!view) {
-      console.warn('[OverleafBridge] EditorView not available for shortcut menu');
+      warn('[OverleafBridge] EditorView not available for shortcut menu');
       return;
     }
 
@@ -411,7 +412,7 @@ export function showTextActionMenuAtCursor() {
     
     const coords = view.coordsAtPos(cursorPos);
     if (!coords) {
-      console.warn('[OverleafBridge] Cannot get cursor coordinates');
+      warn('[OverleafBridge] Cannot get cursor coordinates');
       return;
     }
 
@@ -442,7 +443,7 @@ export function showTextActionMenuAtCursor() {
       showFullMenuMode();
     }
 
-    console.log('[OverleafBridge] Text action menu shown via shortcut (Ctrl+Alt+/)', {
+    debug('[OverleafBridge] Text action menu shown via shortcut (Ctrl+Alt+/)', {
       hasSelection: hasSelection,
       cursorPos: cursorPos,
       mode: hasSelection ? 'full' : 'insert-only'

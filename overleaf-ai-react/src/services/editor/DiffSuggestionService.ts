@@ -20,6 +20,7 @@ import type {
 } from '../../platform/editor/IDiffSuggestionService';
 import type { ITelemetryService } from '../../platform/telemetry/ITelemetryService';
 import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService';
+import { logger } from '../../utils/logger';
 
 /**
  * DiffSuggestionService 实现
@@ -47,7 +48,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
   private constructor() {
     super();
     this.setupMessageListener();
-    console.log('[DiffSuggestionService] 初始化完成');
+    logger.debug('[DiffSuggestionService] 初始化完成');
   }
   
   static getInstance(): DiffSuggestionService {
@@ -103,7 +104,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
     action: string;
     accepted: boolean;
   }): void {
-    console.log(`[DiffSuggestionService] 文本操作 ${data.action} 被${data.accepted ? '接受' : '拒绝'}`);
+    logger.debug(`[DiffSuggestionService] 文本操作 ${data.action} 被${data.accepted ? '接受' : '拒绝'}`);
     
     // 统计埋点：记录文本操作决策
     if (this.telemetryService) {
@@ -129,7 +130,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       if (data.id.startsWith('text-action-')) {
         // 文本操作的统计已通过 OVERLEAF_TEXT_ACTION_DECISION 消息处理
         // 这里只输出日志
-        console.log(`[DiffSuggestionService] 文本操作建议 ${data.id} 被${data.accepted ? '接受' : '拒绝'}（统计由 OVERLEAF_TEXT_ACTION_DECISION 处理）`);
+        logger.debug(`[DiffSuggestionService] 文本操作建议 ${data.id} 被${data.accepted ? '接受' : '拒绝'}（统计由 OVERLEAF_TEXT_ACTION_DECISION 处理）`);
         return;
       }
       console.warn('[DiffSuggestionService] 未找到建议:', data.id);
@@ -139,7 +140,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
     // 更新建议状态
     suggestion.status = data.accepted ? 'accepted' : 'rejected';
     
-    console.log(`[DiffSuggestionService] 建议 ${data.id} 被${data.accepted ? '接受' : '拒绝'}`);
+    logger.debug(`[DiffSuggestionService] 建议 ${data.id} 被${data.accepted ? '接受' : '拒绝'}`);
     
     // 统计埋点：记录 Diff 建议决策
     if (this.telemetryService && suggestion.toolName) {
@@ -190,7 +191,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       }
     }, '*');
     
-    console.log(`[DiffSuggestionService] 创建行级建议 ${id}: 行 ${input.startLine}-${input.endLine}`);
+    logger.debug(`[DiffSuggestionService] 创建行级建议 ${id}: 行 ${input.startLine}-${input.endLine}`);
     
     return id;
   }
@@ -245,7 +246,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       }
     }, '*');
     
-    console.log(`[DiffSuggestionService] 批量创建 ${ids.length} 个行级建议`);
+    logger.debug(`[DiffSuggestionService] 批量创建 ${ids.length} 个行级建议`);
     
     return ids;
   }
@@ -286,7 +287,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       }
     }, '*');
     
-    console.log(`[DiffSuggestionService] 创建片段级建议 ${id}: 偏移 ${input.startOffset}-${input.endOffset}`);
+    logger.debug(`[DiffSuggestionService] 创建片段级建议 ${id}: 偏移 ${input.startOffset}-${input.endOffset}`);
     
     return id;
   }
@@ -343,7 +344,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       }
     }, '*');
     
-    console.log(`[DiffSuggestionService] 批量创建 ${ids.length} 个片段级建议`);
+    logger.debug(`[DiffSuggestionService] 批量创建 ${ids.length} 个片段级建议`);
     
     return ids;
   }
@@ -402,7 +403,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       data: {}
     }, '*');
     
-    console.log('[DiffSuggestionService] 发送接受全部建议请求');
+    logger.debug('[DiffSuggestionService] 发送接受全部建议请求');
   }
   
   /**
@@ -415,7 +416,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       data: {}
     }, '*');
     
-    console.log('[DiffSuggestionService] 发送拒绝全部建议请求');
+    logger.debug('[DiffSuggestionService] 发送拒绝全部建议请求');
   }
   
   /**
@@ -444,7 +445,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
     }, '*');
     
     this.suggestions.clear();
-    console.log('[DiffSuggestionService] 清除所有建议');
+    logger.debug('[DiffSuggestionService] 清除所有建议');
   }
   
   /**

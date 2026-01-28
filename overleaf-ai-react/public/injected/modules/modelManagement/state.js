@@ -3,6 +3,7 @@
  */
 
 import { hideSelectionTooltip } from '../selectionTooltip/ui.js';
+import { debug } from '../core/logger.js';
 
 let isActivated = false;
 
@@ -27,7 +28,7 @@ export function showActivationRequiredHint() {
     data: {}
   }, '*');
   
-  console.log('[OverleafBridge] Requesting to show activation modal');
+  debug('[OverleafBridge] Requesting to show activation modal');
 }
 
 /**
@@ -38,7 +39,7 @@ export function requestActivationStatus() {
     type: 'OVERLEAF_REQUEST_ACTIVATION_STATUS',
     data: {}
   }, '*');
-  console.log('[OverleafBridge] Requesting activation status from React app');
+  debug('[OverleafBridge] Requesting activation status from React app');
 }
 
 /**
@@ -56,7 +57,7 @@ export function initStateListeners() {
     if (typeof newStatus === 'boolean') {
       var oldStatus = isActivated;
       isActivated = newStatus;
-      console.log('[OverleafBridge] Activation status updated:', isActivated, '(was:', oldStatus, ')');
+      debug('[OverleafBridge] Activation status updated:', isActivated, '(was:', oldStatus, ')');
     }
   });
 

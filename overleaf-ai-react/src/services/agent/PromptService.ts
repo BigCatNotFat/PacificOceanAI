@@ -42,6 +42,17 @@ export class PromptService implements IPromptService {
   // ==================== 工具管理 ====================
 
   /**
+   * 构建项目文件结构快照标签（与系统提示词中的 <project_layout> 段落保持一致）
+   */
+  public async buildProjectLayoutTag(): Promise<string> {
+    return `<project_layout>
+Below is a snapshot of the current workspace's file structure at the start of the conversation. This snapshot will NOT update during the conversation.
+
+${await this.getProjectLayout()}
+</project_layout>`;
+  }
+
+  /**
    * 根据模式获取可用工具列表
    */
   private getToolsForMode(mode: ChatMode): ToolDefinition[] {
@@ -691,11 +702,7 @@ Project name: ${userInfo.projectName}
 The absolute path of the user's workspace is /.
 </user_info>
 
-<project_layout>
-Below is a snapshot of the current workspace's file structure at the start of the conversation. This snapshot will NOT update during the conversation.
-
-${await this.getProjectLayout()}
-</project_layout>    
+${await this.buildProjectLayoutTag()}    
     `;
     return prompt;
   }
@@ -769,11 +776,7 @@ Project name: ${userInfo.projectName}
 The absolute path of the user's workspace is /.
 </user_info>
 
-<project_layout>
-Below is a snapshot of the current workspace's file structure at the start of the conversation. This snapshot will NOT update during the conversation.
-
-${await this.getProjectLayout()}
-</project_layout>
+${await this.buildProjectLayoutTag()}
 
 Answer the user's request using the relevant tool(s), if they are available. Check that all the required parameters for each tool call are provided or can reasonably be inferred from context. IF there are no relevant tools or there are missing values for required parameters, ask the user to supply these values; otherwise proceed with the tool calls. If the user provides a specific value for a parameter (for example provided in quotes), make sure to use that value EXACTLY. DO NOT make up values for or ask about optional parameters. Carefully analyze descriptive terms in the request as they may indicate required parameter values that should be included even if not explicitly quoted.
     `;

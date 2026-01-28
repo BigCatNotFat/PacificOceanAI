@@ -3,6 +3,8 @@
  * 负责管理和同步模型列表
  */
 
+import { debug, warn } from '../core/logger.js';
+
 // 动态模型列表（从 ModelRegistryService 获取）
 var availableModels = [];
 
@@ -27,7 +29,7 @@ function requestModelList() {
     type: 'OVERLEAF_REQUEST_MODEL_LIST',
     data: {}
   }, '*');
-  console.log('[OverleafBridge] Requesting model list from React app');
+  debug('[OverleafBridge] Requesting model list from React app');
 }
 
 /**
@@ -44,7 +46,7 @@ function setupModelListListener(updateModelSelectorOptions) {
     
     var models = data.data?.models;
     if (!Array.isArray(models)) {
-      console.warn('[OverleafBridge] Invalid model list received');
+      warn('[OverleafBridge] Invalid model list received');
       return;
     }
     
@@ -57,7 +59,7 @@ function setupModelListListener(updateModelSelectorOptions) {
       };
     });
     
-    console.log('[OverleafBridge] Model list updated:', availableModels.length, 'models');
+    debug('[OverleafBridge] Model list updated:', availableModels.length, 'models');
     
     // 更新模型选择器
     if (updateModelSelectorOptions) {

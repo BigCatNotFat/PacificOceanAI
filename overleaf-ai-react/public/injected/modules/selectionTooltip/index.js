@@ -4,6 +4,7 @@
 
 import { initUIListeners } from './ui.js';
 import { initActionListeners } from './textActions.js';
+import { debug } from '../core/logger.js';
 
 export { hideSelectionTooltip } from './ui.js';
 
@@ -11,7 +12,7 @@ export { hideSelectionTooltip } from './ui.js';
  * 初始化选区工具提示模块
  */
 export function initSelectionTooltip() {
-  console.log('[OverleafBridge] Initializing Selection Tooltip...');
+  debug('[OverleafBridge] Initializing Selection Tooltip...');
   initUIListeners();
   initActionListeners();
 }

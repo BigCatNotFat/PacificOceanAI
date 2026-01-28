@@ -2,6 +2,8 @@
  * 模型管理 - 模型列表与选择
  */
 
+import { debug, warn } from '../core/logger.js';
+
 // 默认备用模型列表
 const FALLBACK_MODELS = [
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'openai' }
@@ -44,7 +46,7 @@ export function setSelectedTextActionModel(modelId) {
       type: 'OVERLEAF_TEXT_ACTION_MODEL_CHANGED',
       data: { modelId: modelId }
     }, '*');
-    console.log('[OverleafBridge] Text action model changed to:', modelId);
+    debug('[OverleafBridge] Text action model changed to:', modelId);
   } catch (e) {
     console.error('[OverleafBridge] Failed to save model selection:', e);
   }
@@ -79,7 +81,7 @@ export function updateModelSelectorOptions() {
     select.value = models[0]?.id || '';
   }
   
-  console.log('[OverleafBridge] Model selector updated with', models.length, 'models');
+  debug('[OverleafBridge] Model selector updated with', models.length, 'models');
 }
 
 /**
@@ -90,7 +92,7 @@ export function requestModelList() {
     type: 'OVERLEAF_REQUEST_MODEL_LIST',
     data: {}
   }, '*');
-  console.log('[OverleafBridge] Requesting model list from React app');
+  debug('[OverleafBridge] Requesting model list from React app');
 }
 
 /**
@@ -106,7 +108,7 @@ export function initModelListeners() {
     
     var models = data.data?.models;
     if (!Array.isArray(models)) {
-      console.warn('[OverleafBridge] Invalid model list received');
+      warn('[OverleafBridge] Invalid model list received');
       return;
     }
     
@@ -119,7 +121,7 @@ export function initModelListeners() {
       };
     });
     
-    console.log('[OverleafBridge] Model list updated:', availableModels.length, 'models');
+    debug('[OverleafBridge] Model list updated:', availableModels.length, 'models');
     
     // 更新模型选择器
     updateModelSelectorOptions();

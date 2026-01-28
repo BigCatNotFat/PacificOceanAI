@@ -7,6 +7,7 @@ import { getCurrentFileName } from '../core/utils.js';
 import { hideSelectionTooltip } from '../selectionTooltip/ui.js';
 import { diffEffects } from '../diff/extension.js';
 import { inlineStatusByFile } from '../diff/store.js';
+import { debug, warn } from '../core/logger.js';
 
 // 支持多任务并行：使用 Map 存储多个预览状态
 // key 是 previewId，value 是预览对象
@@ -54,7 +55,7 @@ function createInlineStatus(config) {
   const effects = window._diffSuggestionEffects || diffEffects;
   const view = getEditorView();
   if (!effects || !view) {
-    console.warn('[InlineStatus] Effects or view not available');
+    warn('[InlineStatus] Effects or view not available');
     return null;
   }
   
@@ -70,7 +71,7 @@ function createInlineStatus(config) {
     }
     inlineStatusByFile.get(fileName).set(config.id, config);
     
-    console.log('[InlineStatus] 创建内联状态:', config.id);
+    debug('[InlineStatus] 创建内联状态:', config.id);
     return config.id;
   } catch (e) {
     console.error('[InlineStatus] 创建失败:', e);
@@ -117,7 +118,7 @@ function removeInlineStatus(id) {
       }
     }
     
-    console.log('[InlineStatus] 移除内联状态:', id);
+    debug('[InlineStatus] 移除内联状态:', id);
   } catch (e) {
     console.error('[InlineStatus] 移除失败:', e);
   }
@@ -179,7 +180,7 @@ export function startStreamPreview(data) {
     
     createInlineStatus(inlineStatusConfig);
     
-    console.log('[OverleafBridge] Stream preview started:', 
+    debug('[OverleafBridge] Stream preview started:', 
       'previewId:', previewId,
       'statusId:', statusId,
       'isFullLine:', isFullLine, 
@@ -232,7 +233,7 @@ export function completeStreamPreview(data) {
   
   const preview = previewsMap.get(previewId);
   if (!preview) {
-    console.warn('[OverleafBridge] 找不到预览:', previewId);
+    warn('[OverleafBridge] 找不到预览:', previewId);
     return;
   }
   
@@ -243,7 +244,7 @@ export function completeStreamPreview(data) {
   removeInlineStatus(preview.id);
   
   if (!newText || newText.trim().length === 0) {
-    console.log('[OverleafBridge] 生成失败或返回空内容 previewId:', previewId);
+    debug('[OverleafBridge] 生成失败或返回空内容 previewId:', previewId);
     previewsMap.delete(previewId);
     return;
   }
@@ -333,7 +334,7 @@ export function completeStreamPreview(data) {
       
       currentPreview.suggestionId = suggestionId;
       
-      console.log('[OverleafBridge] Stream preview completed:', 
+      debug('[OverleafBridge] Stream preview completed:', 
         'previewId:', currentPreviewId,
         'suggestionId:', suggestionId,
         'action:', currentPreview.action);
@@ -362,13 +363,13 @@ export function cancelStreamPreview(previewId) {
     if (preview) {
       removeInlineStatus(preview.id);
       previewsMap.delete(previewId);
-      console.log('[OverleafBridge] 取消预览:', previewId);
+      debug('[OverleafBridge] 取消预览:', previewId);
     }
   } else {
     // 取消所有预览
     for (const [id, preview] of previewsMap) {
       removeInlineStatus(preview.id);
-      console.log('[OverleafBridge] 取消预览:', id);
+      debug('[OverleafBridge] 取消预览:', id);
     }
     previewsMap.clear();
   }

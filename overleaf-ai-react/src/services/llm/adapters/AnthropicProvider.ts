@@ -66,6 +66,78 @@ export class AnthropicProvider extends BaseLLMProvider {
   }
 
   /**
+   * Manager 聊天接口 - 用于 MultiAgent 模式的 ManagerAgent
+   * 
+   * 与 chat 的区别：
+   * - 不流式输出
+   * - 不更新 UI
+   * - 只返回结果
+   */
+  async managerChat(messages: LLMMessage[], config: LLMConfig): Promise<LLMFinalMessage> {
+    console.log('[AnthropicProvider] managerChat() called', {
+      messageCount: messages.length,
+      modelId: config.modelId
+    });
+
+    // 1. 构建请求（非流式）
+    const { endpoint, headers, body } = this.buildRequest(messages, config, false);
+
+    // 2. 发送 HTTP 请求
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: (config as any).abortSignal
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Anthropic API 请求失败: ${response.status} ${errorText}`);
+    }
+
+    // 3. 解析非流式响应
+    const data = await response.json();
+    return this.parseNonStreamResponse(data);
+  }
+
+  /**
+   * 解析非流式响应
+   */
+  private parseNonStreamResponse(data: any): LLMFinalMessage {
+    const result: LLMFinalMessage = {
+      content: '',
+      finishReason: data.stop_reason as LLMFinalMessage['finishReason']
+    };
+
+    // 处理内容块
+    if (data.content && Array.isArray(data.content)) {
+      for (const block of data.content) {
+        if (block.type === 'text') {
+          result.content += block.text || '';
+        } else if (block.type === 'tool_use') {
+          if (!result.toolCalls) result.toolCalls = [];
+          result.toolCalls.push({
+            id: block.id,
+            name: block.name,
+            arguments: block.input || {}
+          });
+        }
+      }
+    }
+
+    // 处理使用统计
+    if (data.usage) {
+      result.usage = {
+        promptTokens: data.usage.input_tokens ?? 0,
+        completionTokens: data.usage.output_tokens ?? 0,
+        totalTokens: (data.usage.input_tokens ?? 0) + (data.usage.output_tokens ?? 0)
+      };
+    }
+
+    return result;
+  }
+
+  /**
    * 构建 Anthropic 请求配置（内部方法）
    * 
    * Anthropic 特殊处理：
@@ -74,7 +146,8 @@ export class AnthropicProvider extends BaseLLMProvider {
    */
   private buildRequest(
     messages: LLMMessage[],
-    config: LLMConfig
+    config: LLMConfig,
+    stream: boolean = true
   ): { endpoint: string; headers: Record<string, string>; body: any } {
     // Anthropic API 格式与 OpenAI 不同
     // 需要将 system 消息提取出来作为单独的参数
@@ -87,7 +160,7 @@ export class AnthropicProvider extends BaseLLMProvider {
       model: config.modelId,
       messages: conversationMessages,
       max_tokens: config.maxTokens || 4096,
-      stream: true
+      stream
     };
 
     if (systemMessage) {

@@ -60,17 +60,97 @@ export class OpenAIProvider extends BaseLLMProvider {
   }
 
   /**
+   * Manager 聊天接口 - 用于 MultiAgent 模式的 ManagerAgent
+   * 
+   * 与 chat 的区别：
+   * - 不流式输出
+   * - 不更新 UI
+   * - 只返回结果
+   */
+  async managerChat(messages: LLMMessage[], config: LLMConfig): Promise<LLMFinalMessage> {
+    console.log('[OpenAIProvider] managerChat() called', {
+      messageCount: messages.length,
+      modelId: config.modelId
+    });
+
+    // 1. 构建请求（非流式）
+    const { endpoint, headers, body } = this.buildRequest(messages, config, false);
+
+    // 2. 发送 HTTP 请求
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: (config as any).abortSignal
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`OpenAI API 请求失败: ${response.status} ${errorText}`);
+    }
+
+    // 3. 解析非流式响应
+    const data = await response.json();
+    return this.parseNonStreamResponse(data);
+  }
+
+  /**
+   * 解析非流式响应
+   */
+  private parseNonStreamResponse(data: any): LLMFinalMessage {
+    const choice = data?.choices?.[0];
+    if (!choice) {
+      throw new Error('无效的 API 响应');
+    }
+
+    const message = choice.message;
+    const result: LLMFinalMessage = {
+      content: message?.content || '',
+      finishReason: choice.finish_reason as LLMFinalMessage['finishReason']
+    };
+
+    // 处理推理内容
+    if (message?.reasoning_content) {
+      result.thinking = message.reasoning_content;
+    }
+
+    // 处理工具调用
+    if (message?.tool_calls && message.tool_calls.length > 0) {
+      result.toolCalls = message.tool_calls.map((tc: any) => ({
+        id: tc.id,
+        name: tc.function?.name || '',
+        arguments: tc.function?.arguments ? JSON.parse(tc.function.arguments) : {}
+      }));
+    }
+
+    // 处理使用统计
+    if (data.usage) {
+      result.usage = {
+        promptTokens: data.usage.prompt_tokens ?? 0,
+        completionTokens: data.usage.completion_tokens ?? 0,
+        totalTokens: data.usage.total_tokens ?? 0
+      };
+    }
+
+    return result;
+  }
+
+  /**
    * 构建 OpenAI 请求配置（内部方法）
    */
   private buildRequest(
     messages: LLMMessage[],
-    config: LLMConfig
+    config: LLMConfig,
+    stream: boolean = true
   ): { endpoint: string; headers: Record<string, string>; body: any } {
     const modelInfo = this.modelRegistry.getModelInfo(config.modelId);
     const maxTokensParamName = 
       (modelInfo?.defaultConfig as any)?.maxTokensParamName || 'max_tokens';
 
     const payload = this.buildBasePayload(messages, config);
+    
+    // 设置流式参数
+    payload.stream = stream;
 
     // 设置 max_tokens 参数
     if (typeof config.maxTokens === 'number') {

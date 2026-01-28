@@ -33,6 +33,7 @@ import { OpenAICompatibleProvider } from './adapters/OpenAICompatibleProvider';
 import { GeminiProvider } from './adapters/GeminiProvider';
 import { AnthropicProvider } from './adapters/AnthropicProvider';
 import type { APIConfig } from './adapters/BaseLLMProvider';
+import { logger } from '../../utils/logger';
 
 /**
  * LLMService 实现
@@ -104,6 +105,50 @@ export class LLMService implements ILLMService {
     return result;
   }
 
+  /**
+   * Manager 聊天接口 - 用于 MultiAgent 模式的 ManagerAgent
+   * 
+   * 与 chat 的区别：
+   * - 不流式输出
+   * - 不更新 UI
+   * - 只返回结果
+   * 
+   * @param messages - 消息列表
+   * @param config - LLM 配置
+   * @returns 完整的最终响应
+   */
+  async managerChat(
+    messages: LLMMessage[],
+    config: LLMConfig
+  ): Promise<LLMFinalMessage> {
+    logger.debug('[LLMService] managerChat 开始调用', {
+      modelId: config.modelId,
+      messageCount: messages.length
+    });
+
+    // 1. 获取模型信息，判断供应商
+    const modelInfo = this.modelRegistry.getModelInfo(config.modelId);
+    if (!modelInfo) {
+      throw new Error(`未找到模型: ${config.modelId}`);
+    }
+
+    // 2. 获取 API 配置
+    const apiConfig = await this.getAPIConfig();
+
+    // 3. 根据供应商选择 Provider
+    const provider = await this.getProvider(modelInfo.provider, apiConfig);
+
+    // 4. 调用 Provider 的 managerChat 方法
+    const result = await provider.managerChat(messages, config);
+
+    logger.debug('[LLMService] managerChat 调用完成', {
+      contentLength: result.content?.length || 0,
+      hasThinking: !!result.thinking,
+      toolCallsCount: result.toolCalls?.length || 0
+    });
+
+    return result;
+  }
 
   // ==================== 私有方法 ====================
 

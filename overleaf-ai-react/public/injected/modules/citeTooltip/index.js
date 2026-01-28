@@ -12,6 +12,7 @@ import {
   updateReferenceCache,
   clearReferenceCache 
 } from './tooltip.js';
+import { debug } from '../core/logger.js';
 
 let isInitialized = false;
 let isEnabled = true;
@@ -21,11 +22,11 @@ let isEnabled = true;
  */
 export function initCiteTooltip() {
   if (isInitialized) {
-    console.log('[CiteTooltip] Already initialized');
+    debug('[CiteTooltip] Already initialized');
     return;
   }
   
-  console.log('[CiteTooltip] Initializing...');
+  debug('[CiteTooltip] Initializing...');
   
   // 1. 注入样式
   injectStyles();
@@ -43,7 +44,7 @@ export function initCiteTooltip() {
   setupMessageListener();
   
   isInitialized = true;
-  console.log('[CiteTooltip] Initialized successfully, enabled:', isEnabled);
+  debug('[CiteTooltip] Initialized successfully, enabled:', isEnabled);
 }
 
 /**
@@ -78,10 +79,10 @@ function setupMessageListener() {
         
         if (enabled) {
           startCiteTooltip();
-          console.log('[CiteTooltip] Enabled');
+          debug('[CiteTooltip] Enabled');
         } else {
           stopCiteTooltip();
-          console.log('[CiteTooltip] Disabled');
+          debug('[CiteTooltip] Disabled');
         }
       }
     }
@@ -102,7 +103,7 @@ function setupMessageListener() {
 export function destroyCiteTooltip() {
   stopCiteTooltip();
   isInitialized = false;
-  console.log('[CiteTooltip] Destroyed');
+  debug('[CiteTooltip] Destroyed');
 }
 
 // 导出内部函数供调试使用

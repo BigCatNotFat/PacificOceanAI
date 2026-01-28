@@ -5,9 +5,10 @@
  */
 
 import { startStreamPreview, updateStreamPreview, completeStreamPreview, initStreamListeners } from './stream.js';
+import { debug } from '../core/logger.js';
 
 export function initPreview() {
-  console.log('[OverleafBridge] Initializing Preview System (multi-task parallel mode)...');
+  debug('[OverleafBridge] Initializing Preview System (multi-task parallel mode)...');
   
   initStreamListeners();
   
@@ -20,7 +21,7 @@ export function initPreview() {
     
     if (data.type === 'OVERLEAF_STREAM_PREVIEW_START') {
       const previewId = data.data && data.data.previewId;
-      console.log('[OverleafBridge] Starting stream preview, previewId:', previewId || '(legacy)');
+      debug('[OverleafBridge] Starting stream preview, previewId:', previewId || '(legacy)');
       startStreamPreview(data.data);
     }
     else if (data.type === 'OVERLEAF_STREAM_PREVIEW_UPDATE') {
@@ -31,7 +32,7 @@ export function initPreview() {
     }
     else if (data.type === 'OVERLEAF_STREAM_PREVIEW_COMPLETE') {
       const previewId = data.data && data.data.previewId;
-      console.log('[OverleafBridge] Stream preview complete, previewId:', previewId || '(legacy)');
+      debug('[OverleafBridge] Stream preview complete, previewId:', previewId || '(legacy)');
       completeStreamPreview(data.data);
     }
   });

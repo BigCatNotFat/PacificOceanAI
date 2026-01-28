@@ -86,6 +86,12 @@ export interface PromptBuildOptions {
  */
 export interface IPromptService {
   /**
+   * 构建项目文件结构快照标签（<project_layout>...</project_layout>）
+   * 用于把当前 Overleaf 项目的文件树注入到 prompt 中作为上下文。
+   */
+  buildProjectLayoutTag(): Promise<string>;
+
+  /**
    * 构建消息列表
    * 
    * @param history - 对话历史（ChatMessage 格式）

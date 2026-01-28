@@ -4,6 +4,7 @@
  */
 
 import { getEditorView } from '../core/editorView.js';
+import { debug } from '../core/logger.js';
 
 // 状态
 let tooltipContainer = null;
@@ -103,7 +104,7 @@ function handleCiteClick(keys) {
     keys: keys
   }, '*');
   
-  console.log('[CiteTooltip] Navigate to:', keys);
+  debug('[CiteTooltip] Navigate to:', keys);
 }
 
 /**
@@ -359,7 +360,7 @@ export function startCiteTooltip() {
     }
   });
   
-  console.log('[CiteTooltip] Started');
+  debug('[CiteTooltip] Started');
 }
 
 /**
@@ -371,7 +372,7 @@ export function stopCiteTooltip() {
     checkInterval = null;
   }
   hideTooltip();
-  console.log('[CiteTooltip] Stopped');
+  debug('[CiteTooltip] Stopped');
 }
 
 /**
@@ -385,7 +386,7 @@ export function updateReferenceCache(references) {
       referenceCache.set(ref.id, ref);
     }
   }
-  console.log('[CiteTooltip] Cache updated with', references.length, 'references');
+  debug('[CiteTooltip] Cache updated with', references.length, 'references');
 }
 
 /**
@@ -393,7 +394,7 @@ export function updateReferenceCache(references) {
  */
 export function clearReferenceCache() {
   referenceCache.clear();
-  console.log('[CiteTooltip] Cache cleared');
+  debug('[CiteTooltip] Cache cleared');
 }
 
 // 工具函数

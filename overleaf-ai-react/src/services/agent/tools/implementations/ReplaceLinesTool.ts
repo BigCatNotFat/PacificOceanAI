@@ -22,6 +22,7 @@ import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import { diffSuggestionService } from '../../../editor/DiffSuggestionService';
 import type { CreateSuggestionInput } from '../../../../platform/editor/IDiffSuggestionService';
+import { logger } from '../../../../utils/logger';
 
 /**
  * 单个替换操作的接口
@@ -190,7 +191,7 @@ Examples:
     const toolCallId = `replace_lines_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     try {
-      console.log('[ReplaceLinesTool] execute called with:', {
+      logger.debug('[ReplaceLinesTool] execute called with:', {
         target_file: args.target_file,
         replacements_count: args.replacements?.length,
         explanation: args.explanation
@@ -239,10 +240,10 @@ Examples:
         currentFileName === args.target_file ||
         args.target_file.endsWith(currentFileName || '');
 
-      console.log('[ReplaceLinesTool] Current file:', currentFileName, 'Target:', targetBaseName, 'Is current:', isCurrentFile);
+      logger.debug('[ReplaceLinesTool] Current file:', currentFileName, 'Target:', targetBaseName, 'Is current:', isCurrentFile);
 
       if (!isCurrentFile) {
-        console.log(`[ReplaceLinesTool] Switching to file "${targetBaseName}"...`);
+        logger.debug(`[ReplaceLinesTool] Switching to file "${targetBaseName}"...`);
         const switchResult = await overleafEditor.file.switchFile(targetBaseName);
 
         if (!switchResult.success) {
@@ -320,14 +321,14 @@ Examples:
           newContent: processedContent
         });
 
-        console.log(`[ReplaceLinesTool] Prepared suggestion for lines ${start_line}-${end_line}`);
+        logger.debug(`[ReplaceLinesTool] Prepared suggestion for lines ${start_line}-${end_line}`);
       }
 
       // 5. 批量创建 diff 建议
-      console.log('[ReplaceLinesTool] Creating diff suggestions...');
+      logger.debug('[ReplaceLinesTool] Creating diff suggestions...');
       const suggestionIds = await diffSuggestionService.createBatchSuggestions(suggestionInputs);
 
-      console.log(`[ReplaceLinesTool] Created ${suggestionIds.length} diff suggestions:`, suggestionIds);
+      logger.debug(`[ReplaceLinesTool] Created ${suggestionIds.length} diff suggestions:`, suggestionIds);
 
       // 6. 组合预览（用于返回给 AI）
       const finalPreview = "📝 已创建修改建议（等待用户确认）:\n" + previewBlocks.join('\n\n');

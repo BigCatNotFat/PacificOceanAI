@@ -5,6 +5,7 @@
 
 import { getProjectId } from './projectId.js';
 import { getAllDocsWithContent } from './fetchers.js';
+import { debug, warn } from '../core/logger.js';
 
 // 创建正则表达式
 export function createSearchRegex(pattern, options = {}) {
@@ -70,20 +71,20 @@ export function searchInFile(file, regex) {
 export async function searchInternal(pattern, options = {}) {
   const startTime = Date.now();
   
-  console.log(`[OverleafBridge] 🔍 正在搜索: "${pattern}"`);
-  console.log('[OverleafBridge] 搜索选项:', options);
+  debug(`[OverleafBridge] 🔍 正在搜索: "${pattern}"`);
+  debug('[OverleafBridge] 搜索选项:', options);
   
   try {
     const projectId = getProjectId();
-    console.log(`[OverleafBridge] 📂 项目 ID: ${projectId}`);
+    debug(`[OverleafBridge] 📂 项目 ID: ${projectId}`);
     
     // 获取所有文档及其内容
-    console.log('[OverleafBridge] 📥 正在获取项目文档...');
+    debug('[OverleafBridge] 📥 正在获取项目文档...');
     const files = await getAllDocsWithContent(projectId);
-    console.log(`[OverleafBridge] ✅ 已加载 ${files.length} 个文档`);
+    debug(`[OverleafBridge] ✅ 已加载 ${files.length} 个文档`);
     
     if (files.length === 0) {
-      console.warn('[OverleafBridge] ⚠️ 未找到任何文档，搜索将返回空结果');
+      warn('[OverleafBridge] ⚠️ 未找到任何文档，搜索将返回空结果');
       return {
         results: [],
         totalMatches: 0,
@@ -97,7 +98,7 @@ export async function searchInternal(pattern, options = {}) {
     const regex = createSearchRegex(pattern, options);
     
     // 搜索所有文件
-    console.log('[OverleafBridge] 🔎 正在搜索...');
+    debug('[OverleafBridge] 🔎 正在搜索...');
     const results = [];
     let totalMatches = 0;
     
@@ -116,7 +117,7 @@ export async function searchInternal(pattern, options = {}) {
     const endTime = Date.now();
     const duration = ((endTime - startTime) / 1000).toFixed(2);
     
-    console.log(`[OverleafBridge] ✨ 搜索完成！用时: ${duration}秒, 找到 ${totalMatches} 个匹配项`);
+    debug(`[OverleafBridge] ✨ 搜索完成！用时: ${duration}秒, 找到 ${totalMatches} 个匹配项`);
     
     return {
       results,

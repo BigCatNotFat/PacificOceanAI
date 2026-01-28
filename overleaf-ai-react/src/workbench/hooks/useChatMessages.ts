@@ -170,6 +170,52 @@ export function useChatMessages(conversationId: string, initialMessages: ChatMes
     const uiMessages: ChatMessage[] = [...initialMessages];
 
     for (const msg of serviceMessages) {
+      // ========== plan/multi-agent：为每个子 messageId 生成独立的 UI 块 ==========
+      // 约定：子 messageId 形如 `${rootId}::...`，其 thinking/toolCall 事件会挂在子 messageId 上
+      // 如果我们只渲染 root，会出现：
+      // - 工具调用 UI 不显示（ConversationPane 只看 buffer(messageId)）
+      // - thinking 全部合并在一块
+      if (msg.role === 'assistant') {
+        const prefix = `${msg.id}::`;
+        // 收集子 buffer（按 ts_<ms> 排序，其次按 iter_<n> 排序，保证跨 agent 串行执行时顺序正确）
+        const children: Array<{ id: string; buf: any; ts: number; iter: number }> = [];
+        for (const [key, buf] of streamingBuffers.entries()) {
+          if (!key.startsWith(prefix)) continue;
+          const mIter = key.match(/::iter_(\d+)$/);
+          const iter = mIter ? Number(mIter[1]) : 0;
+          const mTs = key.match(/::ts_(\d+)::/);
+          const ts = mTs ? Number(mTs[1]) : 0;
+          children.push({ id: key, buf, ts, iter });
+        }
+        children.sort((a, b) => (a.ts - b.ts) || (a.iter - b.iter));
+
+        for (const child of children) {
+          // 思考块：直接使用子 messageId 生成 `${childId}:thinking`，这样 ConversationPane 的展开逻辑能跟上流式事件
+          if (child.buf?.thinking) {
+            uiMessages.push({
+              id: `${child.id}:thinking`,
+              role: 'bot',
+              content: child.buf.thinking,
+              isHtml: false,
+              type: 'thinking',
+              metadata: {}
+            });
+          }
+
+          // 工具块锚点：id = childId，让 ConversationPane 能通过 streamingBuffers.get(childId) 渲染工具调用
+          if (child.buf?.toolCalls && child.buf.toolCalls.size > 0) {
+            uiMessages.push({
+              id: child.id,
+              role: 'bot',
+              content: '',
+              isHtml: false,
+              type: 'tool_status'
+            });
+          }
+        }
+      }
+
+      // root 消息只使用 root 自己的 buffer（通常用于最终回答内容的流式输出）
       const streamingBuffer = streamingBuffers.get(msg.id);
       // 检查是否有活跃的工具调用（running 状态）
       const hasActiveToolCalls = streamingBuffer?.toolCalls 
