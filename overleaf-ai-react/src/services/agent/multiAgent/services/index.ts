@@ -12,6 +12,14 @@ export type {
   ManagerAgentLoopUpdateEvent 
 } from './ManagerAgentLoopService';
 
+export { VariablePoolService } from './VariablePoolService';
+export type {
+  VariableEntry,
+  VariablePoolConfig,
+  VariableInjectionOptions,
+  VariableInjectionResult
+} from './VariablePoolService';
+
 // 重新导出工具注册表（方便使用）
 export { MultiAgentToolRegistry, getMultiAgentToolRegistry } from '../tools/MultiAgentToolRegistry';
 export type { AvailableToolName } from '../tools/MultiAgentToolRegistry';

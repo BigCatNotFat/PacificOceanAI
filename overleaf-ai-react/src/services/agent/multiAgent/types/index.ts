@@ -121,6 +121,46 @@ export interface MultiAgentToolResult {
   duration?: number;
 }
 
+// ==================== 变量池相关类型 ====================
+
+/**
+ * CallAgent 工具的参数（扩展版）
+ */
+export interface CallAgentArgs {
+  /** 要调用的 Agent 名称 */
+  agent_name: AgentName;
+  /** 给 Agent 的具体指令 */
+  instruction: string;
+  /** 解释为什么要调用这个 Agent */
+  explanation: string;
+  /** 
+   * 要注入的变量名列表
+   * 这些变量的内容会被自动注入到 Agent 的用户提示词中
+   */
+  inject_variables?: string[];
+  /** 
+   * 输出变量名（可选）
+   * 如果不指定，系统会自动生成变量名
+   */
+  output_variable_name?: string;
+}
+
+/**
+ * Agent 执行结果（带变量信息）
+ */
+export interface AgentExecutionResultWithVariable {
+  /** Agent 上下文 */
+  context: AgentContext;
+  /** 最终输出 */
+  finalOutput: string;
+  /** 摘要 */
+  summary?: string;
+  /** 保存的变量名 */
+  savedVariableName: string;
+  /** 保存的变量值 */
+  savedVariableValue: string;
+}
+
 // ==================== AgentLoop 配置 ====================
 
 /**
@@ -150,6 +190,8 @@ export interface AgentLoopOptions {
   };
   /** 是否显示思考过程占位符（Manager Agent 使用） */
   showThinkingPlaceholder?: boolean;
+  /** 注入的变量内容（由 ManagerAgentLoopService 传入） */
+  injectedVariablesContent?: string;
 }
 
 /**

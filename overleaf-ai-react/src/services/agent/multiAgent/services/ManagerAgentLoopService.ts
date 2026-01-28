@@ -20,6 +20,7 @@ import type { ILLMService, LLMConfig, LLMMessage, LLMFinalMessage } from '../../
 import type { IModelRegistryService } from '../../../../platform/llm/IModelRegistryService';
 import type { IUIStreamService } from '../../../../platform/agent/IUIStreamService';
 import { AgentLoopService } from './AgentLoopService';
+import { VariablePoolService } from './VariablePoolService';
 import { MultiAgentToolRegistry, getMultiAgentToolRegistry } from '../tools/MultiAgentToolRegistry';
 import { getAgentByName } from '../agents';
 import type { IPromptService } from '../../../../platform/agent/IPromptService';
@@ -30,7 +31,8 @@ import type {
   AgentMessage,
   AgentName,
   GlobalConversation,
-  GlobalConversationEntry
+  GlobalConversationEntry,
+  CallAgentArgs
 } from '../types';
 import { generateMessageId } from '../types';
 
@@ -251,6 +253,9 @@ export class ManagerAgentLoopService {
   /** Agent 上下文缓存（用于多轮对话） */
   private readonly agentContextCache: Map<AgentName, AgentContext> = new Map();
 
+  /** 变量池服务 - 用于 Agent 间数据传递 */
+  private readonly variablePool: VariablePoolService;
+
   constructor(
     private readonly llmService: ILLMService,
     private readonly modelRegistry: IModelRegistryService,
@@ -259,6 +264,16 @@ export class ManagerAgentLoopService {
     toolRegistry?: MultiAgentToolRegistry
   ) {
     this.toolRegistry = toolRegistry || getMultiAgentToolRegistry();
+    this.variablePool = new VariablePoolService();
+  }
+
+  // ==================== 变量池访问方法 ====================
+
+  /**
+   * 获取变量池服务实例（用于外部访问）
+   */
+  getVariablePool(): VariablePoolService {
+    return this.variablePool;
   }
 
   /**
@@ -412,26 +427,61 @@ export class ManagerAgentLoopService {
         // 6. 处理工具调用（call_agent）
         for (const toolCall of assistantMessage.toolCalls) {
           if (toolCall.name === 'call_agent') {
-            const { agent_name, instruction } = toolCall.arguments as {
-              agent_name: AgentName;
-              instruction: string;
-              explanation?: string;
-            };
+            const callAgentArgs = toolCall.arguments as CallAgentArgs;
+            const { agent_name, instruction, inject_variables, output_variable_name } = callAgentArgs;
 
             logger.debug(`[ManagerAgentLoopService] 调用 Agent: ${agent_name}`);
             logger.debug(`[ManagerAgentLoopService] 指令: ${instruction}`);
+            if (inject_variables?.length) {
+              logger.debug(`[ManagerAgentLoopService] 注入变量: ${inject_variables.join(', ')}`);
+            }
 
             // 发送"Agent 工作中"状态
             this.emitUpdate('agent_working', agent_name, `${agent_name} 正在工作...`, globalConversation);
 
-            // 执行 Agent
-            const agentResult = await this.executeAgent(agent_name, instruction, options);
+            // 构建注入内容
+            let injectedContent = '';
+            if (inject_variables && inject_variables.length > 0) {
+              const injectionResult = this.variablePool.buildInjectionContent({
+                variableNames: inject_variables,
+                includeMetadata: false
+              });
+              
+              if (injectionResult.success) {
+                injectedContent = injectionResult.content;
+                logger.debug(`[ManagerAgentLoopService] 成功注入 ${injectionResult.foundVariables.length} 个变量`);
+              }
+              
+              if (injectionResult.missingVariables.length > 0) {
+                logger.warn(`[ManagerAgentLoopService] 未找到变量: ${injectionResult.missingVariables.join(', ')}`);
+              }
+            }
 
-            // 创建工具响应消息
+            // 执行 Agent（传入注入内容）
+            const agentResult = await this.executeAgent(
+              agent_name, 
+              instruction, 
+              options,
+              injectedContent
+            );
+
+            // 保存结果到变量池
+            const savedVariable = this.variablePool.saveVariable(
+              agentResult.summary || agentResult.finalOutput,
+              agent_name,
+              output_variable_name,
+              `Result from ${agent_name}`
+            );
+
+            logger.debug(`[ManagerAgentLoopService] 结果已保存到变量: ${savedVariable.name}`);
+
+            // 创建工具响应消息（包含变量信息）
+            const toolResultContent = this.variablePool.formatToolResult(savedVariable);
+            
             const toolMessage: AgentMessage = {
               id: generateMessageId(),
               role: 'tool',
-              content: agentResult.summary || agentResult.finalOutput,
+              content: toolResultContent,
               toolCallId: toolCall.id,
               toolName: 'call_agent',
               status: 'completed',
@@ -449,7 +499,10 @@ export class ManagerAgentLoopService {
             });
 
             toolCall.status = 'completed';
-            toolCall.result = agentResult.finalOutput;
+            toolCall.result = {
+              output: agentResult.finalOutput,
+              savedVariableName: savedVariable.name
+            };
           }
         }
 
@@ -513,6 +566,7 @@ export class ManagerAgentLoopService {
     }
     this.agentLoopServices.clear();
     this.agentContextCache.clear();
+    this.variablePool.clear();
   }
 
   // ==================== 私有方法 ====================
@@ -605,11 +659,17 @@ export class ManagerAgentLoopService {
 
   /**
    * 执行指定的 Agent
+   * 
+   * @param agentName - Agent 名称
+   * @param instruction - 指令
+   * @param options - 执行选项
+   * @param injectedVariablesContent - 注入的变量内容（可选）
    */
   private async executeAgent(
     agentName: AgentName,
     instruction: string,
-    options: ManagerAgentLoopOptions
+    options: ManagerAgentLoopOptions,
+    injectedVariablesContent?: string
   ): Promise<{ context: AgentContext; finalOutput: string; summary?: string }> {
     // 获取 Agent 配置
     const agent = getAgentByName(agentName);
@@ -663,6 +723,27 @@ ${numberedContent}
         }
       }
 
+      // 构建用户提示词内容
+      const userContentParts: string[] = [];
+      
+      // 1. 添加注入的变量内容（如果有）
+      if (injectedVariablesContent) {
+        userContentParts.push(injectedVariablesContent);
+      }
+      
+      // 2. 添加项目布局
+      if (projectLayoutTag) {
+        userContentParts.push(projectLayoutTag);
+      }
+      
+      // 3. 添加当前文件内容
+      if (currentFileTag) {
+        userContentParts.push(currentFileTag);
+      }
+      
+      // 4. 添加用户指令
+      userContentParts.push(`<query>${instruction}</query>`);
+
       // 构建初始上下文
       const initialContext: AgentContext = {
         agentName,
@@ -670,9 +751,7 @@ ${numberedContent}
         messages: [{
           id: generateMessageId(),
           role: 'user',
-          content: [projectLayoutTag, currentFileTag, `<query>${instruction}</query>`]
-            .filter(Boolean)
-            .join('\n\n'),
+          content: userContentParts.join('\n\n'),
           status: 'completed',
           timestamp: Date.now()
         }],
