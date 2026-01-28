@@ -10,7 +10,6 @@
  * - read_file: 阅读指定行内容，确认修改前的内容
  * - replace_lines: 替换指定行的内容（适合大段内容修改）
  * - search_replace: 搜索并替换字符串（适合小范围精确修改）
- * - read_vars: 读取其他 Agent 保存的变量内容
  */
 
 import { BaseAgent, type AgentConfig } from './BaseAgent';

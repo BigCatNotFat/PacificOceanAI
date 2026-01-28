@@ -10,7 +10,6 @@
  * 工具：
  * - read_file: 阅读文件内容，支持指定行范围
  * - grep_search: 正则搜索，快速定位内容
- * - write_vars: 写入变量，保存分析结果供其他 Agent 使用
  */
 
 import { BaseAgent, type AgentConfig } from './BaseAgent';

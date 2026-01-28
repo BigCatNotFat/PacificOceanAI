@@ -57,8 +57,6 @@ export type AvailableToolName =
   | 'delete_file'
   // MultiAgent 专用工具
   | 'call_agent'
-  | 'read_vars'
-  | 'write_vars'
   // 允许任意字符串以支持动态注册的工具
   | (string & {});
 
@@ -173,7 +171,7 @@ export class MultiAgentToolRegistry {
    * @returns MultiAgentTool 数组
    * 
    * @example
-   * const tools = registry.getToolsByNames(['read_file', 'grep_search', 'write_vars']);
+   * const tools = registry.getToolsByNames(['read_file', 'grep_search']);
    */
   getToolsByNames(names: AvailableToolName[]): MultiAgentTool[] {
     const tools: MultiAgentTool[] = [];
@@ -233,7 +231,7 @@ export class MultiAgentToolRegistry {
   /**
    * 注册自定义 MultiAgentTool
    * 
-   * 用于注册 MultiAgent 专用的工具（如 call_agent, read_vars, write_vars）
+   * 用于注册 MultiAgent 专用的工具（如 call_agent）
    * 
    * @param tool - 工具实例
    */
@@ -275,41 +273,37 @@ export class MultiAgentToolRegistry {
   /**
    * 获取分析师 Agent 的工具
    * 
-   * analyse_agent 使用的工具：read_file, grep_search, write_vars
+   * analyse_agent 使用的工具：read_file, grep_search
    */
   getAnalyseAgentTools(): MultiAgentTool[] {
     return this.getToolsByNames([
       'read_file',
-      'grep_search',
-      'write_vars'
+      'grep_search'
     ]);
   }
 
   /**
    * 获取编辑 Agent 的工具
    * 
-   * edit_agent 使用的工具：read_file, replace_lines, search_replace, read_vars
+   * edit_agent 使用的工具：read_file, replace_lines, search_replace
    */
   getEditAgentTools(): MultiAgentTool[] {
     return this.getToolsByNames([
       'read_file',
       'replace_lines',
-      'search_replace',
-      'read_vars'
+      'search_replace'
     ]);
   }
 
   /**
    * 获取文献搜索 Agent 的工具
    * 
-   * paper_search_agent 使用的工具：paper_boolean_search, paper_semantic_search, read_vars, write_vars
+   * paper_search_agent 使用的工具：paper_boolean_search, paper_semantic_search
    */
   getPaperSearchAgentTools(): MultiAgentTool[] {
     return this.getToolsByNames([
       'paper_boolean_search',
-      'paper_semantic_search',
-      'read_vars',
-      'write_vars'
+      'paper_semantic_search'
     ]);
   }
 

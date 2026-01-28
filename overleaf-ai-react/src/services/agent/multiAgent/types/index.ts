@@ -83,7 +83,7 @@ export interface AgentContext {
   iteration: number;
   /** 最终总结（Agent 完成后的摘要） */
   summary?: string;
-  /** 变量存储（write_vars 写入的变量） */
+  /** 变量存储（MultiAgent 内部可选状态） */
   variables?: Map<string, string>;
 }
 
@@ -133,7 +133,7 @@ export interface AgentLoopOptions {
   initialContext: AgentContext;
   /** 
    * 工具配置 - 支持两种方式：
-   * 1. 工具名称列表（推荐）: ['read_file', 'grep_search', 'write_vars']
+   * 1. 工具名称列表（推荐）: ['read_file', 'grep_search']
    * 2. 工具实例列表: [readFileTool, grepSearchTool]
    */
   tools: string[] | MultiAgentTool[];

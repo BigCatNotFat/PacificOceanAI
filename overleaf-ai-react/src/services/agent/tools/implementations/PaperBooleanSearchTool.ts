@@ -146,7 +146,7 @@ export class PaperBooleanSearchTool extends BaseTool {
 
       // 处理参数默认值和边界
       const query = args.query;
-      const limit = Math.min(Math.max(args.limit ?? 10, 1), 50); // 限制在1-50之间
+      const limit = Math.min(Math.max(args.limit ?? 25, 1), 100); // 限制在1-50之间
       const cursor = Math.max(args.cursor ?? 0, 0); // 确保cursor非负
       const sort = args.sort ?? 'citationCount:desc'; // 默认排序：引用最多靠前
 
