@@ -81,7 +81,7 @@ const ActivationModal: React.FC<ActivationModalProps> = ({ isOpen, onSubmit, onC
           <button onClick={onClose} style={styles.closeModalButton} title="关闭">✕</button>
         </div>
         <h2 style={styles.title}>欢迎使用 PacificOceanAI</h2>
-        <p style={styles.subtitle}>请输入启动码以继续使用</p>
+        <p style={styles.subtitle}>请输入启动码以继续使用，关注公众号并回复启动码获取启动码</p>
         
         <div style={styles.qrContainer}>
           <div style={styles.qrPlaceholder}>

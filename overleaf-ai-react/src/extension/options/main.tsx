@@ -1,3 +1,4 @@
+import '../../utils/silenceConsole';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import OptionsApp from '../../workbench/parts/OptionsApp';

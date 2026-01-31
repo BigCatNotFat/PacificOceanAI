@@ -41,6 +41,8 @@ import type { IModelRegistryService } from '../../platform/llm/IModelRegistrySer
 import { IModelRegistryServiceId } from '../../platform/llm/IModelRegistryService';
 import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
 import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
+import type { ILiteratureService } from '../../platform/literature/ILiteratureService';
+import { ILiteratureServiceId } from '../../platform/literature/ILiteratureService';
 import { ManagerAgentLoopService } from './multiAgent/services/ManagerAgentLoopService';
 import { logger } from '../../utils/logger';
 
@@ -71,7 +73,7 @@ interface SessionState {
 /**
  * ChatService 实现 - 支持多会话并行
  */
-@injectable(IAgentServiceId, IConversationServiceId, IPromptServiceId, ITelemetryServiceId, ILLMServiceId, IModelRegistryServiceId, IUIStreamServiceId)
+@injectable(IAgentServiceId, IConversationServiceId, IPromptServiceId, ITelemetryServiceId, ILLMServiceId, IModelRegistryServiceId, IUIStreamServiceId, ILiteratureServiceId)
 export class ChatService implements IChatService {
   // ==================== 事件发射器 ====================
   private readonly _onDidMessageUpdate = new Emitter<MessageUpdateEvent>();
@@ -95,7 +97,8 @@ export class ChatService implements IChatService {
     private readonly telemetryService: ITelemetryService,
     private readonly llmService: ILLMService,
     private readonly modelRegistry: IModelRegistryService,
-    private readonly uiStreamService: IUIStreamService
+    private readonly uiStreamService: IUIStreamService,
+    private readonly literatureService: ILiteratureService
   ) {
     logger.debug('[ChatService] 依赖注入成功', {
       hasAgentService: !!agentService,
@@ -198,7 +201,8 @@ export class ChatService implements IChatService {
   private async executePlanMode(
     session: SessionState,
     responseMessageId: string,
-    options: ChatOptions
+    options: ChatOptions,
+    userInput: string
   ): Promise<void> {
     const conversationId = session.conversationId;
 
@@ -212,13 +216,18 @@ export class ChatService implements IChatService {
           this.llmService,
           this.modelRegistry,
           this.uiStreamService,
-          this.promptService
+          this.promptService,
+          this.literatureService
         );
       }
 
-      // 获取最后一条用户消息
-      const lastUserMessage = [...session.messages].reverse().find(m => m.role === 'user');
-      if (!lastUserMessage) {
+      // 获取用户消息
+      // 说明：首次加载时可能存在初始化/加载竞态，导致 session.messages 被短暂覆盖为空。
+      // 为了稳定性，优先使用本次 sendMessage 的入参作为 userMessage。
+      const directUserMessage = (userInput ?? '').trim();
+      const lastUserMessage = [...session.messages].reverse().find(m => m.role === 'user' && (m.content ?? '').trim().length > 0);
+      const userMessageToUse = directUserMessage || lastUserMessage?.content;
+      if (!userMessageToUse) {
         throw new Error('未找到用户消息');
       }
 
@@ -266,7 +275,7 @@ export class ChatService implements IChatService {
       // 执行 ManagerAgentLoop
       const result = await this.managerAgentLoopService.run({
         modelId: options.modelId,
-        userMessage: lastUserMessage.content,
+        userMessage: userMessageToUse,
         conversationId,
         maxIterations: options.maxIterations ?? 10,
         uiStreamConfig: {
@@ -441,7 +450,7 @@ export class ChatService implements IChatService {
 
       // ========== Plan 模式：使用 ManagerAgentLoopService ==========
       if (options.mode === 'plan') {
-        await this.executePlanMode(session, assistantPlaceholder.id, options);
+        await this.executePlanMode(session, assistantPlaceholder.id, options, input);
         return;
       }
 

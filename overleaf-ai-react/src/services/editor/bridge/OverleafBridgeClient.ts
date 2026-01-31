@@ -10,7 +10,7 @@ import type {
   OverleafBridgeResponse,
   PendingRequest
 } from './types';
-import { logger } from '../../../utils/logger';
+import { isAgentDebugEnabled, logger } from '../../../utils/logger';
 
 export class OverleafBridgeClient {
   private static instance: OverleafBridgeClient | null = null;
@@ -52,11 +52,11 @@ export class OverleafBridgeClient {
         this.injected = true;
       };
       script.onerror = (error) => {
-        console.error('[OverleafBridgeClient] Failed to inject bridge script:', error);
+        logger.error('[OverleafBridgeClient] Failed to inject bridge script:', error);
       };
       (document.head || document.documentElement).appendChild(script);
     } catch (error) {
-      console.error('[OverleafBridgeClient] Error injecting script:', error);
+      logger.error('[OverleafBridgeClient] Error injecting script:', error);
     }
   }
 
@@ -72,6 +72,9 @@ export class OverleafBridgeClient {
     this.consolePatched = true;
 
     try {
+      // 如果用户显式开启 debug，就不要在主世界做任何 console 过滤，方便排查问题
+      if (isAgentDebugEnabled()) return;
+
       const patch = document.createElement('script');
       patch.type = 'text/javascript';
       patch.textContent = `
@@ -85,9 +88,16 @@ export class OverleafBridgeClient {
         if (!args || !args.length) return false;
         for (var i = 0; i < args.length; i++) {
           var a = args[i];
-          if (typeof a === 'string' && a.indexOf('OverleafBridge') !== -1) {
-            return true;
-          }
+          if (typeof a !== 'string') continue;
+          // 只过滤本扩展注入脚本的日志前缀，避免影响 Overleaf 网站自身日志
+          if (
+            a.indexOf('OverleafBridge') !== -1 ||
+            a.indexOf('DiffAPI') !== -1 ||
+            a.indexOf('InlineStatus') !== -1 ||
+            a.indexOf('ReviewTooltipInjector') !== -1 ||
+            a.indexOf('CiteTooltip') !== -1 ||
+            a.indexOf('SelectionTooltip') !== -1
+          ) return true;
         }
       } catch (e) {}
       return false;
@@ -97,6 +107,7 @@ export class OverleafBridgeClient {
     var origInfo = console.info;
     var origDebug = console.debug;
     var origWarn = console.warn;
+    var origError = console.error;
 
     console.log = function () {
       if (shouldMute(arguments)) return;
@@ -113,6 +124,10 @@ export class OverleafBridgeClient {
     console.warn = function () {
       if (shouldMute(arguments)) return;
       return origWarn.apply(console, arguments);
+    };
+    console.error = function () {
+      if (shouldMute(arguments)) return;
+      return origError.apply(console, arguments);
     };
   } catch (e) {}
 })();`;
@@ -134,7 +149,7 @@ export class OverleafBridgeClient {
 
     const pending = this.pendingRequests.get(data.requestId);
     if (!pending) {
-      console.warn('[OverleafBridgeClient] Received response for unknown request:', data.requestId);
+      logger.warn('[OverleafBridgeClient] Received response for unknown request:', data.requestId);
       return;
     }
 

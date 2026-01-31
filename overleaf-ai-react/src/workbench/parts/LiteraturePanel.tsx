@@ -551,7 +551,13 @@ const ReferenceItem: React.FC<{
     }
   }, [reference.id]);
   
-  // 展开时自动搜索引用次数（每次展开都刷新）
+  // 组件挂载时自动搜索引用次数，展开时刷新
+  useEffect(() => {
+    // 首次挂载时搜索引用次数
+    searchCitePositions();
+  }, []);
+  
+  // 展开时刷新引用次数
   useEffect(() => {
     if (reference.isExpanded) {
       searchCitePositions();
@@ -739,10 +745,30 @@ const ReferenceItem: React.FC<{
           <h3 className={`literature-item-title ${reference.isMarkedForDeletion ? 'strikethrough' : ''}`}>{reference.title}</h3>
         </div>
         
-        {/* 作者信息（未展开时显示） */}
+        {/* 作者信息和引用次数（未展开时显示） */}
         {!reference.isExpanded && (
-          <div className={`literature-item-authors-preview ${reference.isMarkedForDeletion ? 'strikethrough' : ''}`}>
-            {reference.authors}
+          <div className="literature-item-preview-row">
+            <div className={`literature-item-authors-preview ${reference.isMarkedForDeletion ? 'strikethrough' : ''}`}>
+              {reference.authors}
+            </div>
+            {/* 引用次数徽章 */}
+            <div 
+              className={`literature-cite-count-badge ${citePositions.length > 0 ? 'has-citations' : 'no-citations'} ${isLocating ? 'loading' : ''}`}
+              title={isLocating ? '正在搜索引用...' : citePositions.length > 0 ? `正文中共引用 ${citePositions.length} 次` : '正文中未引用'}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (citePositions.length > 0) {
+                  handleLocate(e);
+                }
+              }}
+            >
+              <span className="material-symbols">format_quote</span>
+              {isLocating ? (
+                <span className="literature-cite-count-loading"></span>
+              ) : (
+                <span className="literature-cite-count-num">{citePositions.length}</span>
+              )}
+            </div>
           </div>
         )}
         
@@ -2099,11 +2125,13 @@ const LiteraturePanel: React.FC<LiteraturePanelProps> = ({ onClose }) => {
           )}
         </button>
         
-        {/* 应用文献库按钮 */}
+        {/* 应用文献库按钮 - 暂时禁用 */}
         <button 
           className="literature-apply-all-btn"
           onClick={handleApplyLibrary}
-          disabled={references.length === 0 || isLoading || enrichAllState?.isRunning || isApplying}
+          disabled={true}
+          title="此功能暂时禁用"
+          style={{ opacity: 0.5, cursor: 'not-allowed' }}
         >
           {isApplying ? (
             <>

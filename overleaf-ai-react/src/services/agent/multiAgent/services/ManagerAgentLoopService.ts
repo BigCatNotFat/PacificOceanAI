@@ -20,10 +20,11 @@ import type { ILLMService, LLMConfig, LLMMessage, LLMFinalMessage } from '../../
 import type { IModelRegistryService } from '../../../../platform/llm/IModelRegistryService';
 import type { IUIStreamService } from '../../../../platform/agent/IUIStreamService';
 import { AgentLoopService } from './AgentLoopService';
-import { VariablePoolService } from './VariablePoolService';
+import { VariablePoolService, type SystemVariableDefinition } from './VariablePoolService';
 import { MultiAgentToolRegistry, getMultiAgentToolRegistry } from '../tools/MultiAgentToolRegistry';
 import { getAgentByName } from '../agents';
 import type { IPromptService } from '../../../../platform/agent/IPromptService';
+import type { ILiteratureService } from '../../../../platform/literature/ILiteratureService';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import { logger } from '../../../../utils/logger';
 import type {
@@ -261,10 +262,57 @@ export class ManagerAgentLoopService {
     private readonly modelRegistry: IModelRegistryService,
     private readonly uiStreamService: IUIStreamService,
     private readonly promptService?: IPromptService,
+    private readonly literatureService?: ILiteratureService,
     toolRegistry?: MultiAgentToolRegistry
   ) {
     this.toolRegistry = toolRegistry || getMultiAgentToolRegistry();
     this.variablePool = new VariablePoolService();
+    
+    // 注册系统变量
+    this.registerSystemVariables();
+  }
+
+  /**
+   * 注册系统变量
+   * 这些变量是预定义的，ManagerAgent 可以将其注入到其他 Agent 中
+   */
+  private registerSystemVariables(): void {
+    const systemVariables: SystemVariableDefinition[] = [
+      {
+        name: '$project_literature',
+        description: 'Project literature list containing cite_id, title, authors, journal/conference, and year for each reference. Useful for tasks involving citations or bibliography.',
+        valueProvider: () => this.buildLiteratureListContent()
+      }
+    ];
+
+    this.variablePool.registerSystemVariables(systemVariables);
+    logger.debug(`[ManagerAgentLoopService] 已注册 ${systemVariables.length} 个系统变量`);
+  }
+
+  /**
+   * 构建文献列表内容
+   * 格式：简洁的 JSON 数组，包含引用键、标题、作者、期刊/会议和年份
+   */
+  private buildLiteratureListContent(): string {
+    if (!this.literatureService) {
+      return '[]';
+    }
+
+    const references = this.literatureService.getReferences();
+    if (references.length === 0) {
+      return '[]';
+    }
+
+    // 构建简洁的文献列表
+    const literatureList = references.map(ref => ({
+      cite_id: ref.id,
+      title: ref.title,
+      authors: ref.authors,
+      journal: ref.journal || ref.booktitle || '', // 期刊名或会议名
+      year: ref.year || ''
+    }));
+
+    return JSON.stringify(literatureList, null, 2);
   }
 
   // ==================== 变量池访问方法 ====================
@@ -439,10 +487,10 @@ export class ManagerAgentLoopService {
             // 发送"Agent 工作中"状态
             this.emitUpdate('agent_working', agent_name, `${agent_name} 正在工作...`, globalConversation);
 
-            // 构建注入内容
+            // 构建注入内容（支持系统变量的异步获取）
             let injectedContent = '';
             if (inject_variables && inject_variables.length > 0) {
-              const injectionResult = this.variablePool.buildInjectionContent({
+              const injectionResult = await this.variablePool.buildInjectionContentAsync({
                 variableNames: inject_variables,
                 includeMetadata: false
               });

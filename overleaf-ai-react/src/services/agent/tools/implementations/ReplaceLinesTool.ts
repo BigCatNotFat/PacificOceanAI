@@ -339,7 +339,9 @@ Examples:
           file: args.target_file,
           applied: false, // 未直接应用，而是创建了建议
           pending_approval: true,
-          message: `已创建 ${suggestionIds.length} 个修改建议，等待用户确认。用户可以逐个或批量接受/拒绝修改。`,
+          status: 'SUCCESS_PENDING_APPROVAL',
+          message: `SUCCESS: Created ${suggestionIds.length} modification suggestion(s). User will review and accept/reject. DO NOT retry or call this tool again for the same content - the operation completed successfully.`,
+          instruction: 'STOP_AND_REPORT_SUCCESS',
           suggestionIds,
           replacementsCount: args.replacements.length,
           preview: finalPreview

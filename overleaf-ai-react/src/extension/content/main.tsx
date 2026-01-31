@@ -1,3 +1,4 @@
+import '../../utils/silenceConsole';
 import React from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import App from '../../workbench/parts/App';
@@ -30,5 +31,4 @@ function mountApp(): void {
 // 先注入桥接脚本，再挂载应用
 injectBridgeScript();
 mountApp();
-console.log('✅ Overleaf AI 助手已加载');
 

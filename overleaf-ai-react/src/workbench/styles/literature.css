@@ -236,27 +236,96 @@
   word-wrap: break-word;
 }
 
-/* 作者预览（未展开时） */
-.literature-item-authors-preview {
+/* 作者预览行（未展开时） */
+.literature-item-preview-row {
   position: absolute;
   bottom: 8px;
   left: 12px;
-  right: 100px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.literature-item-authors-preview {
+  flex: 1;
   font-size: 12px;
   color: var(--text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
+.literature-item.expanded .literature-item-preview-row,
 .literature-item.expanded .literature-item-authors-preview {
   display: none;
+}
+
+/* 引用次数徽章 */
+.literature-cite-count-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.literature-cite-count-badge .material-symbols {
+  font-size: 14px;
+}
+
+/* 有引用时 - 蓝色主题 */
+.literature-cite-count-badge.has-citations {
+  background: linear-gradient(135deg, rgba(0, 119, 182, 0.15), rgba(0, 180, 216, 0.1));
+  color: #0077B6;
+  border: 1px solid rgba(0, 119, 182, 0.2);
+}
+
+.literature-cite-count-badge.has-citations:hover {
+  background: linear-gradient(135deg, rgba(0, 119, 182, 0.25), rgba(0, 180, 216, 0.15));
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 119, 182, 0.2);
+}
+
+/* 无引用时 - 灰色主题 */
+.literature-cite-count-badge.no-citations {
+  background-color: rgba(156, 163, 175, 0.1);
+  color: var(--text-tertiary);
+  border: 1px solid transparent;
+  cursor: default;
+}
+
+/* 加载状态 */
+.literature-cite-count-badge.loading {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.literature-cite-count-loading {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(0, 119, 182, 0.2);
+  border-top-color: #0077B6;
+  border-radius: 50%;
+  animation: literature-spin 0.8s linear infinite;
+}
+
+.literature-cite-count-num {
+  min-width: 12px;
+  text-align: center;
 }
 
 /* 操作按钮 */
 .literature-item-actions {
   position: absolute;
-  bottom: 4px;
+  top: 8px;
   right: 8px;
   display: flex;
   gap: 4px;

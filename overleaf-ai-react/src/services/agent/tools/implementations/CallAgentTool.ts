@@ -45,7 +45,10 @@ Parameters:
 Variable Pool Feature:
 - Each Agent's result is automatically saved to a variable (e.g., "$result_analyse_1")
 - Use inject_variables to pass previous results to the next Agent
-- Example: inject_variables: ["$result_analyse_1"] will include that variable's content in the new Agent's prompt`,
+- Example: inject_variables: ["$result_analyse_1"] will include that variable's content in the new Agent's prompt
+
+System Variables (always available):
+- $project_literature: Project literature list with cite_id, title, authors, journal (or conference), and year for each reference. Inject this when the task involves citations or bibliography.`,
     parameters: {
       type: 'object',
       properties: {

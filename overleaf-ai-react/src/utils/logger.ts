@@ -2,7 +2,7 @@
  * 统一日志工具（默认静默）
  *
  * 目标：
- * - 默认不在 console 打印 debug/info，避免刷屏影响使用与性能
+ * - 默认不在 console 打印任何日志（含 warn/error），避免刷屏影响使用与性能
  * - 需要排查问题时可手动开启
  *
  * 开启方式（任一即可）：
@@ -27,6 +27,16 @@ export function isAgentDebugEnabled(): boolean {
   }
 }
 
+export function isProdBuild(): boolean {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const env = (import.meta as any)?.env;
+    return !!env?.PROD;
+  } catch {
+    return false;
+  }
+}
+
 export const logger = {
   debug: (...args: any[]) => {
     if (isAgentDebugEnabled()) console.log(...args);
@@ -35,10 +45,10 @@ export const logger = {
     if (isAgentDebugEnabled()) console.info(...args);
   },
   warn: (...args: any[]) => {
-    console.warn(...args);
+    if (isAgentDebugEnabled()) console.warn(...args);
   },
   error: (...args: any[]) => {
-    console.error(...args);
+    if (isAgentDebugEnabled()) console.error(...args);
   }
 };
 

@@ -17,6 +17,11 @@ import { logger } from '../../../../utils/logger';
 // ==================== 类型定义 ====================
 
 /**
+ * 变量类型
+ */
+export type VariableType = 'dynamic' | 'system';
+
+/**
  * 变量条目
  */
 export interface VariableEntry {
@@ -32,6 +37,21 @@ export interface VariableEntry {
   description?: string;
   /** 元数据（可选，用于扩展） */
   metadata?: Record<string, any>;
+  /** 变量类型：dynamic（运行时产生）或 system（系统预定义） */
+  type?: VariableType;
+}
+
+/**
+ * 系统变量定义
+ * 用于描述系统预定义的变量，ManagerAgent 可以感知但不需要知道具体内容
+ */
+export interface SystemVariableDefinition {
+  /** 变量名称 */
+  name: string;
+  /** 变量描述（用于 ManagerAgent 的提示词） */
+  description: string;
+  /** 数据提供函数（延迟获取，仅在注入时调用） */
+  valueProvider: () => Promise<string> | string;
 }
 
 /**
@@ -80,6 +100,9 @@ export interface VariableInjectionResult {
 export class VariablePoolService {
   /** 变量存储 */
   private variables: Map<string, VariableEntry> = new Map();
+  
+  /** 系统变量定义（延迟求值） */
+  private systemVariableDefinitions: Map<string, SystemVariableDefinition> = new Map();
   
   /** 变量计数器（用于自动命名） */
   private variableCounter: number = 0;
@@ -198,12 +221,97 @@ export class VariablePoolService {
   }
 
   /**
-   * 清空变量池
+   * 清空变量池（保留系统变量定义）
    */
   clear(): void {
     this.variables.clear();
     this.variableCounter = 0;
+    // 注意：系统变量定义不清空，只清空动态变量
     logger.debug('[VariablePoolService] 变量池已清空');
+  }
+
+  // ==================== 系统变量管理 ====================
+
+  /**
+   * 注册系统变量定义
+   * 
+   * 系统变量是预定义的变量，其值在注入时才会计算
+   * ManagerAgent 可以通过 getSystemVariableDescriptions 获取可用的系统变量列表
+   * 
+   * @param definition - 系统变量定义
+   */
+  registerSystemVariable(definition: SystemVariableDefinition): void {
+    this.systemVariableDefinitions.set(definition.name, definition);
+    logger.debug(`[VariablePoolService] 注册系统变量: ${definition.name}`);
+  }
+
+  /**
+   * 批量注册系统变量
+   * 
+   * @param definitions - 系统变量定义数组
+   */
+  registerSystemVariables(definitions: SystemVariableDefinition[]): void {
+    for (const def of definitions) {
+      this.registerSystemVariable(def);
+    }
+  }
+
+  /**
+   * 取消注册系统变量
+   * 
+   * @param name - 变量名称
+   * @returns 是否成功取消
+   */
+  unregisterSystemVariable(name: string): boolean {
+    const deleted = this.systemVariableDefinitions.delete(name);
+    if (deleted) {
+      logger.debug(`[VariablePoolService] 取消注册系统变量: ${name}`);
+    }
+    return deleted;
+  }
+
+  /**
+   * 获取所有系统变量的描述信息
+   * 用于生成 ManagerAgent 的提示词，让其知道有哪些系统变量可用
+   * 
+   * @returns 系统变量描述数组
+   */
+  getSystemVariableDescriptions(): Array<{ name: string; description: string }> {
+    return Array.from(this.systemVariableDefinitions.values()).map(def => ({
+      name: def.name,
+      description: def.description
+    }));
+  }
+
+  /**
+   * 检查是否为系统变量
+   * 
+   * @param name - 变量名
+   * @returns 是否为系统变量
+   */
+  isSystemVariable(name: string): boolean {
+    return this.systemVariableDefinitions.has(name);
+  }
+
+  /**
+   * 获取系统变量的值（延迟计算）
+   * 
+   * @param name - 变量名
+   * @returns 变量值或 undefined
+   */
+  async getSystemVariableValue(name: string): Promise<string | undefined> {
+    const definition = this.systemVariableDefinitions.get(name);
+    if (!definition) {
+      return undefined;
+    }
+    
+    try {
+      const value = await definition.valueProvider();
+      return value;
+    } catch (error) {
+      logger.error(`[VariablePoolService] 获取系统变量 ${name} 失败:`, error);
+      return undefined;
+    }
   }
 
   // ==================== 变量注入 ====================
@@ -212,6 +320,7 @@ export class VariablePoolService {
    * 构建变量注入内容
    * 
    * 将指定的变量内容格式化为可注入到 Agent 提示词的格式
+   * 支持动态变量和系统变量
    * 
    * @param options - 注入选项
    * @returns 注入结果
@@ -222,13 +331,97 @@ export class VariablePoolService {
     const foundVariables: string[] = [];
     const missingVariables: string[] = [];
     const contentParts: string[] = [];
+    const pendingSystemVariables: Array<{ name: string; definition: SystemVariableDefinition }> = [];
 
     for (const name of variableNames) {
+      // 首先检查动态变量
       const entry = this.variables.get(name);
       
       if (entry) {
         foundVariables.push(name);
         contentParts.push(this.formatVariableForInjection(entry, includeMetadata));
+      } else if (this.systemVariableDefinitions.has(name)) {
+        // 是系统变量，稍后异步获取
+        pendingSystemVariables.push({
+          name,
+          definition: this.systemVariableDefinitions.get(name)!
+        });
+      } else {
+        missingVariables.push(name);
+      }
+    }
+
+    // 构建最终内容
+    let content = '';
+    if (contentParts.length > 0) {
+      content = `<injected_variables>\n${contentParts.join('\n\n')}\n</injected_variables>`;
+    }
+
+    // 如果有缺失的变量，添加警告
+    if (missingVariables.length > 0) {
+      logger.warn(`[VariablePoolService] 未找到变量: ${missingVariables.join(', ')}`);
+    }
+
+    // 注意：系统变量需要异步获取，这里返回的是同步结果
+    // 调用方需要使用 buildInjectionContentAsync 来获取包含系统变量的完整结果
+    if (pendingSystemVariables.length > 0) {
+      logger.debug(`[VariablePoolService] 检测到 ${pendingSystemVariables.length} 个系统变量，建议使用 buildInjectionContentAsync`);
+    }
+
+    return {
+      success: foundVariables.length > 0,
+      content,
+      foundVariables,
+      missingVariables
+    };
+  }
+
+  /**
+   * 异步构建变量注入内容（支持系统变量）
+   * 
+   * 与 buildInjectionContent 类似，但支持异步获取系统变量的值
+   * 
+   * @param options - 注入选项
+   * @returns 注入结果
+   */
+  async buildInjectionContentAsync(options: VariableInjectionOptions): Promise<VariableInjectionResult> {
+    const { variableNames, includeMetadata = false } = options;
+    
+    const foundVariables: string[] = [];
+    const missingVariables: string[] = [];
+    const contentParts: string[] = [];
+
+    for (const name of variableNames) {
+      // 首先检查动态变量
+      const entry = this.variables.get(name);
+      
+      if (entry) {
+        foundVariables.push(name);
+        contentParts.push(this.formatVariableForInjection(entry, includeMetadata));
+      } else if (this.systemVariableDefinitions.has(name)) {
+        // 是系统变量，异步获取值
+        const definition = this.systemVariableDefinitions.get(name)!;
+        try {
+          const value = await definition.valueProvider();
+          if (value) {
+            foundVariables.push(name);
+            // 创建临时 entry 用于格式化
+            const tempEntry: VariableEntry = {
+              name,
+              value,
+              sourceAgent: 'system',
+              createdAt: Date.now(),
+              description: definition.description,
+              type: 'system'
+            };
+            contentParts.push(this.formatVariableForInjection(tempEntry, includeMetadata));
+          } else {
+            missingVariables.push(name);
+          }
+        } catch (error) {
+          logger.error(`[VariablePoolService] 获取系统变量 ${name} 失败:`, error);
+          missingVariables.push(name);
+        }
       } else {
         missingVariables.push(name);
       }
