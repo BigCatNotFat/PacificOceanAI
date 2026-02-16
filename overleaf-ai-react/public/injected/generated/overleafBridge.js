@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-01-31T09:12:50.817Z
+ * 构建时间: 2026-02-16T05:01:47.908Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */
@@ -2643,6 +2643,33 @@
     const interval = setInterval(checkFileChange, 500);
     setDiffFileCheckInterval(interval);
   }
+  function tryGetEditorView() {
+    try {
+      const store = window.overleaf && window.overleaf.unstable && window.overleaf.unstable.store;
+      const view = store && typeof store.get === "function" && store.get("editor.view") || document.querySelector(".cm-content") && document.querySelector(".cm-content").cmView && document.querySelector(".cm-content").cmView.view;
+      return view || null;
+    } catch (e) {
+      return null;
+    }
+  }
+  function completeDiffSetup(view) {
+    setDiffCurrentView(view);
+    debug("[DiffAPI] \u7F16\u8F91\u5668\u89C6\u56FE\u5DF2\u83B7\u53D6");
+    createDiffControlBar({
+      onPrev: () => window.diffAPI && window.diffAPI.prev(),
+      onNext: () => window.diffAPI && window.diffAPI.next(),
+      onJumpNextFile: () => jumpToNextFileWithSuggestions(),
+      onRejectAll: () => window.diffAPI && window.diffAPI.rejectAll(),
+      onAcceptAll: () => window.diffAPI && window.diffAPI.acceptAll()
+    });
+    setupDiffAPI();
+    startFileChangeListener();
+  }
+  function tryCaptureCMAndRegisterExtension() {
+    if (diffCodeMirror) return true;
+    window.dispatchEvent(new CustomEvent("editor:extension-loaded"));
+    return !!diffCodeMirror;
+  }
   function initDiffSystem() {
     debug("[OverleafBridge] Initializing Diff System...");
     injectDiffStyles();
@@ -2657,43 +2684,36 @@
       extensions.push(diffSuggestionExtension);
       debug("[DiffAPI] Diff \u5EFA\u8BAE\u6269\u5C55\u5DF2\u6CE8\u518C");
     });
+    let attempts = 0;
+    const MAX_ATTEMPTS = 60;
+    const POLL_INTERVAL = 500;
+    const pollInit = setInterval(() => {
+      attempts++;
+      tryCaptureCMAndRegisterExtension();
+      const view = tryGetEditorView();
+      if (view && diffCodeMirror) {
+        clearInterval(pollInit);
+        completeDiffSetup(view);
+        debug("[DiffAPI] Diff \u7CFB\u7EDF\u521D\u59CB\u5316\u5B8C\u6210\uFF08\u7B2C " + attempts + " \u6B21\u5C1D\u8BD5\uFF09");
+      } else if (attempts >= MAX_ATTEMPTS) {
+        clearInterval(pollInit);
+        warn(
+          "[DiffAPI] Diff \u7CFB\u7EDF\u521D\u59CB\u5316\u8D85\u65F6\uFF08" + MAX_ATTEMPTS + " \u6B21\u5C1D\u8BD5\uFF09",
+          "view:",
+          !!view,
+          "CM:",
+          !!diffCodeMirror
+        );
+      }
+    }, POLL_INTERVAL);
     setTimeout(() => {
-      window.dispatchEvent(new CustomEvent("editor:extension-loaded"));
-      setTimeout(() => {
-        const store = window.overleaf && window.overleaf.unstable && window.overleaf.unstable.store;
-        const view = store && store.get("editor.view") || document.querySelector(".cm-content") && document.querySelector(".cm-content").cmView && document.querySelector(".cm-content").cmView.view;
-        setDiffCurrentView(view);
-        if (view) {
-          debug("[DiffAPI] \u7F16\u8F91\u5668\u89C6\u56FE\u5DF2\u83B7\u53D6");
-          createDiffControlBar({
-            onPrev: () => window.diffAPI && window.diffAPI.prev(),
-            onNext: () => window.diffAPI && window.diffAPI.next(),
-            onJumpNextFile: () => jumpToNextFileWithSuggestions(),
-            onRejectAll: () => window.diffAPI && window.diffAPI.rejectAll(),
-            onAcceptAll: () => window.diffAPI && window.diffAPI.acceptAll()
-          });
-          setupDiffAPI();
-          startFileChangeListener();
-        } else {
-          warn("[DiffAPI] \u65E0\u6CD5\u83B7\u53D6\u7F16\u8F91\u5668\u89C6\u56FE\uFF0C\u7A0D\u540E\u91CD\u8BD5");
-          setTimeout(() => {
-            const retryView = window.overleaf?.unstable?.store?.get("editor.view") || document.querySelector(".cm-content")?.cmView?.view;
-            if (retryView) {
-              setDiffCurrentView(retryView);
-              debug("[DiffAPI] \u7F16\u8F91\u5668\u89C6\u56FE\u5DF2\u83B7\u53D6\uFF08\u91CD\u8BD5\uFF09");
-              createDiffControlBar({
-                onPrev: () => window.diffAPI && window.diffAPI.prev(),
-                onNext: () => window.diffAPI && window.diffAPI.next(),
-                onJumpNextFile: () => jumpToNextFileWithSuggestions(),
-                onRejectAll: () => window.diffAPI && window.diffAPI.rejectAll(),
-                onAcceptAll: () => window.diffAPI && window.diffAPI.acceptAll()
-              });
-              setupDiffAPI();
-              startFileChangeListener();
-            }
-          }, 2e3);
-        }
-      }, 500);
+      tryCaptureCMAndRegisterExtension();
+      const view = tryGetEditorView();
+      if (view && diffCodeMirror) {
+        clearInterval(pollInit);
+        completeDiffSetup(view);
+        debug("[DiffAPI] Diff \u7CFB\u7EDF\u521D\u59CB\u5316\u5B8C\u6210\uFF08\u9996\u6B21\u7ACB\u5373\u5C1D\u8BD5\uFF09");
+      }
     }, 100);
   }
 

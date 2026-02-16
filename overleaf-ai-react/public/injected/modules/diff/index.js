@@ -177,7 +177,51 @@ function startFileChangeListener() {
 }
 
 /**
+ * 尝试获取编辑器视图
+ */
+function tryGetEditorView() {
+  try {
+    const store = window.overleaf && window.overleaf.unstable && window.overleaf.unstable.store;
+    const view = (store && typeof store.get === 'function' && store.get('editor.view')) ||
+                 (document.querySelector('.cm-content') && document.querySelector('.cm-content').cmView && document.querySelector('.cm-content').cmView.view);
+    return view || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 完成 Diff 系统设置（获取到 view 之后）
+ */
+function completeDiffSetup(view) {
+  setDiffCurrentView(view);
+  debug('[DiffAPI] 编辑器视图已获取');
+  
+  createDiffControlBar({
+    onPrev: () => window.diffAPI && window.diffAPI.prev(),
+    onNext: () => window.diffAPI && window.diffAPI.next(),
+    onJumpNextFile: () => jumpToNextFileWithSuggestions(),
+    onRejectAll: () => window.diffAPI && window.diffAPI.rejectAll(),
+    onAcceptAll: () => window.diffAPI && window.diffAPI.acceptAll()
+  });
+  
+  setupDiffAPI();
+  startFileChangeListener();
+}
+
+/**
+ * 尝试捕获 CodeMirror 并注册扩展
+ * 通过分发 editor:extension-loaded 事件触发 Overleaf 响应
+ */
+function tryCaptureCMAndRegisterExtension() {
+  if (diffCodeMirror) return true; // 已经捕获过了
+  window.dispatchEvent(new CustomEvent('editor:extension-loaded'));
+  return !!diffCodeMirror;
+}
+
+/**
  * 初始化 Diff 系统
+ * 使用轮询重试机制，避免因页面加载时序导致的竞态条件
  */
 export function initDiffSystem() {
   debug('[OverleafBridge] Initializing Diff System...');
@@ -185,7 +229,7 @@ export function initDiffSystem() {
   injectDiffStyles();
   initDiffMessageListeners();
   
-  // 监听扩展加载
+  // 监听扩展加载（只需注册一次，Overleaf 会在响应 editor:extension-loaded 时触发）
   window.addEventListener('UNSTABLE_editor:extensions', function(evt) {
     const detail = evt.detail;
     const CM = detail.CodeMirror;
@@ -198,51 +242,40 @@ export function initDiffSystem() {
     debug('[DiffAPI] Diff 建议扩展已注册');
   });
   
-  // 触发加载
-  setTimeout(() => {
-    window.dispatchEvent(new CustomEvent('editor:extension-loaded'));
+  // 轮询初始化：每 500ms 检查一次，最多重试 60 次（30 秒）
+  let attempts = 0;
+  const MAX_ATTEMPTS = 60;
+  const POLL_INTERVAL = 500;
+  
+  const pollInit = setInterval(() => {
+    attempts++;
     
-    setTimeout(() => {
-      const store = window.overleaf && window.overleaf.unstable && window.overleaf.unstable.store;
-      const view = (store && store.get('editor.view')) ||
-                   (document.querySelector('.cm-content') && document.querySelector('.cm-content').cmView && document.querySelector('.cm-content').cmView.view);
-      
-      setDiffCurrentView(view);
-      
-      if (view) {
-        debug('[DiffAPI] 编辑器视图已获取');
-        
-        createDiffControlBar({
-          onPrev: () => window.diffAPI && window.diffAPI.prev(),
-          onNext: () => window.diffAPI && window.diffAPI.next(),
-          onJumpNextFile: () => jumpToNextFileWithSuggestions(),
-          onRejectAll: () => window.diffAPI && window.diffAPI.rejectAll(),
-          onAcceptAll: () => window.diffAPI && window.diffAPI.acceptAll()
-        });
-        
-        setupDiffAPI();
-        startFileChangeListener();
-      } else {
-        warn('[DiffAPI] 无法获取编辑器视图，稍后重试');
-        // 简单重试逻辑
-        setTimeout(() => {
-           const retryView = (window.overleaf?.unstable?.store?.get('editor.view')) || 
-                             (document.querySelector('.cm-content')?.cmView?.view);
-           if (retryView) {
-             setDiffCurrentView(retryView);
-             debug('[DiffAPI] 编辑器视图已获取（重试）');
-             createDiffControlBar({
-                onPrev: () => window.diffAPI && window.diffAPI.prev(),
-                onNext: () => window.diffAPI && window.diffAPI.next(),
-                onJumpNextFile: () => jumpToNextFileWithSuggestions(),
-                onRejectAll: () => window.diffAPI && window.diffAPI.rejectAll(),
-                onAcceptAll: () => window.diffAPI && window.diffAPI.acceptAll()
-             });
-             setupDiffAPI();
-             startFileChangeListener();
-           }
-        }, 2000);
-      }
-    }, 500);
+    // 第一步：确保 CodeMirror 模块已捕获
+    tryCaptureCMAndRegisterExtension();
+    
+    // 第二步：尝试获取编辑器视图
+    const view = tryGetEditorView();
+    
+    if (view && diffCodeMirror) {
+      // 两者都就绪，完成初始化
+      clearInterval(pollInit);
+      completeDiffSetup(view);
+      debug('[DiffAPI] Diff 系统初始化完成（第 ' + attempts + ' 次尝试）');
+    } else if (attempts >= MAX_ATTEMPTS) {
+      clearInterval(pollInit);
+      warn('[DiffAPI] Diff 系统初始化超时（' + MAX_ATTEMPTS + ' 次尝试）',
+           'view:', !!view, 'CM:', !!diffCodeMirror);
+    }
+  }, POLL_INTERVAL);
+  
+  // 立即尝试一次（不等第一个 500ms）
+  setTimeout(() => {
+    tryCaptureCMAndRegisterExtension();
+    const view = tryGetEditorView();
+    if (view && diffCodeMirror) {
+      clearInterval(pollInit);
+      completeDiffSetup(view);
+      debug('[DiffAPI] Diff 系统初始化完成（首次立即尝试）');
+    }
   }, 100);
 }
