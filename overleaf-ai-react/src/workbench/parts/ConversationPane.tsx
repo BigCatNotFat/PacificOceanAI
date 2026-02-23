@@ -196,7 +196,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   const [availableModels, setAvailableModels] = useState<AIModelConfig[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [thinkingStates, setThinkingStates] = useState<Record<string, boolean>>({});
-  const [chatMode, setChatMode] = useState<'agent' | 'chat' | 'normal' | 'plan'>('plan');
+  const [chatMode, setChatMode] = useState<'agent' | 'chat' | 'normal'>('agent');
   const [hasApiKey, setHasApiKey] = useState<boolean>(false);
   const [isCheckingApiKey, setIsCheckingApiKey] = useState<boolean>(true);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -921,15 +921,14 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                 className="ai-mode-select-inline"
                 onClick={() => setIsModeMenuOpen(!isModeMenuOpen)}
               >
-                {chatMode === 'plan' ? 'Agent' : chatMode === 'chat' ? 'Chat' : chatMode === 'normal' ? 'Normal' : 'Agent'}
+                {chatMode === 'agent' ? 'Agent' : chatMode === 'chat' ? 'Chat' : 'Normal'}
               </button>
               {isModeMenuOpen && (
                 <div className="ai-inline-dropdown">
-                  {/* 原 Plan 模式现改名为 Agent 模式 */}
                   <button
                     type="button"
-                    className={`ai-inline-dropdown-item ${chatMode === 'plan' ? 'active' : ''}`}
-                    onClick={() => { setChatMode('plan'); setIsModeMenuOpen(false); }}
+                    className={`ai-inline-dropdown-item ${chatMode === 'agent' ? 'active' : ''}`}
+                    onClick={() => { setChatMode('agent'); setIsModeMenuOpen(false); }}
                   >
                     Agent
                   </button>
