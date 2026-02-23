@@ -3,7 +3,7 @@ import { defineManifest } from '@crxjs/vite-plugin';
 export default defineManifest({
   manifest_version: 3,
   name: 'PacificOceanAI',
-  version: '2.0.1',
+  version: '2.0.2',
   description: 'PacificOceanAI - AI Assistant for Overleaf LaTeX Editor',
   permissions: ['storage'],
   host_permissions: [

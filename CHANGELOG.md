@@ -1,5 +1,15 @@
 # PacificOceanAI 版本发布记录
 
+## v2.0.2 (2026-02-23)
+
+### 变更内容
+- **Bug 修复**：修复选区 Tooltip 模型列表与侧边栏模型列表不同步的问题
+  - 根因：Tooltip 使用硬编码的 `ModelRegistryService` 静态模型注册表，而侧边栏使用 `ConfigurationService` 中用户实际配置和启用的模型
+  - 修改 `useModelListSync` hook，改为从 `ConfigurationService` 读取用户实际启用的模型列表
+  - 新增配置变化监听，模型配置变更时自动实时同步到 Tooltip
+
+---
+
 ## v2.0.1 (2026-02-23)
 
 ### 变更内容
