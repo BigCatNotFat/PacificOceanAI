@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-02-23T08:26:49.357Z
+ * 构建时间: 2026-02-24T13:11:14.278Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */
@@ -453,6 +453,350 @@
     };
   }
 
+  // public/injected/modules/core/reactFiber.js
+  function getFiberRoot() {
+    const root = document.getElementById("ide-root");
+    if (!root) return null;
+    let fiber = null;
+    for (const key of Object.keys(root)) {
+      if (key.startsWith("__reactContainer") || key.startsWith("__reactFiber")) {
+        fiber = root[key];
+        break;
+      }
+    }
+    if (!fiber) {
+      const child = root.querySelector("*");
+      if (child) {
+        for (const key of Object.keys(child)) {
+          if (key.startsWith("__reactFiber")) {
+            fiber = child[key];
+            while (fiber.return) fiber = fiber.return;
+            break;
+          }
+        }
+      }
+    }
+    return fiber;
+  }
+  function findProjectState(fiber) {
+    if (!fiber) return null;
+    function search(node) {
+      if (!node) return null;
+      let hook = node.memoizedState;
+      while (hook) {
+        for (const v of [hook.memoizedState, hook.queue?.lastRenderedState]) {
+          if (v && typeof v === "object" && !Array.isArray(v) && v._id && v.compiler) {
+            return v;
+          }
+        }
+        hook = hook.next;
+      }
+      let c = node.child;
+      while (c) {
+        const r = search(c);
+        if (r) return r;
+        c = c.sibling;
+      }
+      return null;
+    }
+    return search(fiber);
+  }
+  function getCsrfToken() {
+    const meta = document.querySelector('meta[name="ol-csrfToken"]');
+    return meta ? meta.getAttribute("content") : null;
+  }
+  function getJsonHeaders() {
+    return {
+      "Content-Type": "application/json",
+      "X-CSRF-Token": getCsrfToken()
+    };
+  }
+
+  // public/injected/modules/methodHandlers/fileOps.js
+  function createFileOpsHandlers(getProjectId2) {
+    return {
+      getRootFolderId: function() {
+        const proj = findProjectState(getFiberRoot());
+        return proj?.rootFolder?.[0]?._id || null;
+      },
+      listFiles: function() {
+        const proj = findProjectState(getFiberRoot());
+        if (!proj?.rootFolder) {
+          throw new Error("\u672A\u627E\u5230\u6587\u4EF6\u6811");
+        }
+        const result = [];
+        function walk(folder, path) {
+          const currentPath = path ? path + "/" + folder.name : folder.name;
+          result.push({ type: "folder", name: folder.name, path: currentPath, id: folder._id });
+          (folder.docs || []).forEach((d) => {
+            result.push({ type: "doc", name: d.name, path: currentPath + "/" + d.name, id: d._id });
+          });
+          (folder.fileRefs || []).forEach((f) => {
+            result.push({ type: "file", name: f.name, path: currentPath + "/" + f.name, id: f._id });
+          });
+          (folder.folders || []).forEach((f) => walk(f, currentPath));
+        }
+        proj.rootFolder.forEach((f) => walk(f, ""));
+        return result;
+      },
+      newDoc: async function(name, parentFolderId) {
+        const projectId = getProjectId2();
+        if (!parentFolderId) {
+          parentFolderId = findProjectState(getFiberRoot())?.rootFolder?.[0]?._id;
+        }
+        if (!parentFolderId) throw new Error("\u65E0\u6CD5\u83B7\u53D6\u7236\u6587\u4EF6\u5939 ID");
+        const res = await fetch(`/project/${projectId}/doc`, {
+          method: "POST",
+          headers: getJsonHeaders(),
+          body: JSON.stringify({ name, parent_folder_id: parentFolderId })
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error("\u521B\u5EFA\u6587\u6863\u5931\u8D25: " + res.status + " " + text);
+        }
+        const doc = await res.json();
+        debug("[FileOps] \u5DF2\u521B\u5EFA\u6587\u6863:", name, "id:", doc._id);
+        return doc;
+      },
+      newFolder: async function(name, parentFolderId) {
+        const projectId = getProjectId2();
+        if (!parentFolderId) {
+          parentFolderId = findProjectState(getFiberRoot())?.rootFolder?.[0]?._id;
+        }
+        if (!parentFolderId) throw new Error("\u65E0\u6CD5\u83B7\u53D6\u7236\u6587\u4EF6\u5939 ID");
+        const res = await fetch(`/project/${projectId}/folder`, {
+          method: "POST",
+          headers: getJsonHeaders(),
+          body: JSON.stringify({ name, parent_folder_id: parentFolderId })
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error("\u521B\u5EFA\u6587\u4EF6\u5939\u5931\u8D25: " + res.status + " " + text);
+        }
+        const folder = await res.json();
+        debug("[FileOps] \u5DF2\u521B\u5EFA\u6587\u4EF6\u5939:", name, "id:", folder._id);
+        return folder;
+      },
+      deleteEntity: async function(entityType, entityId) {
+        if (!["doc", "file", "folder"].includes(entityType)) {
+          throw new Error("entityType \u5FC5\u987B\u662F doc / file / folder");
+        }
+        const projectId = getProjectId2();
+        const res = await fetch(`/project/${projectId}/${entityType}/${entityId}`, {
+          method: "DELETE",
+          headers: { "X-CSRF-Token": getCsrfToken() }
+        });
+        if (!res.ok) {
+          throw new Error("\u5220\u9664\u5931\u8D25: " + res.status);
+        }
+        debug("[FileOps] \u5DF2\u5220\u9664:", entityType, entityId);
+        return { success: true };
+      },
+      renameEntity: async function(entityType, entityId, newName) {
+        if (!["doc", "file", "folder"].includes(entityType)) {
+          throw new Error("entityType \u5FC5\u987B\u662F doc / file / folder");
+        }
+        const projectId = getProjectId2();
+        const res = await fetch(`/project/${projectId}/${entityType}/${entityId}/rename`, {
+          method: "POST",
+          headers: getJsonHeaders(),
+          body: JSON.stringify({ name: newName })
+        });
+        if (!res.ok) {
+          throw new Error("\u91CD\u547D\u540D\u5931\u8D25: " + res.status);
+        }
+        debug("[FileOps] \u5DF2\u91CD\u547D\u540D:", entityType, entityId, "->", newName);
+        return { success: true, newName };
+      },
+      moveEntity: async function(entityType, entityId, targetFolderId) {
+        if (!["doc", "file", "folder"].includes(entityType)) {
+          throw new Error("entityType \u5FC5\u987B\u662F doc / file / folder");
+        }
+        const projectId = getProjectId2();
+        const res = await fetch(`/project/${projectId}/${entityType}/${entityId}/move`, {
+          method: "POST",
+          headers: getJsonHeaders(),
+          body: JSON.stringify({ folder_id: targetFolderId })
+        });
+        if (!res.ok) {
+          throw new Error("\u79FB\u52A8\u5931\u8D25: " + res.status);
+        }
+        debug("[FileOps] \u5DF2\u79FB\u52A8:", entityType, entityId, "->", targetFolderId);
+        return { success: true };
+      },
+      uploadFile: async function(base64Data, fileName, folderId) {
+        const projectId = getProjectId2();
+        if (!folderId) {
+          folderId = findProjectState(getFiberRoot())?.rootFolder?.[0]?._id;
+        }
+        if (!folderId) throw new Error("\u65E0\u6CD5\u83B7\u53D6\u76EE\u6807\u6587\u4EF6\u5939 ID");
+        const binaryStr = atob(base64Data);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        const blob = new Blob([bytes]);
+        const file = new File([blob], fileName);
+        const formData = new FormData();
+        formData.append("qqfile", file);
+        formData.append("name", fileName);
+        const res = await fetch(`/Project/${projectId}/upload?folder_id=${folderId}`, {
+          method: "POST",
+          headers: { "X-CSRF-Token": getCsrfToken() },
+          body: formData
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error("\u4E0A\u4F20\u5931\u8D25: " + res.status + " " + text);
+        }
+        const data = await res.json();
+        debug("[FileOps] \u5DF2\u4E0A\u4F20:", fileName);
+        return data;
+      }
+    };
+  }
+
+  // public/injected/modules/methodHandlers/compile.js
+  var COMPILERS = ["pdflatex", "xelatex", "lualatex", "latex"];
+  function parseLatexErrors(logText) {
+    const errors = [];
+    const warnings = [];
+    const errorRegex = /^! (.+)$/gm;
+    let m;
+    while ((m = errorRegex.exec(logText)) !== null) {
+      const message = m[1];
+      let line = null;
+      const afterMatch = logText.substring(m.index + m[0].length, m.index + m[0].length + 200);
+      const lineMatch = afterMatch.match(/l\.(\d+)/);
+      if (lineMatch) line = parseInt(lineMatch[1], 10);
+      errors.push({ message, line });
+    }
+    const warnRegex = /^(?:LaTeX|Package|Class) .*Warning[:\s](.+?)$/gm;
+    while ((m = warnRegex.exec(logText)) !== null) {
+      warnings.push({ message: m[1].trim() });
+    }
+    return { errors, warnings };
+  }
+  async function fetchCompileLog(outputFiles) {
+    const logFile = outputFiles.find((f) => f.path === "output.log");
+    if (!logFile || !logFile.url) return null;
+    try {
+      const res = await fetch(logFile.url);
+      if (!res.ok) return null;
+      return await res.text();
+    } catch (e) {
+      warn("[Compile] \u83B7\u53D6\u7F16\u8BD1\u65E5\u5FD7\u5931\u8D25:", e);
+      return null;
+    }
+  }
+  function createCompileHandlers(getProjectId2) {
+    return {
+      getCompiler: function() {
+        const proj = findProjectState(getFiberRoot());
+        return proj?.compiler || null;
+      },
+      listCompilers: function() {
+        const current = findProjectState(getFiberRoot())?.compiler || null;
+        return COMPILERS.map((name, i) => ({
+          index: i + 1,
+          name,
+          current: name === current
+        }));
+      },
+      switchCompiler: async function(compiler) {
+        if (!COMPILERS.includes(compiler)) {
+          throw new Error("\u4E0D\u652F\u6301\u7684\u7F16\u8BD1\u5668: " + compiler + "\uFF0C\u53EF\u9009: " + COMPILERS.join(", "));
+        }
+        const current = findProjectState(getFiberRoot())?.compiler;
+        if (compiler === current) {
+          return { success: true, compiler, changed: false };
+        }
+        const projectId = getProjectId2();
+        const res = await fetch(`/project/${projectId}/settings`, {
+          method: "POST",
+          headers: getJsonHeaders(),
+          body: JSON.stringify({ compiler })
+        });
+        if (!res.ok) {
+          throw new Error("\u5207\u6362\u7F16\u8BD1\u5668\u5931\u8D25: " + res.status);
+        }
+        debug("[Compile] \u5DF2\u5207\u6362\u7F16\u8BD1\u5668:", current, "->", compiler);
+        return { success: true, compiler, changed: true, previous: current };
+      },
+      compile: async function(options) {
+        const projectId = getProjectId2();
+        const opts = options || {};
+        const body = {
+          check: "silent",
+          draft: !!opts.draft,
+          incrementalCompilesEnabled: true
+        };
+        if (opts.rootDocId) {
+          body.rootDoc_id = opts.rootDocId;
+        }
+        const res = await fetch(`/project/${projectId}/compile`, {
+          method: "POST",
+          headers: getJsonHeaders(),
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+          throw new Error("\u7F16\u8BD1\u8BF7\u6C42\u5931\u8D25: " + res.status);
+        }
+        const data = await res.json();
+        debug("[Compile] \u7F16\u8BD1\u5B8C\u6210, status:", data.status);
+        const result = {
+          status: data.status,
+          compileGroup: data.compileGroup || null,
+          outputFiles: (data.outputFiles || []).map((f) => ({
+            path: f.path,
+            url: f.url,
+            type: f.type,
+            build: f.build
+          })),
+          errors: [],
+          warnings: [],
+          logSummary: null
+        };
+        if (data.outputFiles && data.outputFiles.length > 0) {
+          const logText = await fetchCompileLog(data.outputFiles);
+          if (logText) {
+            const parsed = parseLatexErrors(logText);
+            result.errors = parsed.errors;
+            result.warnings = parsed.warnings;
+            const lines = logText.split("\n");
+            result.logSummary = lines.slice(-30).join("\n");
+          }
+        }
+        window.dispatchEvent(new CustomEvent("pdf:recompile"));
+        return result;
+      },
+      stopCompile: async function() {
+        const projectId = getProjectId2();
+        const res = await fetch(`/project/${projectId}/compile/stop`, {
+          method: "POST",
+          headers: getJsonHeaders()
+        });
+        if (!res.ok) {
+          throw new Error("\u505C\u6B62\u7F16\u8BD1\u5931\u8D25: " + res.status);
+        }
+        debug("[Compile] \u5DF2\u505C\u6B62\u7F16\u8BD1");
+        return { success: true };
+      },
+      clearCache: async function() {
+        const projectId = getProjectId2();
+        const res = await fetch(`/project/${projectId}/output`, {
+          method: "DELETE",
+          headers: { "X-CSRF-Token": getCsrfToken() }
+        });
+        if (!res.ok) {
+          throw new Error("\u6E05\u9664\u7F13\u5B58\u5931\u8D25: " + res.status);
+        }
+        debug("[Compile] \u5DF2\u6E05\u9664\u7F16\u8BD1\u7F13\u5B58");
+        return { success: true };
+      }
+    };
+  }
+
   // public/injected/modules/methodHandlers/project.js
   function createProjectHandlers(searchInternal2, getProjectId2, getAllDocsWithContent2) {
     return {
@@ -503,6 +847,8 @@
     Object.assign(methodHandlers3, createDocumentHandlers(getEditorView2));
     Object.assign(methodHandlers3, createEditorHandlers(getEditorView2));
     Object.assign(methodHandlers3, createFileHandlers(getEditorView2, methodHandlers3));
+    Object.assign(methodHandlers3, createFileOpsHandlers(getProjectId2));
+    Object.assign(methodHandlers3, createCompileHandlers(getProjectId2));
     Object.assign(methodHandlers3, createProjectHandlers(
       searchInternal2,
       getProjectId2,

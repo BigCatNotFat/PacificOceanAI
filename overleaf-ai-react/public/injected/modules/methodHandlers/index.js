@@ -6,6 +6,8 @@
 import { createDocumentHandlers } from './document.js';
 import { createEditorHandlers } from './editor.js';
 import { createFileHandlers } from './file.js';
+import { createFileOpsHandlers } from './fileOps.js';
+import { createCompileHandlers } from './compile.js';
 import { createProjectHandlers } from './project.js';
 
 // 创建完整的方法处理器对象
@@ -14,7 +16,7 @@ export function createMethodHandlers(dependencies) {
     getEditorView, 
     searchInternal, 
     getProjectId, 
-    getAllDocsWithContent 
+    getAllDocsWithContent,
   } = dependencies;
   
   // 创建一个空对象来存储所有方法
@@ -28,6 +30,12 @@ export function createMethodHandlers(dependencies) {
   
   // 添加文件相关方法
   Object.assign(methodHandlers, createFileHandlers(getEditorView, methodHandlers));
+  
+  // 添加文件操作方法（增删改移）
+  Object.assign(methodHandlers, createFileOpsHandlers(getProjectId));
+  
+  // 添加编译相关方法
+  Object.assign(methodHandlers, createCompileHandlers(getProjectId));
   
   // 添加项目相关方法
   Object.assign(methodHandlers, createProjectHandlers(
