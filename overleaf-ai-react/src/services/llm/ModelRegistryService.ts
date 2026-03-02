@@ -352,6 +352,30 @@ export class ModelRegistryService implements IModelRegistryService {
         maxTokens: 32768  // 增加以支持完整的思考过程
       }
     });
+
+    this.registerModel({
+      id: 'gemini-3.1-pro-preview',
+      name: 'Gemini 3.1 Pro Preview',
+      provider: 'gemini',
+      description: 'Google 最新旗舰模型，1M 上下文，推理性能大幅提升',
+      capabilities: {
+        supportsTools: true,
+        supportsReasoning: true,
+        maxContextTokens: 1048576,
+        maxOutputTokens: 65536,
+        supportsVision: true,
+        supportsSystemPrompt: true,
+        supportsStreaming: true
+      },
+      defaultConfig: {
+        modelId: 'gemini-3.1-pro-preview',
+        temperature: 1.0,
+        topP: 0.95,
+        maxTokens: 32768
+      },
+      knowledgeCutoff: '2025-01'
+    });
+
     // DeepSeek 系列
     this.registerModel({
       id: 'deepseek-chat',

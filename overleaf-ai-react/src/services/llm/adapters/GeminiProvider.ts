@@ -146,11 +146,43 @@ export class GeminiProvider extends BaseLLMProvider {
 
     // 处理工具调用
     if (message?.tool_calls && message.tool_calls.length > 0) {
-      result.toolCalls = message.tool_calls.map((tc: any) => ({
-        id: tc.id,
-        name: tc.function?.name || '',
-        arguments: tc.function?.arguments ? JSON.parse(tc.function.arguments) : {}
-      }));
+      // 🔧 非流式工具调用调试
+      const _debugTC =
+        typeof localStorage !== 'undefined' &&
+        localStorage.getItem('overleaf_ai_debug_tool_calls') === '1';
+      if (_debugTC) {
+        console.group('%c[ToolCall Debug] 📋 非流式响应 - 工具调用解析', 'color:#2196F3;font-weight:bold');
+        for (const tc of message.tool_calls) {
+          console.groupCollapsed(`  🔧 ${tc.function?.name || '(无名称)'} (id=${tc.id})`);
+          console.log('原始 arguments 字符串:', tc.function?.arguments);
+          try {
+            const parsed = tc.function?.arguments ? JSON.parse(tc.function.arguments) : {};
+            console.log('解析结果:', parsed);
+          } catch (e) {
+            console.error('❌ JSON 解析失败:', (e as Error).message);
+          }
+          console.groupEnd();
+        }
+        console.groupEnd();
+      }
+
+      result.toolCalls = message.tool_calls.map((tc: any) => {
+        let parsedArgs: Record<string, any> = {};
+        if (tc.function?.arguments) {
+          try {
+            parsedArgs = JSON.parse(tc.function.arguments);
+          } catch {
+            if (_debugTC) {
+              console.error(`[ToolCall Debug] ❌ 非流式 JSON.parse 失败: ${tc.function?.name}`, tc.function.arguments);
+            }
+          }
+        }
+        return {
+          id: tc.id,
+          name: tc.function?.name || '',
+          arguments: parsedArgs
+        };
+      });
 
       // Gemini 3: 非流式也要缓存 tool_call.extra_content（尤其 thought_signature），供下一轮回传
       if (conversationId) {
@@ -216,6 +248,24 @@ export class GeminiProvider extends BaseLLMProvider {
       const toolChoice = (config as any).tool_choice;
       if (toolChoice) {
         payload.tool_choice = toolChoice;
+      }
+
+      // 🔧 工具调用调试：打印发送给 API 的工具定义
+      const _debugTC =
+        typeof localStorage !== 'undefined' &&
+        localStorage.getItem('overleaf_ai_debug_tool_calls') === '1';
+      if (_debugTC) {
+        console.group('%c[ToolCall Debug] 📤 发送给 Gemini 的工具定义', 'color:#2196F3;font-weight:bold');
+        console.log(`工具数量: ${tools.length}`);
+        for (const t of tools) {
+          const fn = t.function || t;
+          console.groupCollapsed(`  🔧 ${fn.name}`);
+          console.log('描述:', fn.description);
+          console.log('参数 Schema:', JSON.stringify(fn.parameters, null, 2));
+          console.groupEnd();
+        }
+        console.log('tool_choice:', toolChoice || 'auto');
+        console.groupEnd();
       }
     }
 
@@ -292,6 +342,10 @@ export class GeminiProvider extends BaseLLMProvider {
       isAgentDebugEnabled() &&
       typeof localStorage !== 'undefined' &&
       localStorage.getItem('overleaf_ai_debug_gemini_stream_text') === '1';
+    // 🔧 工具调用参数调试：localStorage.setItem('overleaf_ai_debug_tool_calls','1')
+    const debugToolCalls =
+      typeof localStorage !== 'undefined' &&
+      localStorage.getItem('overleaf_ai_debug_tool_calls') === '1';
     let debugDeltaCount = 0;
     // 自动诊断：缓存少量原始 SSE data，便于定位“开头缺字/思考缺失”
     const rawSseSamples: Array<{
@@ -462,6 +516,18 @@ export class GeminiProvider extends BaseLLMProvider {
                 const name = tcDelta.function?.name;
                 const argsText = tcDelta.function?.arguments || '';
 
+                // 🔧 记录每个 tool_call chunk
+                if (debugToolCalls) {
+                  console.log(
+                    `%c[ToolCall Debug] 📥 chunk idx=${index}` +
+                    (apiId ? ` id=${apiId}` : '') +
+                    (name ? ` name=${name}` : '') +
+                    ` argsChunk(${argsText.length}字符)`,
+                    'color:#FF9800',
+                    argsText.length <= 200 ? argsText : argsText.slice(0, 200) + '...'
+                  );
+                }
+
                 let existing = toolCallsMap.get(stableKey);
                 if (!existing) {
                   existing = { id: apiId || stableKey, name: name || '', args: '' };
@@ -605,21 +671,84 @@ export class GeminiProvider extends BaseLLMProvider {
       }
 
       if (toolCallsMap.size > 0) {
+        // 🔧 工具调用调试：打印累积的原始参数
+        if (debugToolCalls) {
+          console.group('%c[ToolCall Debug] 🔍 流式累积完成，开始解析工具调用', 'color:#4CAF50;font-weight:bold');
+          console.log(`共 ${toolCallsMap.size} 个工具调用`);
+          for (const [key, tc] of toolCallsMap) {
+            console.groupCollapsed(`  ${key}: ${tc.name} (id=${tc.id})`);
+            console.log('累积的原始参数字符串 (args):', tc.args);
+            console.log('参数字符串长度:', tc.args.length);
+            console.groupEnd();
+          }
+          console.groupEnd();
+        }
+
         result.toolCalls = Array.from(toolCallsMap.values())
           .filter(tc => typeof tc.name === 'string' && tc.name.trim().length > 0)
           .map(tc => {
             let parsedArgs: Record<string, any> = {};
+            let parseMethod = 'none';
             if (tc.args) {
               try {
                 parsedArgs = JSON.parse(tc.args);
-              } catch {
+                parseMethod = 'direct';
+              } catch (e1) {
+                // 🔧 JSON 解析失败，这是参数出错的高危点！
+                if (debugToolCalls) {
+                  console.warn(
+                    `%c[ToolCall Debug] ⚠️ JSON.parse 失败! 工具: ${tc.name}`,
+                    'color:#F44336;font-weight:bold'
+                  );
+                  console.warn('原始字符串:', tc.args);
+                  console.warn('错误:', (e1 as Error).message);
+                  console.warn('尝试 fallback: JSON.parse(args + "}")...');
+                }
                 try {
                   parsedArgs = JSON.parse(tc.args + '}');
-                } catch {
+                  parseMethod = 'fallback_append_brace';
+                  if (debugToolCalls) {
+                    console.warn(
+                      `%c[ToolCall Debug] ⚠️ Fallback 成功，但参数可能不完整!`,
+                      'color:#FF9800;font-weight:bold'
+                    );
+                    console.warn('Fallback 解析结果:', parsedArgs);
+                  }
+                } catch (e2) {
+                  parseMethod = 'failed';
+                  if (debugToolCalls) {
+                    console.error(
+                      `%c[ToolCall Debug] ❌ 所有解析尝试均失败! 工具: ${tc.name}`,
+                      'color:#F44336;font-weight:bold'
+                    );
+                    console.error('Fallback 错误:', (e2 as Error).message);
+                    console.error('将使用空参数 {} 继续执行');
+                  }
                   parsedArgs = {};
                 }
               }
             }
+
+            // 🔧 打印最终解析结果
+            if (debugToolCalls) {
+              const paramKeys = Object.keys(parsedArgs);
+              const style = parseMethod === 'direct'
+                ? 'color:#4CAF50;font-weight:bold'
+                : parseMethod === 'fallback_append_brace'
+                  ? 'color:#FF9800;font-weight:bold'
+                  : 'color:#F44336;font-weight:bold';
+              console.group(`%c[ToolCall Debug] 📋 ${tc.name} 最终参数 (解析方式: ${parseMethod})`, style);
+              console.log('参数 keys:', paramKeys);
+              for (const key of paramKeys) {
+                const val = parsedArgs[key];
+                const valStr = typeof val === 'string'
+                  ? (val.length > 300 ? val.slice(0, 300) + `...(共${val.length}字符)` : val)
+                  : JSON.stringify(val);
+                console.log(`  ${key}:`, valStr);
+              }
+              console.groupEnd();
+            }
+
             return {
               id: tc.id,
               name: tc.name,

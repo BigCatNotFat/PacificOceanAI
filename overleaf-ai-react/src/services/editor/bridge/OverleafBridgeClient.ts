@@ -20,7 +20,13 @@ export class OverleafBridgeClient {
   private consolePatched = false;
   private readonly defaultTimeout = 10000; // 10秒超时
 
+  private _readyResolve!: () => void;
+  private _readyPromise: Promise<void>;
+
   private constructor() {
+    this._readyPromise = new Promise<void>((resolve) => {
+      this._readyResolve = resolve;
+    });
     // 监听来自注入脚本的响应
     window.addEventListener('message', this.handleMessage.bind(this));
   }
@@ -50,6 +56,7 @@ export class OverleafBridgeClient {
       script.onload = () => {
         logger.debug('[OverleafBridgeClient] Bridge script injected successfully');
         this.injected = true;
+        this._readyResolve();
       };
       script.onerror = (error) => {
         logger.error('[OverleafBridgeClient] Failed to inject bridge script:', error);
@@ -166,9 +173,17 @@ export class OverleafBridgeClient {
   }
 
   /**
-   * 调用注入脚本中的方法
+   * 等待 bridge 脚本注入完成
+   */
+  waitForReady(): Promise<void> {
+    return this._readyPromise;
+  }
+
+  /**
+   * 调用注入脚本中的方法（自动等待 bridge 就绪）
    */
   async call<T = any>(method: string, ...args: any[]): Promise<T> {
+    await this._readyPromise;
     return new Promise<T>((resolve, reject) => {
       const requestId = `bridge-${Date.now()}-${++this.requestIdCounter}`;
 

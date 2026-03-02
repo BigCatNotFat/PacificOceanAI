@@ -77,6 +77,13 @@ export class OverleafEditor {
   }
 
   /**
+   * 等待 bridge 脚本注入完成
+   */
+  waitForReady(): Promise<void> {
+    return this.bridge.waitForReady();
+  }
+
+  /**
    * 获取底层桥接客户端（用于高级用法或扩展）
    */
   getBridge(): OverleafBridgeClient {

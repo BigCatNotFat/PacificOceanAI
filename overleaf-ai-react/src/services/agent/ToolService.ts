@@ -80,8 +80,60 @@ export class ToolService implements IToolService {
       };
     }
 
-    // console.log(`[ToolService] 执行工具: ${name}`, args);
+    // 🔧 工具调用调试
+    const debugToolCalls =
+      typeof localStorage !== 'undefined' &&
+      localStorage.getItem('overleaf_ai_debug_tool_calls') === '1';
+
+    if (debugToolCalls) {
+      const metadata = tool.getMetadata();
+      console.group(`%c[ToolCall Debug] ⚙️ ToolService.executeTool: ${name}`, 'color:#00BCD4;font-weight:bold');
+      console.log('传入参数:', args);
+
+      // 参数验证
+      const isValid = tool.validate(args);
+      if (!isValid) {
+        console.warn(`%c❌ 参数验证失败!`, 'color:#F44336;font-weight:bold');
+        console.warn('required 字段:', metadata.parameters.required);
+        const required = metadata.parameters.required || [];
+        for (const r of required) {
+          if (args?.[r] === undefined || args?.[r] === null) {
+            console.warn(`  缺少: ${r}`);
+          }
+        }
+      } else {
+        console.log('%c✅ 参数验证通过', 'color:#4CAF50');
+      }
+
+      // 检查参数值类型是否与 schema 匹配
+      const properties = metadata.parameters.properties || {};
+      for (const [key, val] of Object.entries(args || {})) {
+        const schemaProp = properties[key] as any;
+        if (schemaProp) {
+          const expectedType = schemaProp.type;
+          const actualType = Array.isArray(val) ? 'array' : typeof val;
+          if (expectedType && actualType !== expectedType) {
+            console.warn(
+              `%c⚠️ 类型不匹配: ${key} 期望 ${expectedType}, 实际 ${actualType}`,
+              'color:#FF9800;font-weight:bold',
+              '值:', val
+            );
+          }
+        }
+      }
+      console.groupEnd();
+    }
+
     const result = await tool.execute(args);
+
+    if (debugToolCalls && !result.success) {
+      console.error(
+        `%c[ToolCall Debug] ❌ 工具执行失败: ${name}`,
+        'color:#F44336;font-weight:bold',
+        '\n错误:', result.error,
+        '\n传入参数:', args
+      );
+    }
 
     // 统计埋点：记录工具执行
     this.telemetryService.trackToolExecution(name, result.success);

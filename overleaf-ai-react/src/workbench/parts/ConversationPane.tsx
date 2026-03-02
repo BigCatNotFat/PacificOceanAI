@@ -196,7 +196,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   const [availableModels, setAvailableModels] = useState<AIModelConfig[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [thinkingStates, setThinkingStates] = useState<Record<string, boolean>>({});
-  const [chatMode, setChatMode] = useState<'agent' | 'chat' | 'normal'>('agent');
+  const [chatMode, setChatMode] = useState<'agent' | 'chat' | 'normal' | 'plan'>('agent');
   const [hasApiKey, setHasApiKey] = useState<boolean>(false);
   const [isCheckingApiKey, setIsCheckingApiKey] = useState<boolean>(true);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -309,10 +309,33 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
     return () => disposable.dispose();
   }, [chatService, conversationId]);
 
-  // 自动滚动到底部
+  // 智能自动滚动：只在用户已在底部附近时才自动滚动
+  const isNearBottomRef = useRef(true);
+  const prevMessageCountRef = useRef(messages.length);
+
   useEffect(() => {
     const chat = chatHistoryRef.current;
-    if (chat) {
+    if (!chat) return;
+
+    const handleScroll = () => {
+      const threshold = 80;
+      isNearBottomRef.current =
+        chat.scrollHeight - chat.scrollTop - chat.clientHeight < threshold;
+    };
+
+    chat.addEventListener('scroll', handleScroll, { passive: true });
+    return () => chat.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const chat = chatHistoryRef.current;
+    if (!chat) return;
+
+    const newCount = messages.length;
+    const isNewMessage = newCount > prevMessageCountRef.current;
+    prevMessageCountRef.current = newCount;
+
+    if (isNewMessage || isNearBottomRef.current) {
       chat.scrollTop = chat.scrollHeight;
     }
   }, [messages]);
@@ -367,7 +390,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
         mode: chatMode,
         modelId: selectedModel,
         contextItems,
-        maxIterations: chatMode === 'agent' ? 100 : 10,
+        maxIterations: chatMode === 'agent' ? 100 : chatMode === 'plan' ? 200 : 10,
         conversationId: convId
       });
     } catch (error) {
@@ -921,7 +944,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                 className="ai-mode-select-inline"
                 onClick={() => setIsModeMenuOpen(!isModeMenuOpen)}
               >
-                {chatMode === 'agent' ? 'Agent' : chatMode === 'chat' ? 'Chat' : 'Normal'}
+                {chatMode === 'agent' ? 'Agent' : chatMode === 'chat' ? 'Chat' : chatMode === 'plan' ? 'Plan' : 'Normal'}
               </button>
               {isModeMenuOpen && (
                 <div className="ai-inline-dropdown">
@@ -945,6 +968,13 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                     onClick={() => { setChatMode('normal'); setIsModeMenuOpen(false); }}
                   >
                     Normal
+                  </button>
+                  <button
+                    type="button"
+                    className={`ai-inline-dropdown-item ${chatMode === 'plan' ? 'active' : ''}`}
+                    onClick={() => { setChatMode('plan'); setIsModeMenuOpen(false); }}
+                  >
+                    Plan
                   </button>
                 </div>
               )}

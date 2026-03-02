@@ -121,6 +121,8 @@ function mapServiceMessageToUI(
   return uiMessages;
 }
 
+const EMPTY_MESSAGES: ChatMessage[] = [];
+
 /**
  * 订阅 ChatService 的消息事件，并转换为 UI 可用的消息列表
  * 
@@ -129,7 +131,7 @@ function mapServiceMessageToUI(
  * @param conversationId - 会话 ID，用于过滤只属于该会话的消息
  * @param initialMessages - 初始消息列表
  */
-export function useChatMessages(conversationId: string, initialMessages: ChatMessage[] = []) {
+export function useChatMessages(conversationId: string, initialMessages: ChatMessage[] = EMPTY_MESSAGES) {
   const chatService = useService<IChatService>(IChatServiceId);
   const { streamingBuffers } = useUIStreamUpdates();
   

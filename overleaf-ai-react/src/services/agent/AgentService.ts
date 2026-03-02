@@ -390,8 +390,33 @@ export class AgentService implements IAgentService {
   ): Promise<boolean> {
     // console.log(`[AgentService] 处理 ${toolCalls.length} 个工具调用`);
 
+    // 🔧 工具调用调试开关
+    const debugToolCalls =
+      typeof localStorage !== 'undefined' &&
+      localStorage.getItem('overleaf_ai_debug_tool_calls') === '1';
+
     for (const toolCall of toolCalls) {
       const { id: toolCallId, name: toolName, arguments: toolArgs } = toolCall;
+
+      // 🔧 打印工具调用请求详情
+      if (debugToolCalls) {
+        console.group(`%c[ToolCall Debug] 🚀 AgentService 准备执行工具: ${toolName}`, 'color:#9C27B0;font-weight:bold');
+        console.log('toolCallId:', toolCallId);
+        console.log('参数类型:', typeof toolArgs);
+        console.log('参数值:', toolArgs);
+        if (toolArgs && typeof toolArgs === 'object') {
+          const keys = Object.keys(toolArgs);
+          console.log('参数 keys:', keys);
+          for (const key of keys) {
+            const val = toolArgs[key];
+            const display = typeof val === 'string'
+              ? (val.length > 200 ? val.slice(0, 200) + `...(${val.length}字符)` : val)
+              : val;
+            console.log(`  📌 ${key} (${typeof val}):`, display);
+          }
+        }
+        console.groupEnd();
+      }
 
       // 获取工具元信息
       const tool = this.toolService.getTool(toolName);
@@ -488,8 +513,36 @@ export class AgentService implements IAgentService {
         return false;
       } else {
         // 不需要审批，直接执行
-        // 注意：LLM Provider 已经在解析响应时发送了 'start' 阶段，这里不需要重复发送
         const messageId = context.messages[context.messages.length - 1]?.id || '';
+
+        // 🔧 执行前：与工具 schema 对比参数
+        if (debugToolCalls && tool) {
+          const schema = tool.parameters;
+          const required = schema?.required || [];
+          const properties = schema?.properties || {};
+          const argKeys = toolArgs ? Object.keys(toolArgs) : [];
+          const missingRequired = required.filter((r: string) => !argKeys.includes(r));
+          const extraKeys = argKeys.filter((k: string) => !Object.keys(properties).includes(k));
+
+          if (missingRequired.length > 0 || extraKeys.length > 0) {
+            console.group(`%c[ToolCall Debug] ⚠️ 参数与 Schema 不匹配: ${toolName}`, 'color:#F44336;font-weight:bold');
+            if (missingRequired.length > 0) {
+              console.warn('❌ 缺少必需参数:', missingRequired);
+            }
+            if (extraKeys.length > 0) {
+              console.warn('⚠️ 多余参数 (schema 中未定义):', extraKeys);
+            }
+            console.log('Schema 定义的参数:', Object.keys(properties));
+            console.log('Schema required:', required);
+            console.log('实际传入的参数:', argKeys);
+            console.groupEnd();
+          } else {
+            console.log(
+              `%c[ToolCall Debug] ✅ ${toolName} 参数与 Schema 匹配`,
+              'color:#4CAF50'
+            );
+          }
+        }
 
         try {
           const result = await this.toolService.executeTool(toolName, toolArgs);

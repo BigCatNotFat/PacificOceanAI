@@ -28,6 +28,7 @@ import { diffSuggestionService } from '../../services/editor/DiffSuggestionServi
 import { API_ENDPOINTS } from '../../base/common/apiConfig';
 import { LiteratureService, ILiteratureServiceId } from '../../services/literature/LiteratureService';
 import type { ILiteratureService } from '../../platform/literature/ILiteratureService';
+import { overleafEditor } from '../../services/editor/OverleafEditor';
 
 const App: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
