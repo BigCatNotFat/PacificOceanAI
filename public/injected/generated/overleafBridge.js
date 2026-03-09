@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-03-09T15:53:56.653Z
+ * 构建时间: 2026-03-09T16:13:13.285Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */
@@ -890,6 +890,51 @@
       return [];
     }
   }
+  async function fetchFileHashes(projectId) {
+    try {
+      const response = await fetch(`/project/${projectId}/latest/history`);
+      if (!response.ok) {
+        throw new Error(`\u83B7\u53D6 history \u5931\u8D25: ${response.status}`);
+      }
+      const data = await response.json();
+      const fileHashes = {};
+      if (data.chunk && data.chunk.history && data.chunk.history.changes) {
+        data.chunk.history.changes.forEach((change) => {
+          if (change.operations) {
+            change.operations.forEach((op) => {
+              if (op.pathname && op.file && op.file.hash) {
+                fileHashes[op.pathname] = op.file.hash;
+              }
+            });
+          }
+        });
+      }
+      if (data.chunk && data.chunk.history && data.chunk.history.snapshot && data.chunk.history.snapshot.files) {
+        const snapshotFiles = data.chunk.history.snapshot.files;
+        for (const [pathname, fileData] of Object.entries(snapshotFiles)) {
+          if (fileData && fileData.hash) {
+            fileHashes[pathname] = fileData.hash;
+          }
+        }
+      }
+      return fileHashes;
+    } catch (error) {
+      console.error("[OverleafBridge] \u83B7\u53D6 history \u5931\u8D25:", error);
+      return {};
+    }
+  }
+  async function fetchBlobContent(projectId, hash) {
+    try {
+      const response = await fetch(`/project/${projectId}/blob/${hash}`);
+      if (!response.ok) {
+        throw new Error(`\u83B7\u53D6 blob \u5931\u8D25: ${response.status}`);
+      }
+      return await response.text();
+    } catch (error) {
+      console.error(`[OverleafBridge] \u83B7\u53D6 blob \u5931\u8D25 (hash: ${hash}):`, error);
+      return null;
+    }
+  }
   async function fetchDocContent(projectId, docId) {
     try {
       const response = await fetch(`/project/${projectId}/doc/${docId}/download`, {
@@ -907,17 +952,46 @@
   function getDomFileIdMap() {
     const map = /* @__PURE__ */ new Map();
     try {
-      const fileItems = document.querySelectorAll("[data-file-id]");
-      fileItems.forEach((item) => {
-        const id = item.getAttribute("data-file-id");
-        if (!id) return;
-        const nameSpan = item.querySelector(".item-name-button span");
-        const name = nameSpan?.textContent?.trim();
+      const treeItems = document.querySelectorAll('li[role="treeitem"]');
+      treeItems.forEach((item) => {
+        const name = item.getAttribute("aria-label");
         if (!name) return;
-        map.set(name, id);
+        const entityDiv = item.querySelector(".entity");
+        const fileId = entityDiv ? entityDiv.getAttribute("data-file-id") : null;
+        if (!fileId) return;
+        map.set(name, fileId);
       });
+      if (map.size === 0) {
+        const fileItems = document.querySelectorAll("[data-file-id]");
+        fileItems.forEach((item) => {
+          const id = item.getAttribute("data-file-id");
+          if (!id) return;
+          const nameSpan = item.querySelector(".item-name-button span");
+          const name = nameSpan?.textContent?.trim();
+          if (!name) return;
+          map.set(name, id);
+        });
+      }
     } catch (error) {
       console.error("[OverleafBridge] \u83B7\u53D6 DOM \u6587\u4EF6 ID \u6620\u5C04\u5931\u8D25:", error);
+    }
+    return map;
+  }
+  function getStoreDocIdMap() {
+    const map = /* @__PURE__ */ new Map();
+    try {
+      const store = window.overleaf?.unstable?.store;
+      if (!store) return map;
+      const docs = store.get("docs");
+      if (!docs) return map;
+      for (const key in docs) {
+        const doc = docs[key];
+        if (doc && doc._id && doc.name) {
+          map.set(doc.name, doc._id);
+        }
+      }
+    } catch (e) {
+      warn("[OverleafBridge] \u83B7\u53D6 Store \u6587\u6863\u6620\u5C04\u5931\u8D25:", e);
     }
     return map;
   }
@@ -930,6 +1004,10 @@
     debug(`[OverleafBridge] \u627E\u5230 ${docs.length} \u4E2A\u53EF\u7F16\u8F91\u6587\u6863`);
     const domIdMap = getDomFileIdMap();
     debug(`[OverleafBridge] DOM \u6587\u4EF6 ID \u6620\u5C04: ${domIdMap.size} \u4E2A`);
+    const storeIdMap = getStoreDocIdMap();
+    debug(`[OverleafBridge] Store \u6587\u4EF6 ID \u6620\u5C04: ${storeIdMap.size} \u4E2A`);
+    let fileHashes = await fetchFileHashes(projectId);
+    debug(`[OverleafBridge] File hash \u6620\u5C04: ${Object.keys(fileHashes).length} \u4E2A`);
     let currentDocPath = null;
     let currentDocContent = null;
     try {
@@ -965,12 +1043,24 @@
               debug(`[OverleafBridge] ${pathname}: \u4ECE DOM \u83B7\u53D6 ID`);
             }
           }
-          if (docId) {
-            return await fetchDocContent(projectId, docId);
-          } else {
-            warn(`[OverleafBridge] \u672A\u627E\u5230\u6587\u6863 ID: ${pathname}`);
-            return null;
+          if (!docId && filename) {
+            docId = storeIdMap.get(filename);
+            if (docId) {
+              debug(`[OverleafBridge] ${pathname}: \u4ECE Store \u83B7\u53D6 ID`);
+            }
           }
+          if (docId) {
+            const content = await fetchDocContent(projectId, docId);
+            if (content !== null) return content;
+            warn(`[OverleafBridge] ${pathname}: doc download API \u5931\u8D25\uFF0C\u5C1D\u8BD5 blob \u540E\u5907`);
+          }
+          const hash = fileHashes[pathname];
+          if (hash) {
+            debug(`[OverleafBridge] ${pathname}: \u4F7F\u7528 blob \u540E\u5907 (hash: ${hash.substring(0, 8)}...)`);
+            return await fetchBlobContent(projectId, hash);
+          }
+          warn(`[OverleafBridge] ${pathname}: \u6240\u6709\u83B7\u53D6\u65B9\u5F0F\u5747\u5931\u8D25`);
+          return null;
         })
       );
       for (let j = 0; j < batch.length; j++) {
