@@ -1,0 +1,2281 @@
+/* ==================== 文献管理面板样式 ==================== */
+
+/* 面板容器 */
+.literature-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--bg-primary);
+  overflow: visible;
+  position: relative;
+  padding-bottom: 8px;  /* 确保底部内容不被遮挡 */
+}
+
+/* 头部 */
+.literature-header {
+  height: 44px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(180deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+  border-bottom: 1px solid var(--border-secondary);
+  flex-shrink: 0;
+}
+
+.literature-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.literature-header-icon {
+  font-size: 18px;
+  color: var(--accent-primary);
+}
+
+.literature-header-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.literature-count {
+  font-size: 11px;
+  padding: 2px 8px;
+  background-color: var(--bg-tertiary);
+  border-radius: 10px;
+  color: var(--text-secondary);
+}
+
+.literature-close-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.literature-close-btn:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--error);
+}
+
+/* 文献列表区域 */
+.literature-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  background-color: var(--bg-secondary);
+}
+
+/* 加载状态 */
+.literature-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-secondary);
+}
+
+.literature-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border-primary);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: literature-spin 0.8s linear infinite;
+  margin-bottom: 12px;
+}
+
+@keyframes literature-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 错误状态 */
+.literature-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--error);
+  text-align: center;
+  padding: 16px;
+}
+
+.literature-error .material-symbols {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.literature-error button {
+  margin-top: 12px;
+  padding: 8px 16px;
+  background: var(--accent-primary);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.literature-error button:hover {
+  background: var(--accent-hover);
+}
+
+/* 空状态 */
+.literature-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.literature-empty .material-symbols {
+  font-size: 48px;
+  opacity: 0.3;
+  margin-bottom: 12px;
+}
+
+.literature-empty p {
+  margin: 4px 0;
+}
+
+.literature-empty-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* 文献条目 */
+.literature-item {
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: visible;  /* 改为 visible 以支持标签弹窗显示 */
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;  /* 确保子元素定位正确 */
+}
+
+.literature-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 119, 182, 0.08);
+}
+
+.literature-item.expanded {
+  border-color: rgba(0, 119, 182, 0.3);
+  box-shadow: 0 2px 12px rgba(0, 119, 182, 0.1);
+}
+
+/* 高亮状态（从编辑器点击引用跳转过来） */
+.literature-item.highlighted {
+  border-color: #0077B6;
+  background-color: rgba(0, 119, 182, 0.08);
+  box-shadow: 0 0 0 2px rgba(0, 119, 182, 0.2), 0 2px 12px rgba(0, 119, 182, 0.15);
+  animation: literature-highlight-pulse 0.5s ease-out;
+}
+
+@keyframes literature-highlight-pulse {
+  0% {
+    transform: scale(1.02);
+    box-shadow: 0 0 0 4px rgba(0, 119, 182, 0.3), 0 4px 20px rgba(0, 119, 182, 0.2);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 2px rgba(0, 119, 182, 0.2), 0 2px 12px rgba(0, 119, 182, 0.15);
+  }
+}
+
+/* 置顶状态 */
+.literature-item.pinned {
+  border-left: 3px solid var(--accent-primary);
+}
+
+.literature-item.pinned.highlighted {
+  animation: literature-pinned-in 0.3s ease-out;
+}
+
+@keyframes literature-pinned-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
+/* 条目头部 */
+.literature-item-header {
+  padding: 12px;
+  padding-bottom: 32px;
+  position: relative;
+}
+
+.literature-item-title-area {
+  width: 100%;
+}
+
+.literature-item-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.4;
+  margin: 0;
+  word-wrap: break-word;
+}
+
+/* 作者预览行（未展开时） */
+.literature-item-preview-row {
+  position: absolute;
+  bottom: 8px;
+  left: 12px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.literature-item-authors-preview {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.literature-item.expanded .literature-item-preview-row,
+.literature-item.expanded .literature-item-authors-preview {
+  display: none;
+}
+
+/* 引用次数徽章 */
+.literature-cite-count-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.literature-cite-count-badge .material-symbols {
+  font-size: 14px;
+}
+
+/* 有引用时 - 蓝色主题 */
+.literature-cite-count-badge.has-citations {
+  background: linear-gradient(135deg, rgba(0, 119, 182, 0.15), rgba(0, 180, 216, 0.1));
+  color: #0077B6;
+  border: 1px solid rgba(0, 119, 182, 0.2);
+}
+
+.literature-cite-count-badge.has-citations:hover {
+  background: linear-gradient(135deg, rgba(0, 119, 182, 0.25), rgba(0, 180, 216, 0.15));
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 119, 182, 0.2);
+}
+
+/* 无引用时 - 灰色主题 */
+.literature-cite-count-badge.no-citations {
+  background-color: rgba(156, 163, 175, 0.1);
+  color: var(--text-tertiary);
+  border: 1px solid transparent;
+  cursor: default;
+}
+
+/* 加载状态 */
+.literature-cite-count-badge.loading {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.literature-cite-count-loading {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(0, 119, 182, 0.2);
+  border-top-color: #0077B6;
+  border-radius: 50%;
+  animation: literature-spin 0.8s linear infinite;
+}
+
+.literature-cite-count-num {
+  min-width: 12px;
+  text-align: center;
+}
+
+/* 操作按钮 */
+.literature-item-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(4px);
+  border-radius: 4px;
+  padding-left: 4px;
+}
+
+.literature-action-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  transition: all 0.15s;
+}
+
+.literature-action-btn:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.literature-action-btn.cite:hover {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
+
+.literature-action-btn.delete:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+}
+
+.literature-action-btn .material-symbols {
+  font-size: 16px;
+}
+
+/* 展开详情 */
+.literature-item-details {
+  padding: 0 12px 12px 12px;
+  border-top: 1px solid var(--border-secondary);
+  margin-top: 4px;
+  animation: literature-expand 0.2s ease-out;
+}
+
+@keyframes literature-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.literature-detail-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.literature-detail-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.literature-detail-label {
+  font-weight: 500;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  min-width: 40px;
+}
+
+.literature-detail-value {
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.literature-detail-badge {
+  background-color: var(--bg-tertiary);
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+
+.literature-detail-venue {
+  background-color: rgba(0, 119, 182, 0.1);
+  color: var(--accent-primary);
+  padding: 2px 8px;
+  border-radius: 4px;
+  word-break: break-word;
+}
+
+.literature-detail-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-primary);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.literature-detail-link:hover {
+  text-decoration: underline;
+}
+
+.literature-detail-link .material-symbols {
+  font-size: 12px;
+}
+
+.literature-detail-source {
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.literature-detail-keywords {
+  font-size: 11px;
+  color: var(--text-secondary);
+  word-break: break-word;
+  line-height: 1.6;
+}
+
+/* 摘要 */
+.literature-abstract {
+  margin-top: 10px;
+  padding: 10px;
+  background-color: var(--bg-secondary);
+  border-radius: 6px;
+  border: 1px solid var(--border-secondary);
+}
+
+.literature-abstract-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.literature-abstract p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* 引用键 */
+.literature-citation-key {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: linear-gradient(135deg, rgba(0, 119, 182, 0.08), rgba(0, 180, 216, 0.08));
+  border-radius: 6px;
+}
+
+.literature-citation-key .material-symbols {
+  font-size: 14px;
+  color: var(--accent-primary);
+}
+
+.literature-citation-key code {
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+/* 定位区域（展开后底部） */
+.literature-locate-section {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+  border-radius: 8px;
+  border: 1px solid var(--border-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.literature-locate-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.literature-locate-info .material-symbols {
+  font-size: 16px;
+  color: var(--accent-primary);
+}
+
+/* 刷新引用按钮 */
+.literature-refresh-cite-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 4px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  transition: all 0.15s;
+}
+
+.literature-refresh-cite-btn:hover:not(:disabled) {
+  background-color: var(--bg-tertiary);
+  color: var(--accent-primary);
+}
+
+.literature-refresh-cite-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.literature-refresh-cite-btn .material-symbols {
+  font-size: 16px;
+  color: inherit;
+}
+
+.literature-refresh-cite-btn .material-symbols.spinning {
+  animation: literature-spin 0.8s linear infinite;
+}
+
+.literature-locate-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.literature-locate-btn:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.literature-locate-btn.has-positions {
+  background: linear-gradient(135deg, #0077B6 0%, #00B4D8 100%);
+  border-color: transparent;
+  color: white;
+}
+
+.literature-locate-btn.has-positions:hover:not(:disabled) {
+  background: linear-gradient(135deg, #005f92 0%, #0096c7 100%);
+}
+
+.literature-locate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.literature-locate-btn .material-symbols {
+  font-size: 16px;
+}
+
+.literature-locate-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(0, 119, 182, 0.2);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: literature-spin 0.6s linear infinite;
+}
+
+/* 底部操作区 */
+.literature-footer {
+  padding: 12px;
+  padding-bottom: 60px;  /* 大幅增加底部内边距，确保应用按钮完全可见 */
+  background-color: var(--bg-primary);
+  border-top: 1px solid var(--border-secondary);
+  flex-shrink: 0;
+  overflow: visible;
+  position: relative;
+  z-index: 100;
+}
+
+/* 快捷按钮网格 */
+.literature-shortcut-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.literature-shortcut-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 4px;
+  background-color: var(--bg-secondary);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  gap: 4px;
+}
+
+.literature-shortcut-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.literature-shortcut-btn .material-symbols {
+  font-size: 18px;
+}
+
+.literature-shortcut-label {
+  font-size: 10px;
+  font-weight: 500;
+}
+
+/* 快捷按钮颜色变体 */
+.literature-shortcut-btn.blue {
+  color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.1);
+}
+.literature-shortcut-btn.blue:hover:not(:disabled) {
+  background-color: rgba(59, 130, 246, 0.2);
+}
+
+.literature-shortcut-btn.gray {
+  color: var(--text-secondary);
+}
+.literature-shortcut-btn.gray:hover:not(:disabled) {
+  background-color: var(--bg-tertiary);
+}
+
+.literature-shortcut-btn.indigo {
+  color: #6366f1;
+  background-color: rgba(99, 102, 241, 0.1);
+}
+.literature-shortcut-btn.indigo:hover:not(:disabled) {
+  background-color: rgba(99, 102, 241, 0.2);
+}
+
+.literature-shortcut-btn.purple {
+  color: #8b5cf6;
+  background-color: rgba(139, 92, 246, 0.1);
+}
+.literature-shortcut-btn.purple:hover:not(:disabled) {
+  background-color: rgba(139, 92, 246, 0.2);
+}
+
+.literature-shortcut-btn.red {
+  color: var(--error);
+  background-color: rgba(239, 68, 68, 0.1);
+}
+.literature-shortcut-btn.red:hover:not(:disabled) {
+  background-color: rgba(239, 68, 68, 0.2);
+}
+
+/* 补全所有文献按钮 */
+.literature-enrich-all-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 6px rgba(139, 92, 246, 0.25);
+}
+
+.literature-enrich-all-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(139, 92, 246, 0.35);
+}
+
+.literature-enrich-all-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.literature-enrich-all-btn .material-symbols {
+  font-size: 18px;
+}
+
+/* 批量补全进度条 */
+.literature-enrich-progress {
+  padding: 12px;
+  margin-bottom: 10px;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(139, 92, 246, 0.04));
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 8px;
+}
+
+.literature-enrich-progress-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #7c3aed;
+  margin-bottom: 8px;
+}
+
+.literature-enrich-progress-header .material-symbols {
+  font-size: 16px;
+}
+
+.literature-enrich-progress-current {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.literature-enrich-progress-bar {
+  height: 6px;
+  background-color: rgba(139, 92, 246, 0.15);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.literature-enrich-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #8b5cf6, #7c3aed);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.literature-enrich-progress-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+}
+
+.literature-enrich-progress-stats .success {
+  color: #059669;
+}
+
+.literature-enrich-progress-stats .failed {
+  color: #dc2626;
+}
+
+/* 应用文献库按钮 */
+.literature-apply-all-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  background: linear-gradient(135deg, #0077B6 0%, #00B4D8 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0, 119, 182, 0.3);
+}
+
+.literature-apply-all-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #005f92 0%, #0096c7 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 119, 182, 0.4);
+}
+
+.literature-apply-all-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.literature-apply-all-btn .material-symbols {
+  font-size: 18px;
+}
+
+/* Toast 通知 */
+.literature-toast {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background-color: #1f2937;
+  color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 10000;
+  animation: literature-toast-in 0.2s ease-out;
+}
+
+@keyframes literature-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.literature-toast-indicator {
+  width: 8px;
+  height: 8px;
+  background-color: var(--success);
+  border-radius: 50%;
+}
+
+/* ==================== 侧边栏标签切换 ==================== */
+
+.sidebar-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-secondary);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.sidebar-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sidebar-tab:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-tertiary);
+}
+
+.sidebar-tab.active {
+  color: var(--accent-primary);
+  border-bottom-color: var(--accent-primary);
+}
+
+.sidebar-tab .material-symbols {
+  font-size: 16px;
+}
+
+/* ==================== 手动添加的临时文献样式 ==================== */
+
+/* 临时文献条目（红色主题） */
+.literature-item.manual {
+  background-color: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.literature-item.manual:hover {
+  background-color: rgba(239, 68, 68, 0.08);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.15);
+}
+
+.literature-item.manual.expanded {
+  border-color: rgba(239, 68, 68, 0.5);
+  box-shadow: 0 2px 12px rgba(239, 68, 68, 0.15);
+}
+
+/* 临时文献标记 */
+.literature-manual-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(239, 68, 68, 0.1));
+  color: #dc2626;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+
+.literature-manual-badge .material-symbols {
+  font-size: 12px;
+}
+
+/* 待删除文献条目样式 */
+.literature-item.marked-deletion {
+  background-color: rgba(107, 114, 128, 0.08);
+  border-color: rgba(107, 114, 128, 0.3);
+  opacity: 0.7;
+}
+
+.literature-item.marked-deletion:hover {
+  background-color: rgba(107, 114, 128, 0.12);
+  box-shadow: 0 2px 8px rgba(107, 114, 128, 0.1);
+}
+
+/* 待删除标记 */
+.literature-deletion-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: linear-gradient(135deg, rgba(107, 114, 128, 0.2), rgba(107, 114, 128, 0.1));
+  color: #6b7280;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+
+.literature-deletion-badge .material-symbols {
+  font-size: 12px;
+}
+
+/* 删除线样式 */
+.strikethrough {
+  text-decoration: line-through;
+  color: var(--text-tertiary) !important;
+}
+
+/* 恢复按钮样式 */
+.literature-action-btn.restore:hover {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
+
+.literature-action-btn.edit:hover {
+  background-color: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
+
+/* ==================== 新增文献弹窗样式 ==================== */
+
+/* 弹窗遮罩 */
+.literature-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10001;
+  animation: literature-modal-fade-in 0.15s ease-out;
+}
+
+@keyframes literature-modal-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 弹窗主体 */
+.literature-modal {
+  width: 90%;
+  max-width: 520px;
+  max-height: 80vh;
+  background-color: var(--bg-primary);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: literature-modal-slide-in 0.2s ease-out;
+}
+
+@keyframes literature-modal-slide-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* 弹窗头部 */
+.literature-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.05));
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.literature-modal-header .material-symbols {
+  font-size: 22px;
+  color: #3b82f6;
+}
+
+.literature-modal-header h3 {
+  flex: 1;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.literature-modal-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  transition: all 0.15s;
+}
+
+.literature-modal-close:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--error);
+}
+
+/* 弹窗主体内容 */
+.literature-modal-body {
+  padding: 20px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.literature-modal-hint {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.literature-modal-textarea {
+  width: 100%;
+  height: 200px;
+  padding: 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+  resize: vertical;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.literature-modal-textarea:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(0, 119, 182, 0.1);
+}
+
+.literature-modal-textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.literature-modal-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--error);
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.literature-modal-error .material-symbols {
+  font-size: 16px;
+}
+
+/* 弹窗底部 */
+.literature-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background-color: var(--bg-secondary);
+  border-top: 1px solid var(--border-secondary);
+}
+
+.literature-modal-tip {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.literature-modal-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.literature-modal-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.literature-modal-btn.cancel {
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.literature-modal-btn.cancel:hover {
+  background-color: var(--border-primary);
+}
+
+.literature-modal-btn.confirm {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.literature-modal-btn.confirm:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.literature-modal-btn .material-symbols {
+  font-size: 16px;
+}
+
+/* 宽版弹窗（用于 CrossRef 补全） */
+.literature-modal.literature-modal-wide {
+  max-width: 600px;
+  max-height: 85vh;
+}
+
+/* 输入区域 */
+.literature-modal-input-section {
+  margin-bottom: 16px;
+}
+
+.literature-modal-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.literature-modal-label .material-symbols {
+  font-size: 14px;
+  color: var(--accent-primary);
+}
+
+/* 补全按钮区域 */
+.literature-modal-enrich-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.literature-modal-enrich-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+}
+
+.literature-modal-enrich-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+}
+
+.literature-modal-enrich-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.literature-modal-enrich-btn .material-symbols {
+  font-size: 16px;
+}
+
+.literature-modal-enrich-btn.loading {
+  background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+}
+
+/* 加载旋转动画 */
+.literature-modal-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: literature-spin 0.6s linear infinite;
+}
+
+/* 补全状态提示 */
+.literature-modal-enrich-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+
+.literature-modal-enrich-status.success {
+  color: #059669;
+  background-color: rgba(16, 185, 129, 0.1);
+}
+
+.literature-modal-enrich-status.error {
+  color: #dc2626;
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+.literature-modal-enrich-status .material-symbols {
+  font-size: 14px;
+}
+
+/* 候选结果列表 */
+.literature-modal-candidates {
+  margin-bottom: 16px;
+  padding: 12px;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-secondary);
+}
+
+.literature-modal-candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.literature-modal-candidate {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  background-color: var(--bg-primary);
+  border-radius: 6px;
+  border: 1px solid var(--border-primary);
+}
+
+.literature-modal-candidate .candidate-title {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.literature-modal-candidate .candidate-doi {
+  font-size: 11px;
+  color: var(--accent-primary);
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+}
+
+.literature-modal-candidate .candidate-score {
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+/* 补全结果预览 */
+.literature-modal-preview-section {
+  margin-bottom: 16px;
+}
+
+.literature-modal-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.literature-modal-use-original {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  background: none;
+  border: 1px solid var(--border-primary);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.literature-modal-use-original:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-secondary);
+  background-color: var(--bg-tertiary);
+}
+
+.literature-modal-preview {
+  width: 100%;
+  max-height: 200px;
+  overflow: auto;
+  padding: 12px;
+  margin: 0;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(16, 185, 129, 0.02));
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 8px;
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 次要按钮样式 */
+.literature-modal-btn.secondary {
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-primary);
+}
+
+.literature-modal-btn.secondary:hover {
+  background-color: var(--bg-secondary);
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
+}
+
+/* 勾选框样式 */
+.literature-modal-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.literature-modal-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent-primary);
+}
+
+.literature-modal-checkbox:has(input:disabled) {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.literature-modal-checkbox:has(input:disabled) input {
+  cursor: not-allowed;
+}
+
+/* Diff 对比样式 */
+.literature-modal-diff {
+  background: var(--bg-secondary) !important;
+  border-color: var(--border-primary) !important;
+}
+
+.literature-modal-diff .diff-line {
+  padding: 1px 4px;
+  margin: 0 -4px;
+  border-radius: 2px;
+}
+
+.literature-modal-diff .diff-unchanged {
+  color: var(--text-secondary);
+}
+
+.literature-modal-diff .diff-added {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #059669;
+}
+
+.literature-modal-diff .diff-removed {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #9ca3af;
+  text-decoration: line-through;
+}
+
+/* Diff 图例 */
+.literature-modal-diff-legend {
+  display: flex;
+  gap: 12px;
+  margin-right: auto;
+  margin-left: 12px;
+}
+
+.diff-legend-item {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.diff-legend-item.added {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #059669;
+}
+
+.diff-legend-item.removed {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #9ca3af;
+  text-decoration: line-through;
+}
+
+/* 已补全标记样式 */
+.literature-enriched-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background-color: #059669;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.literature-enriched-badge .material-symbols {
+  font-size: 12px;
+}
+
+/* 补全对比区域 */
+.literature-enrich-diff-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-secondary);
+}
+
+.literature-show-diff-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background-color: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.literature-show-diff-btn:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
+}
+
+.literature-show-diff-btn.active {
+  background-color: rgba(99, 102, 241, 0.1);
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.literature-show-diff-btn .material-symbols {
+  font-size: 16px;
+}
+
+.literature-enrich-diff-content {
+  margin-top: 12px;
+  border: 1px solid var(--border-secondary);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.literature-enrich-diff-content pre {
+  margin: 0;
+  padding: 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  background-color: var(--bg-secondary);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.literature-enrich-diff-content .diff-line {
+  padding: 1px 4px;
+  margin: 0 -4px;
+  border-radius: 2px;
+}
+
+.literature-enrich-diff-content .diff-unchanged {
+  color: var(--text-secondary);
+}
+
+.literature-enrich-diff-content .diff-added {
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #059669;
+}
+
+.literature-enrich-diff-content .diff-removed {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #9ca3af;
+  text-decoration: line-through;
+}
+
+/* 单条补全按钮区域 */
+.literature-enrich-single-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-secondary);
+}
+
+.literature-enrich-single-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--accent-primary);
+  border-radius: 6px;
+  background-color: rgba(99, 102, 241, 0.1);
+  color: var(--accent-primary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.literature-enrich-single-btn:hover:not(:disabled) {
+  background-color: var(--accent-primary);
+  color: white;
+}
+
+.literature-enrich-single-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.literature-enrich-single-btn .material-symbols {
+  font-size: 16px;
+}
+
+.literature-enrich-single-btn .literature-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: literature-spin 0.8s linear infinite;
+}
+
+/* 已编辑标记样式 */
+.literature-edited-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background-color: #3b82f6;
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.literature-edited-badge .material-symbols {
+  font-size: 12px;
+}
+
+/* 编辑按钮区域 */
+.literature-edit-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-secondary);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.literature-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background-color: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.literature-edit-btn:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--accent-primary);
+}
+
+.literature-edit-btn .material-symbols {
+  font-size: 16px;
+}
+
+/* 编辑弹窗样式 */
+.literature-edit-modal {
+  max-width: 700px;
+}
+
+.literature-edit-modal .literature-modal-textarea {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ==================== 排序菜单样式 ==================== */
+
+.literature-sort-wrapper,
+.literature-filter-wrapper {
+  position: relative;
+}
+
+/* 让 wrapper 内的按钮填满 grid 单元格 */
+.literature-sort-wrapper .literature-shortcut-btn,
+.literature-filter-wrapper .literature-shortcut-btn {
+  width: 100%;
+  height: 100%;
+}
+
+.literature-sort-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 8px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  min-width: 180px;
+  overflow: hidden;
+  z-index: 1000;
+  animation: literature-sort-menu-appear 0.15s ease-out;
+}
+
+@keyframes literature-sort-menu-appear {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.literature-sort-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.literature-sort-option:hover {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.literature-sort-option.active {
+  background-color: rgba(99, 102, 241, 0.1);
+  color: var(--accent-primary);
+}
+
+.literature-sort-option .material-symbols {
+  font-size: 18px;
+  opacity: 0.8;
+}
+
+.literature-sort-option.active .material-symbols {
+  opacity: 1;
+}
+
+.literature-sort-option .check-icon {
+  margin-left: auto;
+  font-size: 16px;
+  color: var(--accent-primary);
+}
+
+.literature-sort-option:first-child {
+  border-radius: 10px 10px 0 0;
+}
+
+.literature-sort-option:last-child {
+  border-radius: 0 0 10px 10px;
+}
+
+.literature-sort-option:not(:last-child) {
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+/* ==================== 筛选菜单样式 ==================== */
+
+.literature-filter-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 8px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  min-width: 280px;
+  max-width: 320px;
+  overflow: hidden;
+  z-index: 1000;
+  animation: literature-sort-menu-appear 0.15s ease-out;
+}
+
+.literature-filter-section {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.literature-filter-section:last-of-type {
+  border-bottom: none;
+}
+
+.literature-filter-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.literature-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.literature-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: 20px;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.literature-filter-chip:hover {
+  background-color: var(--bg-tertiary);
+  border-color: var(--accent-primary);
+}
+
+.literature-filter-chip.active {
+  background-color: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: white;
+}
+
+.literature-filter-chip-count {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.literature-filter-search {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.literature-filter-search:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+.literature-filter-search::placeholder {
+  color: var(--text-tertiary);
+}
+
+.literature-filter-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background-color: var(--bg-secondary);
+  border-top: 1px solid var(--border-secondary);
+}
+
+.literature-filter-result {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.literature-filter-clear-btn {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.literature-filter-clear-btn:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+/* ==================== 统计弹窗样式 ==================== */
+
+.literature-stats-modal {
+  max-width: 500px;
+  max-height: 80vh;
+  overflow: auto;
+}
+
+.literature-stats-content {
+  padding: 16px 20px;
+}
+
+.literature-stats-overview {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.literature-stats-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 8px;
+  background-color: var(--bg-secondary);
+  border-radius: 10px;
+  border: 1px solid var(--border-secondary);
+}
+
+.literature-stats-card.enriched {
+  background-color: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.2);
+}
+
+.literature-stats-card.pending {
+  background-color: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.literature-stats-card.deletion {
+  background-color: rgba(107, 114, 128, 0.08);
+  border-color: rgba(107, 114, 128, 0.2);
+}
+
+.literature-stats-number {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.literature-stats-card.enriched .literature-stats-number {
+  color: #22c55e;
+}
+
+.literature-stats-card.pending .literature-stats-number {
+  color: #f59e0b;
+}
+
+.literature-stats-card.deletion .literature-stats-number {
+  color: #6b7280;
+}
+
+.literature-stats-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+.literature-stats-section {
+  margin-bottom: 20px;
+}
+
+.literature-stats-section h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 12px 0;
+}
+
+.literature-stats-range {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent-primary);
+  margin: 0;
+}
+
+.literature-stats-span {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  margin-left: 8px;
+}
+
+.literature-stats-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.literature-stats-bar-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.literature-stats-bar-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.literature-stats-bar-count {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.literature-stats-bar-bg {
+  height: 8px;
+  background-color: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.literature-stats-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-primary), #818cf8);
+  border-radius: 4px;
+  transition: width 0.3s ease-out;
+}
+
+.literature-stats-year-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.literature-stats-year-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-secondary);
+}
+
+.literature-stats-year {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.literature-stats-year-count {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* ==================== 用户自定义标签样式 ==================== */
+
+/* 标签容器 */
+.literature-user-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-right: 8px;
+}
+
+/* 单个标签 */
+.literature-user-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 4px;  /* 从 12px 改为 4px，与其他标签保持一致 */
+  font-size: 11px;
+  font-weight: 600;    /* 从 500 改为 600，与其他标签保持一致 */
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.literature-user-tag:hover {
+  opacity: 0.85;
+  transform: scale(1.02);
+}
+
+/* 标签删除按钮 */
+.literature-tag-remove {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0;
+  margin-left: 2px;
+  transition: opacity 0.2s;
+}
+
+.literature-user-tag:hover .literature-tag-remove {
+  opacity: 1;
+}
+
+/* 标签添加按钮包装器 */
+.literature-tag-wrapper {
+  position: relative;
+}
+
+/* 标签添加弹出框 - 基础样式 */
+.literature-tag-popup {
+  position: absolute;
+  right: 0;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-secondary);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 200px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+}
+
+/* 弹窗显示在上方 */
+.literature-tag-popup.above {
+  bottom: 100%;
+  margin-bottom: 4px;
+  animation: literature-popup-up 0.15s ease-out;
+}
+
+/* 弹窗显示在下方 */
+.literature-tag-popup.below {
+  top: 100%;
+  margin-top: 4px;
+  animation: literature-popup-down 0.15s ease-out;
+}
+
+@keyframes literature-popup-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes literature-popup-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.literature-tag-popup-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+/* 标签输入框 */
+.literature-tag-input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border-secondary);
+  border-radius: 6px;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.literature-tag-input:focus {
+  border-color: var(--accent-primary);
+}
+
+.literature-tag-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* 颜色选择区域 */
+.literature-tag-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+/* 已有标签列表 */
+.literature-tag-popup-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-secondary);
+}
+
+.literature-tag-popup-subtitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.literature-existing-tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 100px;
+  overflow-y: auto;
+}
+
+.literature-user-tag.existing {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.literature-user-tag.existing:hover:not(.disabled) {
+  transform: scale(1.05);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 单个颜色按钮 */
+.literature-tag-color-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.literature-tag-color-btn:hover {
+  transform: scale(1.1);
+}
+
+.literature-tag-color-btn.selected {
+  border-color: var(--text-primary);
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--text-tertiary);
+}
+
+/* 添加标签按钮 */
+.literature-tag-add-btn {
+  width: 100%;
+  padding: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  background-color: var(--accent-primary);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.literature-tag-add-btn:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+}
+
+.literature-tag-add-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 标签操作按钮样式 */
+.literature-action-btn.tag {
+  color: var(--text-tertiary);
+}
+
+.literature-action-btn.tag:hover {
+  background-color: rgba(139, 92, 246, 0.1);
+  color: #8b5cf6;
+}
+

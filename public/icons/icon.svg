@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4F9FD8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1E5F8A;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="waveGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e0f0ff;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- 圆角背景 -->
+  <rect x="4" y="4" width="120" height="120" rx="24" ry="24" fill="url(#bgGrad)"/>
+  
+  <!-- 装饰圆环 -->
+  <circle cx="64" cy="64" r="44" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="2"/>
+  
+  <!-- 海浪主图标 -->
+  <g transform="translate(64, 64)">
+    <!-- 主波浪 -->
+    <path d="M-28 8 
+             C-20 -8, -8 -16, 4 -12 
+             C16 -8, 20 4, 28 -4
+             C24 8, 16 16, 4 12
+             C-8 8, -16 16, -28 8Z" 
+          fill="url(#waveGrad)" 
+          opacity="0.95"/>
+    
+    <!-- 波浪尾部 -->
+    <path d="M4 12 
+             C16 8, 24 0, 32 8
+             C28 16, 20 20, 8 16
+             C-4 12, 0 14, 4 12Z" 
+          fill="url(#waveGrad)" 
+          opacity="0.8"/>
+    
+    <!-- 小水滴装饰 -->
+    <circle cx="-20" cy="-18" r="4" fill="white" opacity="0.6"/>
+    <circle cx="-12" cy="-24" r="2.5" fill="white" opacity="0.5"/>
+    <circle cx="-26" cy="-10" r="2" fill="white" opacity="0.4"/>
+  </g>
+  
+  <!-- AI 文字标识 -->
+  <text x="64" y="108" 
+        font-family="Arial, sans-serif" 
+        font-size="16" 
+        font-weight="bold" 
+        fill="rgba(255,255,255,0.9)" 
+        text-anchor="middle">AI</text>
+</svg>
+
