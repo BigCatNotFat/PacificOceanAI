@@ -98,23 +98,59 @@ function getDomFileIdMap() {
   const map = new Map();
   
   try {
-    const fileItems = document.querySelectorAll('[data-file-id]');
-    
-    fileItems.forEach((item) => {
-      const id = item.getAttribute('data-file-id');
-      if (!id) return;
-      
-      // 尝试获取文件名
-      const nameSpan = item.querySelector('.item-name-button span');
-      const name = nameSpan?.textContent?.trim();
+    // 策略 1: 遍历文件树中的 treeitem，与 getCurrentFile 中验证有效的 DOM 结构一致
+    const treeItems = document.querySelectorAll('li[role="treeitem"]');
+    treeItems.forEach((item) => {
+      const name = item.getAttribute('aria-label');
       if (!name) return;
       
-      map.set(name, id);
+      const entityDiv = item.querySelector('.entity');
+      const fileId = entityDiv ? entityDiv.getAttribute('data-file-id') : null;
+      if (!fileId) return;
+      
+      map.set(name, fileId);
     });
+    
+    // 策略 2: 如果策略 1 没找到，尝试直接从 [data-file-id] 元素获取
+    if (map.size === 0) {
+      const fileItems = document.querySelectorAll('[data-file-id]');
+      fileItems.forEach((item) => {
+        const id = item.getAttribute('data-file-id');
+        if (!id) return;
+        
+        const nameSpan = item.querySelector('.item-name-button span');
+        const name = nameSpan?.textContent?.trim();
+        if (!name) return;
+        
+        map.set(name, id);
+      });
+    }
   } catch (error) {
     console.error('[OverleafBridge] 获取 DOM 文件 ID 映射失败:', error);
   }
   
+  return map;
+}
+
+// 从 Overleaf Store 获取文档 ID 映射
+function getStoreDocIdMap() {
+  const map = new Map();
+  try {
+    const store = window.overleaf?.unstable?.store;
+    if (!store) return map;
+    
+    const docs = store.get('docs');
+    if (!docs) return map;
+    
+    for (const key in docs) {
+      const doc = docs[key];
+      if (doc && doc._id && doc.name) {
+        map.set(doc.name, doc._id);
+      }
+    }
+  } catch (e) {
+    warn('[OverleafBridge] 获取 Store 文档映射失败:', e);
+  }
   return map;
 }
 
@@ -132,9 +168,17 @@ export async function getAllDocsWithContent(projectId) {
   const docs = entities.filter(e => e.type === 'doc');
   debug(`[OverleafBridge] 找到 ${docs.length} 个可编辑文档`);
   
-  // 3. 获取 DOM 中的文件 ID 映射（作为 fallback）
+  // 3. 构建文件名 → ID 映射（多数据源合并）
   const domIdMap = getDomFileIdMap();
   debug(`[OverleafBridge] DOM 文件 ID 映射: ${domIdMap.size} 个`);
+  
+  const storeIdMap = getStoreDocIdMap();
+  debug(`[OverleafBridge] Store 文件 ID 映射: ${storeIdMap.size} 个`);
+  
+  // 4. 预取 file hash 映射（作为 docId 路径失败时的终极后备）
+  // entities API 可能不返回 ID，DOM/Store 可能为空，所以总是准备好 hash 后备
+  let fileHashes = await fetchFileHashes(projectId);
+  debug(`[OverleafBridge] File hash 映射: ${Object.keys(fileHashes).length} 个`);
   
   // 获取当前编辑器文档的实时内容（优先使用，因为可能有未保存的修改）
   let currentDocPath = null;
@@ -156,7 +200,7 @@ export async function getAllDocsWithContent(projectId) {
     warn('[OverleafBridge] 无法获取当前编辑器内容:', e);
   }
   
-  // 4. 获取每个文档的内容（使用 doc download API）
+  // 5. 获取每个文档的内容
   const batchSize = 5;
   for (let i = 0; i < docs.length; i += batchSize) {
     const batch = docs.slice(i, i + batchSize);
@@ -164,18 +208,17 @@ export async function getAllDocsWithContent(projectId) {
     const contents = await Promise.all(
       batch.map(async (doc) => {
         const pathname = doc.path.startsWith('/') ? doc.path.substring(1) : doc.path;
-        const filename = pathname.split('/').pop(); // 获取文件名
+        const filename = pathname.split('/').pop();
         
-        // 当前文档优先使用编辑器实时内容
+        // 优先级 1: 当前编辑器文档使用实时内容
         if (currentDocPath && currentDocContent && pathname === currentDocPath) {
           debug(`[OverleafBridge] ${pathname}: 使用编辑器实时内容`);
           return currentDocContent;
         }
         
-        // 尝试获取文档 ID（优先从 entities，然后从 DOM）
+        // 优先级 2: 通过 docId + doc download API
         let docId = doc._id || doc.id;
         
-        // Fallback: 从 DOM 获取 ID
         if (!docId && filename) {
           docId = domIdMap.get(filename);
           if (docId) {
@@ -183,12 +226,28 @@ export async function getAllDocsWithContent(projectId) {
           }
         }
         
-        if (docId) {
-          return await fetchDocContent(projectId, docId);
-        } else {
-          warn(`[OverleafBridge] 未找到文档 ID: ${pathname}`);
-          return null;
+        if (!docId && filename) {
+          docId = storeIdMap.get(filename);
+          if (docId) {
+            debug(`[OverleafBridge] ${pathname}: 从 Store 获取 ID`);
+          }
         }
+        
+        if (docId) {
+          const content = await fetchDocContent(projectId, docId);
+          if (content !== null) return content;
+          warn(`[OverleafBridge] ${pathname}: doc download API 失败，尝试 blob 后备`);
+        }
+        
+        // 优先级 3: 通过 history hash + blob API（不依赖 docId）
+        const hash = fileHashes[pathname];
+        if (hash) {
+          debug(`[OverleafBridge] ${pathname}: 使用 blob 后备 (hash: ${hash.substring(0, 8)}...)`);
+          return await fetchBlobContent(projectId, hash);
+        }
+        
+        warn(`[OverleafBridge] ${pathname}: 所有获取方式均失败`);
+        return null;
       })
     );
     
