@@ -58,7 +58,7 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
   // 发送激活状态到注入脚本（开源版：检查是否有任一供应商配置了 API Key）
   const sendActivationStatus = useCallback(async () => {
     const config = await configService.getAPIConfig();
-    const isActivated = !!(config?.models?.some(m => m.enabled && m.apiKey));
+    const isActivated = !!(config?.models?.some(m => m.enabled && (m.apiKey || m.provider === 'codex-oauth')));
     
     window.postMessage({
       type: 'OVERLEAF_ACTIVATION_STATUS_UPDATE',
@@ -102,7 +102,7 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
   const createAIHandler = useCallback((action: TextActionType) => {
     return async (_action: TextActionType, text: string, from: number, to: number, modelId?: string, customPrompt?: string, context?: { before?: string; after?: string }): Promise<string | null> => {
       const config = await configService.getAPIConfig();
-      if (!config?.models?.some(m => m.enabled && m.apiKey)) {
+      if (!config?.models?.some(m => m.enabled && (m.apiKey || m.provider === 'codex-oauth'))) {
         console.warn('[TextActionProvider] 未配置任何模型，请前往设置页面添加');
         return null;
       }
