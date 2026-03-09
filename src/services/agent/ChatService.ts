@@ -390,26 +390,10 @@ export class ChatService implements IChatService {
     session.currentTurnStartIndex = session.messages.length;
 
     try {
-      // ========== 步骤 1：首次对话时插入系统提示词 ==========
-      if (session.messages.length === 0) {
-        try {
-          const systemPrompt = await this.promptService.buildSystemPrompt(
-            options.mode || 'agent',
-            options.modelId || 'gpt-4'
-          );
-          
-          const systemMessage = this.createMessage(session, 'system', systemPrompt);
-          systemMessage.status = 'completed';
-          session.messages.push(systemMessage);
-          
-          logger.debug('[ChatService] ✅ 插入系统提示词到对话开头');
-        } catch (error) {
-          console.error('[ChatService] 构建系统提示词失败:', error);
-          // 继续执行，不阻塞用户发消息
-        }
-      }
+      // ========== 步骤 1：立即添加用户消息（Optimistic UI） ==========
+      // 先让用户在 UI 上看到自己的消息，再做异步操作（系统提示词、持久化等）
+      const needsSystemPrompt = session.messages.length === 0;
 
-      // ========== 步骤 2：添加用户消息 ==========
       const userMessage = this.createMessage(session, 'user', input);
       userMessage.status = 'completed';
       if (images && images.length > 0) {
@@ -421,10 +405,32 @@ export class ChatService implements IChatService {
         messages: [...session.messages]
       });
 
-      // ========== 步骤 3：立即保存到本地 ==========
-      // 确保用户消息和系统提示词立即持久化，防止刷新丢失
-      await this.saveMessagesNow(session);
-      logger.debug('[ChatService] ✅ 用户消息已保存到本地');
+      // ========== 步骤 2：首次对话时插入系统提示词（在用户消息之前） ==========
+      if (needsSystemPrompt) {
+        try {
+          const systemPrompt = await this.promptService.buildSystemPrompt(
+            options.mode || 'agent',
+            options.modelId || 'gpt-4'
+          );
+          
+          const systemMessage = this.createMessage(session, 'system', systemPrompt);
+          systemMessage.status = 'completed';
+          // 插入到用户消息之前，保持 [system, user, ...] 的顺序
+          const userMsgIndex = session.messages.indexOf(userMessage);
+          session.messages.splice(userMsgIndex, 0, systemMessage);
+          
+          logger.debug('[ChatService] ✅ 插入系统提示词到对话开头');
+        } catch (error) {
+          console.error('[ChatService] 构建系统提示词失败:', error);
+        }
+      }
+
+      // ========== 步骤 3：后台保存到本地（不阻塞 UI） ==========
+      this.saveMessagesNow(session).then(() => {
+        logger.debug('[ChatService] ✅ 用户消息已保存到本地');
+      }).catch((error) => {
+        console.error('[ChatService] 保存用户消息失败:', error);
+      });
 
       // ========== 步骤 4：创建 AI 响应占位符 ==========
       const assistantPlaceholder = this.createMessage(session, 'assistant', '');

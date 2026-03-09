@@ -16,34 +16,31 @@ let diffControlBar = null;
 
 // CSS 样式
 const DIFF_CSS = `
-  /* 原始内容 - 浅红色背景，黑色删除线 */
-  .diff-line-deleted {
-    background: rgba(255, 0, 0, 0.08) !important;
-    text-decoration: line-through !important;
-    text-decoration-color: #000000 !important;
-    color: #000000 !important;
+  /* 新内容行 - 浅绿色背景高亮（文档中已是新内容） */
+  .diff-line-added {
+    background: rgba(76, 175, 80, 0.1) !important;
     position: relative !important;
   }
   
-  .diff-line-deleted::before {
-    content: '−';
+  .diff-line-added::before {
+    content: '+';
     position: absolute;
     left: -20px;
-    color: #c62828;
+    color: #4caf50;
     font-weight: bold;
   }
   
-  /* 替换内容块 - 浅绿色背景，黑色文字 */
+  /* 旧内容展示块（widget，显示在新内容上方） */
   .diff-suggestion-block {
     position: relative;
     margin: 0;
     padding: 0;
   }
   
-  .diff-new-content {
-    background: rgba(76, 175, 80, 0.1);
+  .diff-old-content {
+    background: rgba(255, 0, 0, 0.08);
     padding: 8px 16px;
-    border-left: 3px solid #81c784;
+    border-left: 3px solid #ef9a9a;
     margin: 2px 0;
     font-family: inherit;
     font-size: inherit;
@@ -54,17 +51,27 @@ const DIFF_CSS = `
     border-radius: 0 4px 4px 0;
   }
   
-  .diff-new-content::before {
-    /* content: '+'; 已移除 */
+  .diff-old-content::before {
+    content: '−';
     position: absolute;
     left: 5px;
-    /* color: #4caf50; */
+    color: #c62828;
     font-weight: bold;
-    display: none; /* 隐藏加号 */
   }
   
-  .diff-new-text {
+  .diff-old-text {
+    color: #666666 !important;
+    text-decoration: line-through;
+    text-decoration-color: #c62828;
+  }
+  
+  /* 保留旧样式名兼容（如果有外部引用） */
+  .diff-line-deleted {
+    background: rgba(255, 0, 0, 0.08) !important;
+    text-decoration: line-through !important;
+    text-decoration-color: #000000 !important;
     color: #000000 !important;
+    position: relative !important;
   }
   
   /* 行内按钮容器 */

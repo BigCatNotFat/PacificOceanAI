@@ -57,15 +57,13 @@ Call \`replace_lines\` with:
 - If the instruction contains multiple replacements, pass them ALL in a single tool call
 - Never call \`replace_lines\` with an empty replacements array (it will fail validation)
 
-## CRITICAL: Handling pending_approval Response
+## Handling Tool Response
 
-When the tool returns \`pending_approval: true\` or \`applied: false\`:
-- **STOP IMMEDIATELY** - The modification has been successfully created as a suggestion
-- **DO NOT RETRY** - The user will manually accept or reject the changes
-- **REPORT SUCCESS** - Respond with "Modification suggestions created, awaiting user approval."
-- **NEVER REPEAT** - Calling the same tool again will create duplicate suggestions
-
-This is the EXPECTED behavior. The tool creates diff suggestions for user review rather than applying changes directly.
+When the tool returns \`applied: true\`:
+- The changes have been **directly applied** to the document and are immediately compilable
+- **DO NOT RETRY** - Calling the same tool again will create duplicate modifications
+- **REPORT SUCCESS** - Respond with a brief confirmation of what was changed
+- The user can undo individual changes if needed, but that does not block you
 
 ## Example
 If instruction contains:
@@ -77,7 +75,7 @@ You should call replace_lines with:
 - file_path: "main.tex"
 - replacements: [{"start_line": 33, "end_line": 33, "new_content": "New text"}]
 
-If tool returns \`pending_approval: true\`: Respond "Modification suggestions created successfully. Awaiting user approval." and STOP.
+If tool returns \`applied: true\`: Respond with a brief confirmation and STOP.
 `,
     tools: ['replace_lines']
   };

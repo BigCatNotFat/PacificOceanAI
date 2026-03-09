@@ -11,10 +11,10 @@
  * - 删除多行内容
  * - 一次性修改文件中的多个位置
  * 
- * 审批模式：
- * - 创建 diff 建议而不是直接修改
- * - 用户可以逐个或批量接受/拒绝
- * - 不阻塞 AI 的运行
+ * 应用模式：
+ * - 修改直接写入文档，立即可编译
+ * - 以 diff 视觉效果展示变更（用户可撤销）
+ * - 不阻塞 AI 的后续操作
  */
 
 import { BaseTool } from '../base/BaseTool';
@@ -37,7 +37,7 @@ interface Replacement {
  * 行号替换工具
  * 
  * 通过指定起始行号和结束行号来替换内容，支持批量替换多个区域
- * 修改会以 diff 建议的形式显示，用户可以选择接受或拒绝
+ * 修改直接写入文档（可编译），同时以 diff 视觉效果展示，用户可撤销
  */
 export class ReplaceLinesTool extends BaseTool {
   protected metadata: ToolMetadata = {
@@ -49,7 +49,7 @@ Usage:
 2. Provide a \`replacements\` array, each item contains: start_line, end_line, new_content.
 3. To replace a single line, set start_line and end_line to the same value.
 4. Multiple replacements will be applied automatically from bottom to top to avoid line number shifts.！！注意不用考虑行号的改变，因为该工具在实现时是从后往前替换的，所以你只需要考虑替换的内容。！！
-5. Changes will be shown as diff suggestions. Users can accept or reject each change individually.
+5. Changes are applied immediately to the document and are compilable right away. Users can undo individual changes if needed, but this does not block you.
 Examples:
 - Single replacement: replacements=[{start_line:207, end_line:218, new_content:"..."}]
 - Multiple replacements: replacements=[{start_line:10, end_line:15, new_content:"..."}, {start_line:50, end_line:55, new_content:"..."}]
@@ -151,7 +151,7 @@ Examples:
     // Summary/Warning
     const deletedCount = originalLines.length;
     const addedCount = newLines.length;
-    previewLines.push(`⚠️ Status: Pending Approval (Deleted: ${deletedCount}, Added: ${addedCount})`);
+    previewLines.push(`✅ Status: Applied (Deleted: ${deletedCount}, Added: ${addedCount})`);
 
     return previewLines.join('\n');
   }
@@ -331,17 +331,15 @@ Examples:
       logger.debug(`[ReplaceLinesTool] Created ${suggestionIds.length} diff suggestions:`, suggestionIds);
 
       // 6. 组合预览（用于返回给 AI）
-      const finalPreview = "📝 已创建修改建议（等待用户确认）:\n" + previewBlocks.join('\n\n');
+      const finalPreview = "📝 修改已应用（用户可撤销）:\n" + previewBlocks.join('\n\n');
 
       return {
         success: true,
         data: {
           file: args.target_file,
-          applied: false, // 未直接应用，而是创建了建议
-          pending_approval: true,
-          status: 'SUCCESS_PENDING_APPROVAL',
-          message: `SUCCESS: Created ${suggestionIds.length} modification suggestion(s). User will review and accept/reject. DO NOT retry or call this tool again for the same content - the operation completed successfully.`,
-          instruction: 'STOP_AND_REPORT_SUCCESS',
+          applied: true,
+          status: 'SUCCESS_APPLIED',
+          message: `SUCCESS: ${suggestionIds.length} modification(s) applied to the document. The changes are now live and compilable. User can undo individual changes if needed. You may proceed with next steps (e.g. compile to verify).`,
           suggestionIds,
           replacementsCount: args.replacements.length,
           preview: finalPreview

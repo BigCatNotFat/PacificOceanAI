@@ -56,7 +56,7 @@ export class SearchReplaceTool extends BaseTool {
 1. Use a COMPLETE sentence as \`old_string\` to ensure unique matching.
 2. Do NOT use fragments that might match multiple places (e.g., "the" or "is").
 3. Set \`replace_all=true\` to replace ALL occurrences (useful for renaming variables, updating citations).
-4. Changes will be shown as diff suggestions. Users can accept or reject each change individually.
+4. Changes are applied immediately to the document and are compilable right away. Users can undo individual changes if needed, but this does not block you.
 
 Good examples:
 - old_string: "This is the first sentence of this paragraph."
@@ -319,21 +319,20 @@ Good examples:
       if (replaceAll && matchesToProcess.length > 1) {
         const shownLines = lineNumbers.slice(0, 5).join(', ');
         const moreLines = matchesToProcess.length > 5 ? ` ... 等 ${matchesToProcess.length} 处` : '';
-        preview = `📝 已创建 ${matchesToProcess.length} 个修改建议 (第 ${shownLines}${moreLines} 行)\n` + previewLines.slice(0, 5).join('\n');
+        preview = `📝 已应用 ${matchesToProcess.length} 处修改 (第 ${shownLines}${moreLines} 行)\n` + previewLines.slice(0, 5).join('\n');
         if (previewLines.length > 5) {
           preview += `\n... 还有 ${previewLines.length - 5} 处`;
         }
       } else {
-        preview = `📝 已创建修改建议:\n${previewLines[0]}`;
+        preview = `📝 修改已应用:\n${previewLines[0]}`;
       }
 
       return {
         success: true,
         data: {
           file: args.target_file,
-          applied: false, // 未直接应用，而是创建了建议
-          pending_approval: true,
-          message: `已创建 ${suggestionIds.length} 个修改建议，等待用户确认。用户可以逐个或批量接受/拒绝修改。`,
+          applied: true,
+          message: `SUCCESS: ${suggestionIds.length} modification(s) applied to the document. The changes are now live and compilable. User can undo individual changes if needed. You may proceed with next steps (e.g. compile to verify).`,
           suggestionIds,
           replacedCount: matchesToProcess.length,
           lineNumbers,

@@ -54,6 +54,26 @@ ${await this.getProjectLayout()}
   }
 
   /**
+   * 构建项目结构大纲标签
+   * 提取所有 .tex 文件中的 \chapter / \section / \subsection / \subsubsection 及行号
+   */
+  public async buildProjectOutlineTag(): Promise<string> {
+    try {
+      const outline = await this.getProjectOutline();
+      if (!outline) return '';
+      return `<project_outline>
+Below is a structural outline of each .tex file, showing section headings and their line numbers.
+This is a snapshot taken at conversation start. Line numbers may shift if files are edited during the conversation.
+
+${outline}
+</project_outline>`;
+    } catch (error) {
+      console.warn('[PromptService] 构建项目大纲失败:', error);
+      return '';
+    }
+  }
+
+  /**
    * 根据模式获取可用工具列表
    */
   private getToolsForMode(mode: ChatMode): ToolDefinition[] {
@@ -666,6 +686,104 @@ ${text}
   }
 
   /**
+   * 获取项目结构大纲
+   * 遍历所有 .tex 文件，用正则提取 \chapter / \section / \subsection / \subsubsection 及其行号
+   * 包含 token 安全阀：超过 MAX_OUTLINE_CHARS 时自动降级
+   */
+  private async getProjectOutline(): Promise<string | null> {
+    const MAX_OUTLINE_CHARS = 3000;
+
+    const docs = await overleafEditor.getBridge().call<Array<{ path: string; content: string }>>('getAllDocsWithContent');
+    if (!docs || !Array.isArray(docs) || docs.length === 0) {
+      return null;
+    }
+
+    const texDocs = docs.filter(d => d.path.endsWith('.tex') && d.content);
+    if (texDocs.length === 0) return null;
+
+    const sectionPattern = /^\\(chapter|section|subsection|subsubsection)\*?\{(.+?)\}\s*$/;
+
+    interface OutlineEntry {
+      line: number;
+      command: string;
+      title: string;
+    }
+    interface FileOutline {
+      path: string;
+      totalLines: number;
+      entries: OutlineEntry[];
+    }
+
+    const allOutlines: FileOutline[] = [];
+
+    for (const doc of texDocs) {
+      const lines = doc.content.split('\n');
+      const entries: OutlineEntry[] = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trimStart();
+        const match = trimmed.match(sectionPattern);
+        if (match) {
+          entries.push({
+            line: i + 1,
+            command: match[1],
+            title: match[2].replace(/\\[a-zA-Z]+\{([^}]*)\}/g, '$1').trim()
+          });
+        }
+      }
+
+      if (entries.length > 0) {
+        const displayPath = doc.path.startsWith('/') ? doc.path.substring(1) : doc.path;
+        allOutlines.push({ path: displayPath, totalLines: lines.length, entries });
+      }
+    }
+
+    if (allOutlines.length === 0) return null;
+
+    const indent: Record<string, string> = {
+      'chapter': '',
+      'section': '  ',
+      'subsection': '    ',
+      'subsubsection': '      '
+    };
+
+    const formatOutline = (outlines: FileOutline[], minLevel: string[]): string => {
+      const parts: string[] = [];
+      for (const file of outlines) {
+        const filtered = file.entries.filter(e => minLevel.includes(e.command));
+        if (filtered.length === 0) continue;
+        parts.push(`${file.path} (${file.totalLines} lines):`);
+        for (const entry of filtered) {
+          const prefix = indent[entry.command] || '';
+          parts.push(`${prefix}[Line ${entry.line}] \\${entry.command}{${entry.title}}`);
+        }
+      }
+      return parts.join('\n');
+    };
+
+    // 尝试完整输出（含 subsubsection）
+    let result = formatOutline(allOutlines, ['chapter', 'section', 'subsection', 'subsubsection']);
+    if (result.length <= MAX_OUTLINE_CHARS) return result;
+
+    // 降级1：去掉 subsubsection
+    result = formatOutline(allOutlines, ['chapter', 'section', 'subsection']);
+    if (result.length <= MAX_OUTLINE_CHARS) return result;
+
+    // 降级2：只保留 chapter/section
+    result = formatOutline(allOutlines, ['chapter', 'section']);
+    if (result.length <= MAX_OUTLINE_CHARS) return result;
+
+    // 降级3：只给每个文件的 section 数量摘要
+    const summaryParts: string[] = [];
+    for (const file of allOutlines) {
+      const sectionCount = file.entries.filter(e => e.command === 'section' || e.command === 'chapter').length;
+      const subCount = file.entries.filter(e => e.command === 'subsection').length;
+      summaryParts.push(`${file.path} (${file.totalLines} lines): ${sectionCount} sections, ${subCount} subsections`);
+    }
+    return summaryParts.join('\n');
+  }
+
+  /**
    * Agent 模式的 System Prompt
    */
   private async buildAgentPrompt(basePrompt: string, tools?: ToolDefinition[]): Promise<string> {
@@ -771,7 +889,9 @@ Project name: ${userInfo.projectName}
 The absolute path of the user's workspace is /.
 </user_info>
 
-${await this.buildProjectLayoutTag()}    
+${await this.buildProjectLayoutTag()}
+
+${await this.buildProjectOutlineTag()}
     `;
     return prompt;
   }
@@ -846,6 +966,8 @@ The absolute path of the user's workspace is /.
 </user_info>
 
 ${await this.buildProjectLayoutTag()}
+
+${await this.buildProjectOutlineTag()}
 
 Answer the user's request using the relevant tool(s), if they are available. Check that all the required parameters for each tool call are provided or can reasonably be inferred from context. IF there are no relevant tools or there are missing values for required parameters, ask the user to supply these values; otherwise proceed with the tool calls. If the user provides a specific value for a parameter (for example provided in quotes), make sure to use that value EXACTLY. DO NOT make up values for or ask about optional parameters. Carefully analyze descriptive terms in the request as they may indicate required parameter values that should be included even if not explicitly quoted.
     `;

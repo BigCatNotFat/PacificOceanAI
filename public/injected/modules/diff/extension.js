@@ -11,6 +11,9 @@ export let diffSuggestionField = null;
 
 /**
  * 创建行级 Widget 类
+ * 
+ * "先应用"模式：文档已包含新内容，widget 在新内容上方显示旧内容（带删除线）和操作按钮。
+ * Accept = 移除装饰（保留新内容）；Reject = 回滚到旧内容。
  */
 function createDiffSuggestionWidgetClass(CM) {
   const WidgetType = CM.WidgetType;
@@ -24,7 +27,7 @@ function createDiffSuggestionWidgetClass(CM) {
     toDOM(view) {
       const config = this.config;
       const id = config.id;
-      const newContent = config.newContent;
+      const oldContent = config.oldContent;
       const onAccept = config.onAccept;
       const onReject = config.onReject;
       
@@ -32,21 +35,21 @@ function createDiffSuggestionWidgetClass(CM) {
       container.className = 'diff-suggestion-block';
       container.dataset.suggestionId = id;
       
-      const newContentDiv = document.createElement('div');
-      newContentDiv.className = 'diff-new-content';
+      const oldContentDiv = document.createElement('div');
+      oldContentDiv.className = 'diff-old-content';
       
       const text = document.createElement('span');
-      text.className = 'diff-new-text';
-      text.textContent = newContent;
+      text.className = 'diff-old-text';
+      text.textContent = oldContent;
       
-      newContentDiv.appendChild(text);
+      oldContentDiv.appendChild(text);
       
       const buttons = document.createElement('div');
       buttons.className = 'diff-buttons';
       
       const rejectBtn = document.createElement('button');
       rejectBtn.className = 'diff-btn diff-btn-reject';
-      rejectBtn.innerHTML = '✕ Reject';
+      rejectBtn.innerHTML = '✕ Undo';
       rejectBtn.type = 'button';
       rejectBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
       rejectBtn.addEventListener('click', function(e) {
@@ -57,7 +60,7 @@ function createDiffSuggestionWidgetClass(CM) {
       
       const acceptBtn = document.createElement('button');
       acceptBtn.className = 'diff-btn diff-btn-accept';
-      acceptBtn.innerHTML = '✓ Accept';
+      acceptBtn.innerHTML = '✓ Keep';
       acceptBtn.type = 'button';
       acceptBtn.addEventListener('mousedown', function(e) { e.preventDefault(); });
       acceptBtn.addEventListener('click', function(e) {
@@ -68,15 +71,15 @@ function createDiffSuggestionWidgetClass(CM) {
       
       buttons.appendChild(rejectBtn);
       buttons.appendChild(acceptBtn);
-      newContentDiv.appendChild(buttons);
-      container.appendChild(newContentDiv);
+      oldContentDiv.appendChild(buttons);
+      container.appendChild(oldContentDiv);
       
       return container;
     }
     
     eq(other) {
       return this.config.id === other.config.id &&
-             this.config.newContent === other.config.newContent;
+             this.config.oldContent === other.config.oldContent;
     }
     
     ignoreEvent(event) {
@@ -311,7 +314,7 @@ export function createDiffSuggestionExtension(CM) {
         const inlineStatus = fieldValue.inlineStatus;
         const decorations = [];
         
-        // 行级建议装饰
+        // 行级建议装饰（先应用模式：文档已是新内容，widget 在上方显示旧内容）
         for (const entry of suggestions) {
           const id = entry[0];
           const config = entry[1];
@@ -319,19 +322,21 @@ export function createDiffSuggestionExtension(CM) {
             const lineStart = state.doc.lineAt(config.lineFrom);
             const lineEnd = state.doc.lineAt(config.lineTo);
             
+            // 新内容行标记为绿色高亮
             for (let i = lineStart.number; i <= lineEnd.number; i++) {
               const line = state.doc.line(i);
               decorations.push(
-                Decoration.line({ class: 'diff-line-deleted' }).range(line.from)
+                Decoration.line({ class: 'diff-line-added' }).range(line.from)
               );
             }
             
+            // 旧内容 widget 显示在新内容块的上方（side: -1）
             decorations.push(
               Decoration.widget({
                 widget: new DiffSuggestionWidget(config),
                 block: true,
-                side: 1
-              }).range(config.widgetPos)
+                side: -1
+              }).range(lineStart.from)
             );
           } catch (e) {
             console.error('[DiffAPI] 创建行级装饰失败:', e);

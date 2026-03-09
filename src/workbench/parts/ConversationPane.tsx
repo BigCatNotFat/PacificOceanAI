@@ -809,17 +809,17 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                 </div>
               )}
 
-              {/* 工具调用 - 优先使用流式 buffer，否则使用存储的 toolCalls */}
+              {/* 工具调用 - 流式 buffer 存在时完全由 buffer 驱动，buffer 不存在时才回退到存储的 toolCalls */}
               {(() => {
                 const buffer = streamingBuffers.get(msg.id);
                 
-                // 优先使用流式 buffer（实时数据）
+                // 流式 buffer 存在时，始终由 buffer 驱动渲染（即使当前没有可见工具），
+                // 避免在 buffer 与存储的 toolCalls 同时存在时渲染两套 UI
                 if (buffer && buffer.toolCalls.size > 0) {
                   const visibleTools = Array.from(buffer.toolCalls.entries())
                     .filter(([_, tc]) => tc.status === 'running' || tc.status === 'completed' || tc.status === 'error');
                   
-                  if (visibleTools.length > 0) {
-                    return visibleTools.map(([toolCallId, toolCall]) => {
+                  return visibleTools.map(([toolCallId, toolCall]) => {
                       const toolMsgId = `${msg.id}:${toolCallId}`;
                       const canExpand = toolCall.status === 'completed' || toolCall.status === 'error' || toolCall.status === 'running';
                       const isExpanded = canExpand && !!thinkingStates[toolMsgId];
@@ -876,7 +876,6 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                         </div>
                       );
                     });
-                  }
                 }
                 
                 // 没有流式 buffer 时，使用存储的 toolCalls（从历史记录恢复）
@@ -1050,19 +1049,31 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
             </button>
             <button 
               className="ai-send-btn-new" 
-              onClick={isGenerating ? stopGeneration : sendMessage} 
-              disabled={!hasApiKey || isCheckingApiKey}
+              onClick={!hasApiKey && !isCheckingApiKey ? () => {
+                try {
+                  if (typeof chrome !== 'undefined' && chrome.runtime?.openOptionsPage) {
+                    chrome.runtime.openOptionsPage(() => {
+                      if (chrome.runtime.lastError) {
+                        window.open(chrome.runtime.getURL('src/extension/options/index.html'), '_blank');
+                      }
+                    });
+                  } else if (typeof chrome !== 'undefined' && chrome.runtime) {
+                    window.open(chrome.runtime.getURL('src/extension/options/index.html'), '_blank');
+                  }
+                } catch { /* ignore */ }
+              } : isGenerating ? stopGeneration : sendMessage} 
+              disabled={isCheckingApiKey}
               title={
-                !hasApiKey ? '请先配置 API Key' : 
+                !hasApiKey ? '未添加模型，点击前往设置' : 
                 isGenerating ? '停止生成' : '发送'
               }
               style={{ 
-                opacity: (!hasApiKey || isCheckingApiKey) ? 0.5 : 1, 
-                cursor: (!hasApiKey || isCheckingApiKey) ? 'not-allowed' : 'pointer',
-                backgroundColor: isGenerating ? '#dc2626' : undefined
+                opacity: isCheckingApiKey ? 0.5 : 1, 
+                cursor: isCheckingApiKey ? 'not-allowed' : 'pointer',
+                backgroundColor: isGenerating ? '#dc2626' : !hasApiKey ? '#f59e0b' : undefined
               }}
             >
-              <span className="material-symbols">{isGenerating ? 'stop' : 'send'}</span>
+              <span className="material-symbols">{isGenerating ? 'stop' : !hasApiKey ? 'settings' : 'send'}</span>
             </button>
           </div>
         </div>
