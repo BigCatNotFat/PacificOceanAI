@@ -541,6 +541,9 @@ ${text}
       } catch (e) {
         console.warn('[PromptService] 获取文件统计信息失败:', e);
       }
+
+      // REST API 不返回空文件夹，通过 Bridge listFiles 补全
+      const extraFolderPaths = await this.getEmptyFolderPaths(entities);
       
       // 构建文件树结构
       const tree: Map<string, any[]> = new Map();
@@ -560,6 +563,25 @@ ${text}
           fullPath: entity.path
         });
       });
+
+      // 将空文件夹也加入树中
+      for (const folderPath of extraFolderPaths) {
+        const parts = folderPath.split('/').filter(p => p);
+        const parentDir = parts.slice(0, -1).join('/');
+        const folderName = parts[parts.length - 1];
+
+        if (!tree.has(parentDir)) {
+          tree.set(parentDir, []);
+        }
+        const siblings = tree.get(parentDir)!;
+        if (!siblings.some(s => s.name === folderName && s.type === 'folder')) {
+          siblings.push({ name: folderName, type: 'folder', fullPath: folderPath });
+        }
+        // 确保空文件夹自身也在树中有条目（这样它会显示为目录标题）
+        if (!tree.has(folderPath.replace(/^\//, ''))) {
+          tree.set(folderPath.replace(/^\//, ''), []);
+        }
+      }
       
       // 格式化输出
       let output = '';
@@ -600,6 +622,46 @@ ${text}
     } catch (error) {
       console.warn('[PromptService] 无法获取项目文件结构:', error);
       return 'Unable to retrieve project structure.';
+    }
+  }
+
+  /**
+   * 获取 REST API 未包含的空文件夹路径
+   * Bridge listFiles 能看到所有文件夹（包括空的），去掉根文件夹前缀后返回相对路径
+   */
+  private async getEmptyFolderPaths(existingEntities: { path: string }[]): Promise<string[]> {
+    try {
+      const bridgeFiles = await overleafEditor.fileOps.listFiles();
+      const folders = bridgeFiles.filter(f => f.type === 'folder');
+      if (folders.length === 0) return [];
+
+      const rootFolder = folders.find(f => !f.path.includes('/'));
+      const rootPrefix = rootFolder ? rootFolder.path + '/' : '';
+
+      // REST API 已经有的目录（从路径中推断出来的）
+      const knownDirs = new Set<string>();
+      for (const e of existingEntities) {
+        const parts = e.path.split('/').filter(p => p);
+        for (let i = 1; i < parts.length; i++) {
+          knownDirs.add(parts.slice(0, i).join('/'));
+        }
+      }
+
+      const result: string[] = [];
+      for (const f of folders) {
+        if (f === rootFolder) continue;
+        let rel = f.path;
+        if (rootPrefix && rel.startsWith(rootPrefix)) {
+          rel = rel.slice(rootPrefix.length);
+        }
+        if (!knownDirs.has(rel)) {
+          result.push(rel);
+        }
+      }
+      return result;
+    } catch (error) {
+      console.warn('[PromptService] getEmptyFolderPaths failed:', error);
+      return [];
     }
   }
 

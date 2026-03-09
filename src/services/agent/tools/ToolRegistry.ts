@@ -26,6 +26,11 @@ import { LatexCodebaseSearchTool } from './implementations/LatexCodeBaseSearch';
 import { PaperSemanticSearchTool } from './implementations/PaperSemanticSearchTool';
 import { PaperBooleanSearchTool } from './implementations/PaperBooleanSearchTool';
 import { ReadImageTool } from './implementations/ReadImageTool';
+import { CreateFileTool } from './implementations/CreateFileTool';
+import { RenameFileTool } from './implementations/RenameFileTool';
+import { MoveFileTool } from './implementations/MoveFileTool';
+import { CompileTool } from './implementations/CompileTool';
+import { CompilerSettingsTool } from './implementations/CompilerSettingsTool';
 
 /**
  * 工具注册表
@@ -56,9 +61,13 @@ export class ToolRegistry {
     new ReplaceLinesTool(),    // 行号替换（大段内容）
     new SearchReplaceTool(),   // 字符串替换（小范围修改）
     new DeleteFileTool(),
+    new CreateFileTool(),
+    new RenameFileTool(),
+    new MoveFileTool(),
+    // 编译工具
+    new CompileTool(),
+    new CompilerSettingsTool(),
     // new ReapplyTool(),
-    // 👇 新增工具在这里添加，每个工具一行
-    // new YourNewTool(),
   ];
 
   constructor() {
