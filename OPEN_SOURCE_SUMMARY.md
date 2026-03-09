@@ -69,13 +69,13 @@
 
 **README.md**
 ```
-yourusername → 你的 GitHub 用户名
+BigCatNotFat → 你的 GitHub 用户名
 ```
 
 **SECURITY.md**
 ```
 your-email@example.com → 你的邮箱
-@yourusername → 你的 GitHub 用户名
+@BigCatNotFat → 你的 GitHub 用户名
 ```
 
 **PRIVACY.md**
@@ -182,7 +182,7 @@ git push origin v2.0.3
 
 ```markdown
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.0.3-blue.svg)](https://github.com/yourusername/pacific-ocean-ai)
+[![Version](https://img.shields.io/badge/version-2.0.3-blue.svg)](https://github.com/BigCatNotFat/PacificOceanAI)
 ```
 
 ### 8. 可选：提交到扩展商店

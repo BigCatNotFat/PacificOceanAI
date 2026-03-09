@@ -108,7 +108,7 @@ It does not apply to:
 
 For security concerns, please contact:
 - Email: [your-email@example.com]
-- GitHub: [@yourusername](https://github.com/yourusername)
+- GitHub: [@BigCatNotFat](https://github.com/BigCatNotFat)
 
 For general questions, please use GitHub Issues or Discussions.
 

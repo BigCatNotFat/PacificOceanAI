@@ -41,7 +41,7 @@
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/pacific-ocean-ai.git
+   git clone https://github.com/BigCatNotFat/PacificOceanAI.git
    cd pacific-ocean-ai
    ```
 
@@ -169,9 +169,9 @@ This project is licensed under the **GNU Affero General Public License v3.0 (AGP
 
 ### 📞 Support
 
-- 🐛 [Report a Bug](https://github.com/yourusername/pacific-ocean-ai/issues)
-- 💡 [Request a Feature](https://github.com/yourusername/pacific-ocean-ai/issues)
-- 📖 [Documentation](https://github.com/yourusername/pacific-ocean-ai/wiki)
+- 🐛 [Report a Bug](https://github.com/BigCatNotFat/PacificOceanAI/issues)
+- 💡 [Request a Feature](https://github.com/BigCatNotFat/PacificOceanAI/issues)
+- 📖 [Documentation](https://github.com/BigCatNotFat/PacificOceanAI/wiki)
 
 ### 🔒 Privacy
 
@@ -209,7 +209,7 @@ We take your privacy seriously. Read our [Privacy Policy](PRIVACY.md) to learn h
 
 1. **克隆仓库**
    ```bash
-   git clone https://github.com/yourusername/pacific-ocean-ai.git
+   git clone https://github.com/BigCatNotFat/PacificOceanAI.git
    cd pacific-ocean-ai
    ```
 
@@ -337,9 +337,9 @@ PacificOceanAI 采用清晰的模块化架构：
 
 ### 📞 支持
 
-- 🐛 [报告 Bug](https://github.com/yourusername/pacific-ocean-ai/issues)
-- 💡 [请求功能](https://github.com/yourusername/pacific-ocean-ai/issues)
-- 📖 [文档](https://github.com/yourusername/pacific-ocean-ai/wiki)
+- 🐛 [报告 Bug](https://github.com/BigCatNotFat/PacificOceanAI/issues)
+- 💡 [请求功能](https://github.com/BigCatNotFat/PacificOceanAI/issues)
+- 📖 [文档](https://github.com/BigCatNotFat/PacificOceanAI/wiki)
 
 ### 🔒 隐私
 
