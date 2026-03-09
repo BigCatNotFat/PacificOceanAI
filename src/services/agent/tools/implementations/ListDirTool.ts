@@ -9,6 +9,7 @@ import { BaseTool } from '../base/BaseTool';
 import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import type { FileTreeEntity } from '../../../editor/modules/ProjectModule';
+import type { FileEntity } from '../../../editor/modules/FileOpsModule';
 
 /** 文件项信息（带可选统计） */
 interface FileItem {
@@ -71,12 +72,15 @@ export class ListDirTool extends BaseTool {
 
       this.log(`列出目录: ${args.relative_workspace_path}`);
 
-      // 通过 ProjectModule 获取文件树
+      // 通过 ProjectModule 获取文件树（REST API，只返回 doc/file 叶节点）
       const fileTree = await overleafEditor.project.getFileTree();
       const normalizedPath = this.normalizeRelativePath(args.relative_workspace_path);
       
       // 过滤出指定目录下的文件
       const result = this.filterByDirectory(fileTree.entities, normalizedPath);
+
+      // REST API 不返回空文件夹，通过 Bridge listFiles 补全
+      await this.mergeEmptyFolders(result.items, normalizedPath);
 
       // 默认获取文件统计信息
       await this.enrichWithStats(result.items, fileTree.project_id);
@@ -228,6 +232,66 @@ export class ListDirTool extends BaseTool {
     }
 
     return response.text();
+  }
+
+  /**
+   * REST API `/project/{id}/entities` 只返回 doc/file 叶节点，不包含空文件夹。
+   * 通过 Bridge `listFiles`（读取 React Fiber 内部状态）补全缺失的文件夹。
+   *
+   * Bridge listFiles 的路径格式: "rootFolderName/subfolder/file.tex"
+   * 其中第一段是根文件夹名称（不应显示给用户）。
+   */
+  private async mergeEmptyFolders(items: FileItem[], dirPath: string): Promise<void> {
+    try {
+      const bridgeFiles = await overleafEditor.fileOps.listFiles();
+      const folders = bridgeFiles.filter(f => f.type === 'folder');
+      if (folders.length === 0) return;
+
+      // 根文件夹：path 中不含 "/" 的文件夹就是 root
+      const rootFolder = folders.find(f => !f.path.includes('/'));
+      const rootPrefix = rootFolder ? rootFolder.path + '/' : '';
+
+      const existingNames = new Set(items.map(i => i.name));
+      const normalizedDir = dirPath === '/' ? '' : dirPath.replace(/^\/+/, '');
+
+      for (const f of folders) {
+        if (f === rootFolder) continue;
+
+        // 将 bridge 路径转为相对于项目根的路径（去掉根文件夹前缀）
+        let relativePath = f.path;
+        if (rootPrefix && relativePath.startsWith(rootPrefix)) {
+          relativePath = relativePath.slice(rootPrefix.length);
+        }
+
+        // 判断此文件夹是否是 dirPath 的直接子文件夹
+        if (normalizedDir === '') {
+          // 列出根目录：直接子文件夹 = 路径中不含 "/"
+          if (!relativePath.includes('/') && !existingNames.has(f.name)) {
+            existingNames.add(f.name);
+            items.push({
+              name: f.name,
+              type: 'directory',
+              path: `/${f.name}`,
+              id: f.id
+            });
+          }
+        } else {
+          // 列出子目录：路径应该是 "normalizedDir/folderName" 且没有更深层级
+          const expected = normalizedDir + '/' + f.name;
+          if (relativePath === expected && !existingNames.has(f.name)) {
+            existingNames.add(f.name);
+            items.push({
+              name: f.name,
+              type: 'directory',
+              path: `/${relativePath}`,
+              id: f.id
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[ListDirTool] mergeEmptyFolders failed (non-critical):', error);
+    }
   }
 
   private getDomFileIdMap(): Map<string, string> {

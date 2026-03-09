@@ -33,7 +33,9 @@ import {
   EditorModule,
   SelectionModule,
   FileModule,
-  ProjectModule
+  ProjectModule,
+  FileOpsModule,
+  CompileModule
 } from './modules';
 
 export class OverleafEditor {
@@ -50,6 +52,10 @@ export class OverleafEditor {
   readonly file: FileModule;
   /** 项目模块（文件树等） */
   readonly project: ProjectModule;
+  /** 文件操作模块（增删改移） */
+  readonly fileOps: FileOpsModule;
+  /** 编译模块 */
+  readonly compile: CompileModule;
 
   private constructor(bridge: OverleafBridgeClient) {
     this.bridge = bridge;
@@ -58,6 +64,8 @@ export class OverleafEditor {
     this.selection = new SelectionModule(bridge);
     this.file = new FileModule(bridge);
     this.project = new ProjectModule(bridge);
+    this.fileOps = new FileOpsModule(bridge);
+    this.compile = new CompileModule(bridge);
   }
 
   static getInstance(): OverleafEditor {
