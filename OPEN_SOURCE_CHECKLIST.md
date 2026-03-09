@@ -163,7 +163,7 @@ This checklist helps ensure your project is ready for open source release.
   git add .
   git commit -m "Initial commit"
   git branch -M main
-  git remote add origin https://github.com/yourusername/pacific-ocean-ai.git
+  git remote add origin https://github.com/BigCatNotFat/PacificOceanAI.git
   git push -u origin main
   ```
 
@@ -299,7 +299,7 @@ git push origin v2.0.3
 Before going public, replace these placeholders:
 
 1. **README.md**
-   - `yourusername` → your GitHub username
+   - `BigCatNotFat` → your GitHub username
    - `your-email@example.com` → your email
 
 2. **PRIVACY.md**
@@ -307,19 +307,19 @@ Before going public, replace these placeholders:
 
 3. **SECURITY.md**
    - `your-email@example.com` → your email
-   - `@yourusername` → your GitHub username
+   - `@BigCatNotFat` → your GitHub username
 
 4. **package.json**
    ```json
    {
      "repository": {
        "type": "git",
-       "url": "https://github.com/yourusername/pacific-ocean-ai.git"
+       "url": "https://github.com/BigCatNotFat/PacificOceanAI.git"
      },
      "bugs": {
-       "url": "https://github.com/yourusername/pacific-ocean-ai/issues"
+       "url": "https://github.com/BigCatNotFat/PacificOceanAI/issues"
      },
-     "homepage": "https://github.com/yourusername/pacific-ocean-ai#readme",
+     "homepage": "https://github.com/BigCatNotFat/PacificOceanAI#readme",
      "author": "Your Name <your-email@example.com>"
    }
    ```
