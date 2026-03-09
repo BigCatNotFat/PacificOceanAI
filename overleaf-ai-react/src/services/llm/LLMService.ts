@@ -32,7 +32,9 @@ import { OpenAIProvider } from './adapters/OpenAIProvider';
 import { OpenAICompatibleProvider } from './adapters/OpenAICompatibleProvider';
 import { GeminiProvider } from './adapters/GeminiProvider';
 import { AnthropicProvider } from './adapters/AnthropicProvider';
+import { CodexOAuthProvider } from './adapters/CodexOAuthProvider';
 import type { APIConfig } from './adapters/BaseLLMProvider';
+import { codexOAuthService } from '../auth/CodexOAuthService';
 import { logger } from '../../utils/logger';
 
 /**
@@ -74,35 +76,9 @@ export class LLMService implements ILLMService {
     messages: LLMMessage[],
     config: LLMConfig
   ): Promise<LLMFinalMessage> {
-    // console.log('[LLMService] 开始调用 LLM', {
-    //   modelId: config.modelId,
-    //   messageCount: messages.length
-    // });
-
-    // 1. 获取模型信息，判断供应商
-    const modelInfo = this.modelRegistry.getModelInfo(config.modelId);
-    if (!modelInfo) {
-      throw new Error(`未找到模型: ${config.modelId}`);
-    }
-
-    // console.log('[LLMService] 模型供应商:', modelInfo.provider);
-
-    // 2. 获取 API 配置
-    const apiConfig = await this.getAPIConfig();
-
-    // 3. 根据供应商选择 Provider
-    const provider = await this.getProvider(modelInfo.provider, apiConfig);
-
-    // 4. 调用 Provider 的 chat 方法
-    const result = await provider.chat(messages, config);
-
-    // console.log('[LLMService] 调用完成', {
-    //   contentLength: result.content?.length || 0,
-    //   hasThinking: !!result.thinking,
-    //   toolCallsCount: result.toolCalls?.length || 0
-    // });
-
-    return result;
+    const { providerType, apiConfig } = await this.resolveModelAndConfig(config.modelId);
+    const provider = await this.getProvider(providerType, apiConfig);
+    return await provider.chat(messages, config);
   }
 
   /**
@@ -126,19 +102,8 @@ export class LLMService implements ILLMService {
       messageCount: messages.length
     });
 
-    // 1. 获取模型信息，判断供应商
-    const modelInfo = this.modelRegistry.getModelInfo(config.modelId);
-    if (!modelInfo) {
-      throw new Error(`未找到模型: ${config.modelId}`);
-    }
-
-    // 2. 获取 API 配置
-    const apiConfig = await this.getAPIConfig();
-
-    // 3. 根据供应商选择 Provider
-    const provider = await this.getProvider(modelInfo.provider, apiConfig);
-
-    // 4. 调用 Provider 的 managerChat 方法
+    const { providerType, apiConfig } = await this.resolveModelAndConfig(config.modelId);
+    const provider = await this.getProvider(providerType, apiConfig);
     const result = await provider.managerChat(messages, config);
 
     logger.debug('[LLMService] managerChat 调用完成', {
@@ -153,27 +118,74 @@ export class LLMService implements ILLMService {
   // ==================== 私有方法 ====================
 
   /**
-   * 获取 API 配置
+   * 解析模型并获取对应的 API 凭证
+   * 优先从用户模型配置取凭证，其次查静态注册表 + 旧版全局配置
    */
-  private async getAPIConfig(): Promise<APIConfig> {
+  private async resolveModelAndConfig(modelId: string): Promise<{ providerType: string; apiConfig: APIConfig }> {
     const config = await this.configService.getAPIConfig();
-    if (!config || !config.apiKey) {
-      throw new Error('未配置 API Key，请先在设置中配置');
+    const userModel = config?.models?.find(m => m.id === modelId && m.enabled);
+
+    // Codex OAuth 模型（使用 ChatGPT 订阅认证，无需 API Key）
+    if (userModel?.provider === 'codex-oauth') {
+      return {
+        providerType: 'codex-oauth',
+        apiConfig: { apiKey: '', baseUrl: 'https://chatgpt.com/backend-api' }
+      };
     }
 
-    return {
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl || 'https://api.openai.com/v1'
-    };
+    // 用户配置的模型（每个模型自带凭证）
+    if (userModel?.apiKey) {
+      const providerType = userModel.provider === 'gemini' ? 'gemini' : 'openai';
+      return {
+        providerType,
+        apiConfig: { apiKey: userModel.apiKey, baseUrl: userModel.baseUrl }
+      };
+    }
+
+    // 静态注册表中的模型（兼容旧架构）
+    const registryInfo = this.modelRegistry.getModelInfo(modelId);
+    if (registryInfo) {
+      if (config?.apiKey) {
+        return {
+          providerType: registryInfo.provider,
+          apiConfig: { apiKey: config.apiKey, baseUrl: config.baseUrl || 'https://api.openai.com/v1' }
+        };
+      }
+      throw new Error(`模型 ${modelId} 在注册表中，但缺少 API Key，请在设置中配置`);
+    }
+
+    // 用户配置的模型但没有 apiKey
+    if (userModel) {
+      throw new Error(`模型 "${userModel.name}" 未配置 API Key，请在设置中补充`);
+    }
+
+    throw new Error(`未找到模型: ${modelId}，请在设置中添加该模型`);
   }
 
   /**
    * 根据供应商类型获取对应的 Provider
    */
   private async getProvider(providerType: string, apiConfig: APIConfig): Promise<any> {
-    // 检查缓存
-    if (this.providerCache.has(providerType)) {
-      return this.providerCache.get(providerType);
+    // Codex OAuth: token 会过期刷新，每次都需要获取最新 token，不使用缓存
+    if (providerType === 'codex-oauth') {
+      const tokens = await codexOAuthService.getValidTokens();
+      if (!tokens) {
+        throw new Error('ChatGPT 未登录或登录已过期，请在设置页面重新登录');
+      }
+      return new CodexOAuthProvider(
+        this.modelRegistry,
+        this.uiStreamService,
+        {
+          accessToken: tokens.accessToken,
+          chatgptAccountId: tokens.chatgptAccountId
+        }
+      );
+    }
+
+    // 使用 providerType + apiKey 组合作为缓存 key，API 配置变更时自动刷新
+    const cacheKey = `${providerType}:${apiConfig.apiKey}`;
+    if (this.providerCache.has(cacheKey)) {
+      return this.providerCache.get(cacheKey);
     }
 
     // 根据供应商类型创建 Provider
@@ -217,7 +229,7 @@ export class LLMService implements ILLMService {
     }
 
     // 缓存 Provider
-    this.providerCache.set(providerType, provider);
+    this.providerCache.set(cacheKey, provider);
     
     return provider;
   }

@@ -55,26 +55,21 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
 
   // ============ 激活状态同步到注入脚本 ============
   
-  // 发送激活状态到注入脚本
+  // 发送激活状态到注入脚本（开源版：检查是否有任一供应商配置了 API Key）
   const sendActivationStatus = useCallback(async () => {
     const config = await configService.getAPIConfig();
-    // 只有当 apiKey 存在且已验证时才认为已激活
-    const isActivated = !!(config && config.apiKey && config.isVerified);
+    const isActivated = !!(config?.models?.some(m => m.enabled && m.apiKey));
     
     window.postMessage({
       type: 'OVERLEAF_ACTIVATION_STATUS_UPDATE',
       data: { isActivated }
     }, '*');
-    
-    console.log('[TextActionProvider] Sent activation status:', isActivated, '(apiKey:', !!config?.apiKey, 'isVerified:', !!config?.isVerified, ')');
   }, [configService]);
 
   // 初始化时和配置变化时同步激活状态
   useEffect(() => {
-    // 初始同步
     sendActivationStatus();
     
-    // 监听激活状态请求
     const handleActivationStatusRequest = (event: MessageEvent) => {
       if (event.source !== window) return;
       if (event.data?.type === 'OVERLEAF_REQUEST_ACTIVATION_STATUS') {
@@ -82,31 +77,33 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
       }
     };
     
-    // 监听显示激活模态框请求（来自注入脚本）
-    const handleShowActivationModal = (event: MessageEvent) => {
+    // 监听打开设置页面请求（来自注入脚本）
+    const handleOpenSettings = (event: MessageEvent) => {
       if (event.source !== window) return;
-      if (event.data?.type === 'OVERLEAF_SHOW_ACTIVATION_MODAL') {
-        window.dispatchEvent(new CustomEvent('SHOW_ACTIVATION_MODAL'));
+      if (event.data?.type === 'OVERLEAF_OPEN_SETTINGS') {
+        try {
+          if (typeof chrome !== 'undefined' && chrome.runtime?.openOptionsPage) {
+            chrome.runtime.openOptionsPage();
+          }
+        } catch { /* ignore */ }
       }
     };
-    
+
     window.addEventListener('message', handleActivationStatusRequest);
-    window.addEventListener('message', handleShowActivationModal);
+    window.addEventListener('message', handleOpenSettings);
     
     return () => {
       window.removeEventListener('message', handleActivationStatusRequest);
-      window.removeEventListener('message', handleShowActivationModal);
+      window.removeEventListener('message', handleOpenSettings);
     };
   }, [sendActivationStatus]);
   
   // 创建 AI 调用处理器
   const createAIHandler = useCallback((action: TextActionType) => {
     return async (_action: TextActionType, text: string, from: number, to: number, modelId?: string, customPrompt?: string, context?: { before?: string; after?: string }): Promise<string | null> => {
-      // 检查 API Key 和验证状态
       const config = await configService.getAPIConfig();
-      if (!config || !config.apiKey || !config.isVerified) {
-        console.warn('[TextActionProvider] 未配置或未验证 API Key，请求用户激活');
-        window.dispatchEvent(new CustomEvent('SHOW_ACTIVATION_MODAL'));
+      if (!config?.models?.some(m => m.enabled && m.apiKey)) {
+        console.warn('[TextActionProvider] 未配置任何模型，请前往设置页面添加');
         return null;
       }
 

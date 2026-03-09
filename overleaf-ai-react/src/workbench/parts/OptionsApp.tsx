@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useService } from '../hooks/useService';
 import { IConfigurationServiceId } from '../../platform/configuration/configuration';
 import type { IConfigurationService, AIModelConfig, APIConfig } from '../../platform/configuration/configuration';
-import { API_ENDPOINTS } from '../../base/common/apiConfig';
+import { codexOAuthService } from '../../services/auth/CodexOAuthService';
 
 /**
  * Options 设置页面主组件
@@ -20,23 +20,33 @@ const OptionsApp: React.FC = () => {
 
   const [apiConfig, setApiConfig] = useState<APIConfig | null>(null);
   const [saved, setSaved] = useState(false);
-  const [testingConnection, setTestingConnection] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  
-  // 新模型表单状态
-  const [newModel, setNewModel] = useState<Partial<AIModelConfig>>({
-    id: '',
-    name: '',
-    description: '',
-    enabled: true
-  });
-  const [showAddModel, setShowAddModel] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addResult, setAddResult] = useState<{ success: boolean; message: string } | null>(null);
   
   // 当前选中的设置分类
   const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'ai'>('general');
 
-  // 是否显示启动码
-  const [showApiKey, setShowApiKey] = useState(false);
+  // 添加模型表单
+  const [formProvider, setFormProvider] = useState<'openai' | 'gemini'>('openai');
+  const [formApiKey, setFormApiKey] = useState('');
+  const [formBaseUrl, setFormBaseUrl] = useState('https://api.openai.com/v1');
+  const [formModelName, setFormModelName] = useState('');
+  const [showFormKey, setShowFormKey] = useState(false);
+
+  // 模型列表拉取
+  const [fetchedModels, setFetchedModels] = useState<string[]>([]);
+  const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState('');
+
+  // 每个模型的 key 可见性
+  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
+
+  // Codex OAuth 状态
+  const [codexLoggedIn, setCodexLoggedIn] = useState(false);
+  const [codexLoggingIn, setCodexLoggingIn] = useState(false);
+  const [codexError, setCodexError] = useState('');
+  const [codexModelName, setCodexModelName] = useState('');
+  const [codexAddResult, setCodexAddResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // 加载保存的设置
   useEffect(() => {
@@ -55,6 +65,11 @@ const OptionsApp: React.FC = () => {
     });
   }, [configService]);
 
+  // 加载 Codex OAuth 登录状态
+  useEffect(() => {
+    codexOAuthService.isLoggedIn().then(setCodexLoggedIn);
+  }, []);
+
   // 保存通用设置
   const saveSettings = () => {
     chrome.storage.sync.set({ settings }, () => {
@@ -68,179 +83,164 @@ const OptionsApp: React.FC = () => {
     setSettings({ ...settings, [key]: value });
   };
 
-  // 保存 API 配置
-  const saveAPIConfig = async () => {
-    if (!apiConfig) return;
-    
+  // Codex OAuth 登录
+  const handleCodexLogin = async () => {
+    setCodexLoggingIn(true);
+    setCodexError('');
     try {
-      await configService.setAPIConfig(apiConfig);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-      
-      // 同步激活状态到注入脚本（根据 isVerified 字段）
-      const isActivated = !!(apiConfig.apiKey && apiConfig.isVerified);
-      window.postMessage({
-        type: 'OVERLEAF_ACTIVATION_STATUS_UPDATE',
-        data: { isActivated }
-      }, '*');
-      console.log('[OptionsApp] Config saved, activation status:', isActivated);
+      await codexOAuthService.login();
+      setCodexLoggedIn(true);
     } catch (error) {
-      console.error('Failed to save API config:', error);
-      alert('保存失败：' + (error instanceof Error ? error.message : String(error)));
-    }
-  };
-
-  // 测试连通性
-  const testConnection = async () => {
-    if (!apiConfig) return;
-    
-    setTestingConnection(true);
-    setTestResult(null);
-    
-    // 保存当前的 API Key 和 Base URL（防止被覆盖）
-    const currentApiKey = apiConfig.apiKey;
-    const currentBaseUrl = apiConfig.baseUrl;
-    
-    try {
-      const result = await configService.testConnectivity(apiConfig.apiKey, apiConfig.baseUrl);
-      
-      if (result.success) {
-        let addedCount = 0;
-        let enabledCount = 0;
-        let disabledCount = 0;
-        
-        if (result.availableModels && result.availableModels.length > 0) {
-          try {
-            const syncResult = await configService.syncModelsFromConnectivityResult(result.availableModels);
-            addedCount = syncResult.added;
-            enabledCount = syncResult.enabled;
-            disabledCount = syncResult.disabled;
-          } catch (err) {
-            console.error('Failed to sync models:', err);
-          }
-          
-          // 4. 再次加载配置以显示最终状态
-          const updatedConfig = await configService.getAPIConfig();
-          
-          // 恢复 API Key 和 Base URL（保持用户输入的值）
-          if (updatedConfig) {
-            updatedConfig.apiKey = currentApiKey;
-            updatedConfig.baseUrl = currentBaseUrl;
-            updatedConfig.isVerified = true;  // 测试成功，标记为已验证
-            setApiConfig(updatedConfig);
-            
-            // 5. 自动保存 API 配置（包含 API Key 和 Base URL）
-            await configService.setAPIConfig(updatedConfig);
-            
-            // 同步激活状态到注入脚本
-            window.postMessage({
-              type: 'OVERLEAF_ACTIVATION_STATUS_UPDATE',
-              data: { isActivated: true }
-            }, '*');
-            console.log('[OptionsApp] Test successful, sent activation status update');
-          }
-        }
-        
-        // 构建详细的结果消息
-        const messages = [
-          `连接成功！延迟 ${result.latency}ms`,
-          `检测到 ${result.availableModels?.length || 0} 个可用模型`
-        ];
-        
-        if (addedCount > 0) {
-          messages.push(`新增 ${addedCount} 个模型`);
-        }
-        if (enabledCount > 0) {
-          messages.push(`已启用 ${enabledCount} 个模型`);
-        }
-        if (disabledCount > 0) {
-          messages.push(`已禁用 ${disabledCount} 个不可用模型`);
-        }
-        
-        messages.push('配置已自动保存');
-        
-        setTestResult({
-          success: true,
-          message: messages.join('\n')
-        });
-        
-        // 显示保存成功提示
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
-      } else {
-        setTestResult({
-          success: false,
-          message: `连接失败：${result.error}`
-        });
-      }
-    } catch (error) {
-      setTestResult({
-        success: false,
-        message: '测试失败：' + (error instanceof Error ? error.message : String(error))
-      });
+      setCodexError(error instanceof Error ? error.message : String(error));
     } finally {
-      setTestingConnection(false);
+      setCodexLoggingIn(false);
     }
   };
 
-  // 添加新模型
-  const addModel = async () => {
-    if (!apiConfig || !newModel.id || !newModel.name) {
-      alert('请填写模型 ID 和名称');
-      return;
-    }
-    
+  // Codex OAuth 登出
+  const handleCodexLogout = async () => {
+    await codexOAuthService.logout();
+    setCodexLoggedIn(false);
+    setCodexError('');
+  };
+
+  // 添加 Codex OAuth 模型
+  const addCodexModel = async () => {
+    const name = codexModelName.trim();
+    if (!name) { alert('请输入模型名称'); return; }
+
+    setCodexAddResult(null);
     try {
       await configService.addModel({
-        id: newModel.id,
-        name: newModel.name,
-        description: newModel.description || '',
-        enabled: newModel.enabled ?? true
+        id: name,
+        name,
+        enabled: true,
+        provider: 'codex-oauth',
+        apiKey: '',
+        baseUrl: 'https://chatgpt.com/backend-api'
       });
-      
-      // 重新加载配置
-      const updatedConfig = await configService.getAPIConfig();
-      setApiConfig(updatedConfig);
-      
-      // 重置表单
-      setNewModel({
-        id: '',
-        name: '',
-        description: '',
-        enabled: true
-      });
-      setShowAddModel(false);
+      const updated = await configService.getAPIConfig();
+      setApiConfig(updated);
+      setCodexModelName('');
+      setCodexAddResult({ success: true, message: `模型 "${name}" 添加成功` });
     } catch (error) {
-      alert('添加失败：' + (error instanceof Error ? error.message : String(error)));
+      setCodexAddResult({ success: false, message: '添加失败：' + (error instanceof Error ? error.message : String(error)) });
+    }
+  };
+
+  // 供应商切换时自动填充默认 Base URL 并清空模型列表
+  const handleProviderChange = (p: 'openai' | 'gemini') => {
+    setFormProvider(p);
+    setFormBaseUrl(p === 'gemini'
+      ? 'https://generativelanguage.googleapis.com/v1beta'
+      : 'https://api.openai.com/v1');
+    setFetchedModels([]);
+    setFormModelName('');
+    setFetchError('');
+  };
+
+  // 从 API 拉取可用模型列表
+  const fetchModelList = async () => {
+    const key = formApiKey.trim();
+    const url = formBaseUrl.trim();
+    if (!key || !url) { setFetchError('请先填写 API Key 和 Base URL'); return; }
+
+    setFetching(true);
+    setFetchError('');
+    setFetchedModels([]);
+
+    try {
+      const result = await configService.testConnectivity(key, url);
+      if (!result.success) {
+        setFetchError(`连接失败：${result.error}`);
+        return;
+      }
+      const models = result.availableModels || [];
+      if (models.length === 0) {
+        setFetchError('连接成功，但未检测到可用模型');
+        return;
+      }
+      setFetchedModels(models);
+      setFormModelName(models[0]);
+    } catch (error) {
+      setFetchError('获取失败：' + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  // 添加模型（模型列表已通过获取验证连通性，直接保存）
+  const addModel = async () => {
+    const name = formModelName.trim();
+    const key = formApiKey.trim();
+    const url = formBaseUrl.trim();
+    if (!name) { alert('请先选择模型'); return; }
+    if (!key) { alert('请输入 API Key'); return; }
+    if (!url) { alert('请输入 Base URL'); return; }
+
+    setAdding(true);
+    setAddResult(null);
+
+    try {
+      await configService.addModel({
+        id: name,
+        name,
+        enabled: true,
+        provider: formProvider,
+        apiKey: key,
+        baseUrl: url
+      });
+      const updated = await configService.getAPIConfig();
+      setApiConfig(updated);
+      // 从可选列表中移除已添加的模型
+      setFetchedModels(prev => prev.filter(m => m !== name));
+      const remaining = fetchedModels.filter(m => m !== name);
+      setFormModelName(remaining[0] || '');
+      setAddResult({ success: true, message: `模型 "${name}" 添加成功` });
+    } catch (error) {
+      setAddResult({ success: false, message: '添加失败：' + (error instanceof Error ? error.message : String(error)) });
+    } finally {
+      setAdding(false);
     }
   };
 
   // 删除模型
   const removeModel = async (modelId: string) => {
     if (!confirm(`确定要删除模型 "${modelId}" 吗？`)) return;
-    
     try {
       await configService.removeModel(modelId);
-      
-      // 重新加载配置
-      const updatedConfig = await configService.getAPIConfig();
-      setApiConfig(updatedConfig);
+      const updated = await configService.getAPIConfig();
+      setApiConfig(updated);
     } catch (error) {
       alert('删除失败：' + (error instanceof Error ? error.message : String(error)));
     }
   };
 
-  // 切换模型启用状态
+  // 切换模型启用 / 禁用
   const toggleModel = async (modelId: string, enabled: boolean) => {
     try {
       await configService.updateModel(modelId, { enabled });
-      
-      // 重新加载配置
-      const updatedConfig = await configService.getAPIConfig();
-      setApiConfig(updatedConfig);
+      const updated = await configService.getAPIConfig();
+      setApiConfig(updated);
     } catch (error) {
       alert('更新失败：' + (error instanceof Error ? error.message : String(error)));
     }
+  };
+
+  // 切换单个模型 key 可见性
+  const toggleKeyVisibility = (modelId: string) => {
+    setVisibleKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(modelId)) next.delete(modelId); else next.add(modelId);
+      return next;
+    });
+  };
+
+  // 遮蔽 API Key 显示
+  const maskKey = (key: string) => {
+    if (!key) return '';
+    if (key.length <= 8) return '****';
+    return key.slice(0, 4) + '****' + key.slice(-4);
   };
 
   // 渲染不同标签页的内容
@@ -327,154 +327,233 @@ const OptionsApp: React.FC = () => {
         return (
           <div>
             <h2 style={styles.contentTitle}>AI 配置</h2>
-            <p style={styles.contentSubtitle}>配置 AI 服务的连接参数</p>
+            <p style={styles.contentSubtitle}>添加模型并配置对应的供应商、API Key，添加后的模型才可以在对话中使用</p>
             
             {apiConfig && (
               <>
-                <div style={styles.settingRow}>
-                  <div style={styles.settingInfo}>
-                    <div style={styles.settingName}>启动码</div>
-                    <div style={styles.settingDescription}>请输入获取的启动码以使用 AI 服务（修改后需重新测试）</div>
-                  </div>
-                  <div style={styles.inputWithButton}>
-                    <input
-                      type={showApiKey ? "text" : "password"}
-                      value={apiConfig.apiKey}
-                      onChange={(e) => setApiConfig({ 
-                        ...apiConfig, 
-                        apiKey: e.target.value,
-                        isVerified: false  // 修改后需要重新验证
-                      })}
-                      placeholder="请输入启动码"
-                      style={{...styles.textInput, width: '100%', paddingRight: '40px'}}
-                    />
-                    <button
-                      onClick={() => setShowApiKey(!showApiKey)}
-                      style={styles.visibilityButton}
-                      title={showApiKey ? "隐藏启动码" : "显示启动码"}
-                    >
-                      {showApiKey ? (
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                          <line x1="1" y1="1" x2="23" y2="23"></line>
-                        </svg>
+                {/* Codex OAuth 登录区域 */}
+                <div style={styles.providerSection}>
+                  <h3 style={styles.providerTitle}>ChatGPT 订阅登录</h3>
+                  <p style={styles.providerDesc}>使用 ChatGPT Plus/Pro/Business 订阅直接访问 OpenAI 模型，无需 API Key 额外计费</p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {/* 登录状态 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{
+                        display: 'inline-block',
+                        width: '10px',
+                        height: '10px',
+                        borderRadius: '50%',
+                        backgroundColor: codexLoggedIn ? '#28a745' : '#dc3545',
+                        flexShrink: 0
+                      }} />
+                      <span style={{ fontSize: '14px', color: '#333', fontWeight: 500 }}>
+                        {codexLoggedIn ? '已登录 ChatGPT' : '未登录'}
+                      </span>
+                      {codexLoggedIn ? (
+                        <button onClick={handleCodexLogout} style={{
+                          ...styles.deleteButton,
+                          marginLeft: 'auto'
+                        }}>
+                          退出登录
+                        </button>
                       ) : (
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                          <circle cx="12" cy="12" r="3"></circle>
-                        </svg>
+                        <button
+                          onClick={handleCodexLogin}
+                          disabled={codexLoggingIn}
+                          style={{
+                            ...styles.submitButton,
+                            marginLeft: 'auto',
+                            backgroundColor: '#10a37f',
+                            opacity: codexLoggingIn ? 0.6 : 1,
+                            cursor: codexLoggingIn ? 'not-allowed' : 'pointer'
+                          }}
+                        >
+                          {codexLoggingIn ? '登录中...' : '登录 ChatGPT'}
+                        </button>
                       )}
-                    </button>
+                    </div>
+
+                    {codexError && (
+                      <div style={{ padding: '8px 12px', borderRadius: '6px', fontSize: '13px', backgroundColor: '#f8d7da', color: '#721c24', border: '1px solid #f5c6cb' }}>
+                        {codexError}
+                      </div>
+                    )}
+
+                    {/* 登录后：添加 Codex 模型 */}
+                    {codexLoggedIn && (
+                      <>
+                        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '8px' }}>
+                          <label style={{ fontSize: '14px', fontWeight: 600, color: '#333', minWidth: '70px' }}>模型名称</label>
+                          <input
+                            type="text"
+                            value={codexModelName}
+                            onChange={(e) => setCodexModelName(e.target.value)}
+                            placeholder="例如: o3, gpt-4.1, codex-mini"
+                            style={{ ...styles.formInput, flex: 1 }}
+                          />
+                          <button
+                            onClick={addCodexModel}
+                            disabled={!codexModelName.trim()}
+                            style={{
+                              ...styles.submitButton,
+                              whiteSpace: 'nowrap',
+                              opacity: !codexModelName.trim() ? 0.6 : 1,
+                              cursor: !codexModelName.trim() ? 'not-allowed' : 'pointer'
+                            }}
+                          >
+                            添加模型
+                          </button>
+                        </div>
+                        <p style={{ margin: 0, fontSize: '12px', color: '#999' }}>
+                          输入你的订阅可用的模型名称，添加后即可在对话中使用。常用模型：o3, o4-mini, gpt-4.1, codex-mini
+                        </p>
+
+                        {codexAddResult && (
+                          <div style={{
+                            padding: '10px 14px',
+                            borderRadius: '6px',
+                            fontSize: '13px',
+                            backgroundColor: codexAddResult.success ? '#d4edda' : '#f8d7da',
+                            color: codexAddResult.success ? '#155724' : '#721c24',
+                            border: `1px solid ${codexAddResult.success ? '#c3e6cb' : '#f5c6cb'}`
+                          }}>
+                            {codexAddResult.success ? '✓ ' : '✗ '}{codexAddResult.message}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
 
-                <div style={styles.settingRow}>
-                  <div style={styles.settingInfo}>
-                    <div style={styles.settingName}>查询额度</div>
-                    <div style={styles.settingDescription}>
-                      查询启动码的剩余使用额度，请访问：
-                      <a 
-                        href={API_ENDPOINTS.ACTIVATION_QUERY_PAGE} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        style={styles.link}
+                {/* 添加模型表单 */}
+                <div style={styles.providerSection}>
+                  <h3 style={styles.providerTitle}>添加模型</h3>
+                  <p style={styles.providerDesc}>每个模型需要指定供应商、API Key 和模型名称</p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <label style={{ fontSize: '14px', fontWeight: 600, color: '#333', minWidth: '70px' }}>供应商</label>
+                      <select
+                        value={formProvider}
+                        onChange={(e) => handleProviderChange(e.target.value as 'openai' | 'gemini')}
+                        style={{ ...styles.select, flex: 1 }}
                       >
-                        {API_ENDPOINTS.ACTIVATION_QUERY_PAGE}
-                      </a>
+                        <option value="openai">OpenAI</option>
+                        <option value="gemini">Google Gemini</option>
+                      </select>
                     </div>
-                  </div>
-                </div>
 
-                <div style={styles.settingRow}>
-                  <div style={styles.settingInfo}>
-                    <div style={styles.settingName}>连接测试</div>
-                    <div style={styles.settingDescription}>验证 API 配置是否正确并检测可用模型</div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <button
-                      onClick={testConnection}
-                      disabled={testingConnection || !apiConfig.apiKey || !apiConfig.baseUrl}
-                      style={{
-                        ...styles.testButton,
-                        ...(testingConnection ? styles.testButtonDisabled : {})
-                      }}
-                    >
-                      {testingConnection ? '测试中...' : '测试连通性'}
-                    </button>
-                    <button
-                      onClick={saveAPIConfig}
-                      style={styles.saveButton}
-                    >
-                      保存配置
-                    </button>
-                  </div>
-                </div>
-                
-                {testResult && (
-                  <div style={{
-                    ...styles.testResult,
-                    ...(testResult.success ? styles.testResultSuccess : styles.testResultError)
-                  }}>
-                    <strong>{testResult.success ? '✓' : '✗'}</strong>
-                    <span style={{ whiteSpace: 'pre-line' }}>{testResult.message}</span>
-                  </div>
-                )}
-
-                {/* 自定义模型管理 */}
-                <div style={{ marginTop: '40px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                    <div>
-                      <h3 style={{ ...styles.contentTitle, fontSize: '20px', marginBottom: '8px' }}>自定义模型</h3>
-                      <p style={{ ...styles.contentSubtitle, marginTop: 0, marginBottom: 0 }}>管理可用的 AI 模型列表</p>
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <label style={{ fontSize: '14px', fontWeight: 600, color: '#333', minWidth: '70px' }}>API Key</label>
+                      <div style={{ ...styles.inputWithButton, flex: 1 }}>
+                        <input
+                          type={showFormKey ? 'text' : 'password'}
+                          value={formApiKey}
+                          onChange={(e) => setFormApiKey(e.target.value)}
+                          placeholder={formProvider === 'openai' ? 'sk-...' : 'AIza...'}
+                          style={{ ...styles.formInput, width: '100%', paddingRight: '40px' }}
+                        />
+                        <button onClick={() => setShowFormKey(!showFormKey)} style={styles.visibilityButton} title={showFormKey ? '隐藏' : '显示'}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            {showFormKey
+                              ? <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></>
+                              : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>
+                            }
+                          </svg>
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      onClick={() => setShowAddModel(!showAddModel)}
-                      style={styles.addButton}
-                    >
-                      {showAddModel ? '取消' : '+ 添加模型'}
-                    </button>
-                  </div>
 
-                  {showAddModel && (
-                    <div style={styles.addModelForm}>
-                      <div style={styles.formGroup}>
-                        <label style={styles.formLabel}>模型 ID *</label>
-                        <input
-                          type="text"
-                          value={newModel.id}
-                          onChange={(e) => setNewModel({ ...newModel, id: e.target.value })}
-                          placeholder="例如: gpt-4, claude-3-opus"
-                          style={styles.formInput}
-                        />
-                      </div>
-                      
-                      <div style={styles.formGroup}>
-                        <label style={styles.formLabel}>模型名称 *</label>
-                        <input
-                          type="text"
-                          value={newModel.name}
-                          onChange={(e) => setNewModel({ ...newModel, name: e.target.value })}
-                          placeholder="例如: GPT-4"
-                          style={styles.formInput}
-                        />
-                      </div>
-                      
-                      <div style={styles.formGroup}>
-                        <label style={styles.formLabel}>描述（可选）</label>
-                        <input
-                          type="text"
-                          value={newModel.description}
-                          onChange={(e) => setNewModel({ ...newModel, description: e.target.value })}
-                          placeholder="模型描述信息"
-                          style={styles.formInput}
-                        />
-                      </div>
-                      
-                      <button onClick={addModel} style={styles.submitButton}>
-                        添加模型
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <label style={{ fontSize: '14px', fontWeight: 600, color: '#333', minWidth: '70px' }}>Base URL</label>
+                      <input
+                        type="text"
+                        value={formBaseUrl}
+                        onChange={(e) => setFormBaseUrl(e.target.value)}
+                        placeholder="API 端点地址"
+                        style={{ ...styles.formInput, flex: 1 }}
+                      />
+                    </div>
+
+                    {/* 选择模型：先获取列表，再从下拉框选 */}
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <label style={{ fontSize: '14px', fontWeight: 600, color: '#333', minWidth: '70px' }}>选择模型</label>
+                      {fetchedModels.length > 0 ? (
+                        <select
+                          value={formModelName}
+                          onChange={(e) => setFormModelName(e.target.value)}
+                          style={{ ...styles.select, flex: 1 }}
+                        >
+                          {fetchedModels.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span style={{ flex: 1, fontSize: '13px', color: '#999' }}>
+                          {fetching ? '正在获取模型列表...' : '请先点击右侧按钮获取可用模型'}
+                        </span>
+                      )}
+                      <button
+                        onClick={fetchModelList}
+                        disabled={fetching || !formApiKey.trim() || !formBaseUrl.trim()}
+                        style={{
+                          ...styles.testButton,
+                          whiteSpace: 'nowrap',
+                          opacity: (fetching || !formApiKey.trim() || !formBaseUrl.trim()) ? 0.6 : 1,
+                          cursor: (fetching || !formApiKey.trim() || !formBaseUrl.trim()) ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {fetching ? '获取中...' : '获取模型列表'}
                       </button>
                     </div>
-                  )}
+
+                    {fetchError && (
+                      <div style={{ padding: '8px 12px', borderRadius: '6px', fontSize: '13px', backgroundColor: '#f8d7da', color: '#721c24', border: '1px solid #f5c6cb' }}>
+                        {fetchError}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <button
+                        onClick={addModel}
+                        disabled={adding || !formModelName.trim() || !formApiKey.trim()}
+                        style={{
+                          ...styles.submitButton,
+                          opacity: (adding || !formModelName.trim() || !formApiKey.trim()) ? 0.6 : 1,
+                          cursor: (adding || !formModelName.trim() || !formApiKey.trim()) ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {adding ? '添加中...' : '添加模型'}
+                      </button>
+                      {adding && (
+                        <span style={{ fontSize: '13px', color: '#888' }}>正在添加</span>
+                      )}
+                    </div>
+
+                    {addResult && (
+                      <div style={{
+                        padding: '10px 14px',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        backgroundColor: addResult.success ? '#d4edda' : '#f8d7da',
+                        color: addResult.success ? '#155724' : '#721c24',
+                        border: `1px solid ${addResult.success ? '#c3e6cb' : '#f5c6cb'}`
+                      }}>
+                        {addResult.success ? '✓ ' : '✗ '}{addResult.message}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 已添加的模型列表 */}
+                <div style={{ marginTop: '32px' }}>
+                  <h3 style={{ ...styles.contentTitle, fontSize: '20px', marginBottom: '8px' }}>已添加的模型</h3>
+                  <p style={{ ...styles.contentSubtitle, marginTop: 0, marginBottom: '16px' }}>
+                    {apiConfig.models.length > 0
+                      ? `共 ${apiConfig.models.length} 个模型，${apiConfig.models.filter(m => m.enabled).length} 个已启用`
+                      : '暂无模型，请在上方添加'}
+                  </p>
 
                   <div style={styles.modelList}>
                     {apiConfig.models.map((model) => (
@@ -482,11 +561,38 @@ const OptionsApp: React.FC = () => {
                         <div style={styles.modelInfo}>
                           <div style={styles.modelHeader}>
                             <strong style={styles.modelName}>{model.name}</strong>
-                            <span style={styles.modelId}>{model.id}</span>
+                            <span style={{
+                              ...styles.modelId,
+                              backgroundColor: model.provider === 'gemini' ? '#e8f0fe'
+                                : model.provider === 'codex-oauth' ? '#e8f5e9'
+                                : '#fff3e0',
+                              color: model.provider === 'gemini' ? '#1a73e8'
+                                : model.provider === 'codex-oauth' ? '#2e7d32'
+                                : '#e65100',
+                            }}>
+                              {model.provider === 'gemini' ? 'Gemini'
+                                : model.provider === 'codex-oauth' ? 'Codex OAuth'
+                                : 'OpenAI'}
+                            </span>
                           </div>
-                          {model.description && (
-                            <p style={styles.modelDescription}>{model.description}</p>
-                          )}
+                          <p style={styles.modelDescription}>
+                            {model.provider === 'codex-oauth' ? (
+                              <span style={{ color: '#2e7d32' }}>ChatGPT 订阅认证</span>
+                            ) : (
+                              <>
+                                Key: {visibleKeys.has(model.id) ? model.apiKey : maskKey(model.apiKey)}
+                                <button
+                                  onClick={() => toggleKeyVisibility(model.id)}
+                                  style={{ background: 'none', border: 'none', color: '#4a90e2', cursor: 'pointer', fontSize: '12px', marginLeft: '6px' }}
+                                >
+                                  {visibleKeys.has(model.id) ? '隐藏' : '显示'}
+                                </button>
+                              </>
+                            )}
+                          </p>
+                          <p style={{ ...styles.modelDescription, marginTop: '2px', fontSize: '12px', color: '#999' }}>
+                            {model.baseUrl}
+                          </p>
                         </div>
                         
                         <div style={styles.modelActions}>
@@ -512,12 +618,6 @@ const OptionsApp: React.FC = () => {
                         </div>
                       </div>
                     ))}
-                    
-                    {(!apiConfig.models || apiConfig.models.length === 0) && (
-                      <div style={styles.emptyState}>
-                        暂无自定义模型，点击"添加模型"开始配置
-                      </div>
-                    )}
                   </div>
                 </div>
               </>
@@ -942,6 +1042,34 @@ const styles: { [key: string]: React.CSSProperties } = {
     textDecoration: 'none',
     fontWeight: '500',
     marginLeft: '4px',
+  },
+  providerSection: {
+    marginBottom: '32px',
+    padding: '24px',
+    backgroundColor: 'white',
+    borderRadius: '10px',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+  },
+  providerTitle: {
+    margin: '0 0 4px 0',
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#333',
+  },
+  providerDesc: {
+    margin: '0 0 20px 0',
+    fontSize: '13px',
+    color: '#888',
+  },
+  addModelInline: {
+    display: 'flex',
+    gap: '10px',
+    alignItems: 'center',
+    padding: '16px 20px',
+    backgroundColor: 'white',
+    borderRadius: '8px',
+    marginBottom: '16px',
+    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
   },
 };
 

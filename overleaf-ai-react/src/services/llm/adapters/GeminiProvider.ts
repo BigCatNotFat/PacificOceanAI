@@ -1,38 +1,32 @@
 /**
- * GeminiProvider - Google Gemini API 提供者
+ * GeminiProvider - 基于 Gemini 原生 REST API 实现
  *
- * 职责：
- * - 完整的 Gemini 客户端实现（使用 OpenAI 兼容接口）
- * - 接收历史上下文（messages + config）
- * - 内部构建请求并发送给 Gemini API
- * - 流式接收响应，实时解析
- * - 每收到一个 chunk，立即通过 UIStreamService 更新 UI
- * - 等流式完成后，返回完整的最终结果
- * 
- * Gemini 特性：
- * - 使用 OpenAI 兼容接口
- * - 支持思考过程（Gemini thinking + thought summaries）
- * - 需要特殊处理 thinking_config / thought_signature
+ * 使用 Google Gemini 原生 API（generativelanguage.googleapis.com）
+ * 端点：/v1beta/models/{model}:streamGenerateContent?alt=sse&key={API_KEY}
+ *
+ * Gemini 原生 API 关键特性：
+ * - 认证：API Key 放在 URL 查询参数中（?key=...）
+ * - 消息格式：contents[].role("user"/"model") + parts[]
+ * - 系统提示：systemInstruction 独立字段
+ * - 工具调用：tools[].functionDeclarations[]
+ * - 工具结果：parts[].functionResponse
+ * - 思考过程：thinkingConfig.includeThoughts + parts[].thought 标记
+ * - 流式传输：?alt=sse 返回标准 SSE 格式
  */
 
 import type { LLMMessage, LLMConfig, LLMFinalMessage } from '../../../platform/llm/ILLMService';
 import type { IModelRegistryService } from '../../../platform/llm/IModelRegistryService';
 import { BaseLLMProvider, type APIConfig } from './BaseLLMProvider';
 import type { IUIStreamService } from '../../../platform/agent/IUIStreamService';
-import { isAgentDebugEnabled, logger } from '../../../utils/logger';
 
 export class GeminiProvider extends BaseLLMProvider {
   /**
-   * Gemini 3 要求：当 assistant 产生 tool_calls 后，后续请求必须把每个 tool_call 的
-   * extra_content.google.thought_signature 原样回传，否则会 400。
-   *
-   * 但上层 PromptService/AgentService 当前不会透传 extra_content；
-   * 因此在 Provider 内部做一个轻量缓存，在下一轮请求发送前把签名补回到 messages[].tool_calls。
+   * 缓存 thought_signature：tool call ID → signature
+   * Gemini 3 要求在多轮工具调用中回传 thought_signature，否则 400。
    */
-  private readonly toolCallExtraContentCache = new Map<
-    string,
-    Map<string, any>
-  >();
+  private readonly thoughtSigCache = new Map<string, string>();
+  /** 缓存工具调用 ID → 工具名称，用于 functionResponse.name */
+  private readonly toolNameCache = new Map<string, string>();
 
   constructor(
     private readonly modelRegistry: IModelRegistryService,
@@ -42,370 +36,330 @@ export class GeminiProvider extends BaseLLMProvider {
     super();
   }
 
-  /**
-   * 唯一公共接口：发送请求并返回完整结果
-   * @param messages - 历史上下文消息列表
-   * @param config - LLM 配置
-   * @returns 完整的最终响应
-   */
   async chat(messages: LLMMessage[], config: LLMConfig): Promise<LLMFinalMessage> {
-    logger.debug('[GeminiProvider] chat() called', {
-      messageCount: messages.length,
-      hasUIStreamMeta: !!config.uiStreamMeta,
-      conversationId: config.uiStreamMeta?.conversationId,
-      messageId: config.uiStreamMeta?.messageId,
-      hasUIStreamService: !!this.uiStreamService
-    });
+    const { endpoint, headers, body } = this.buildRequest(messages, config, true);
 
-    // 🔑 Gemini 3: 补回上轮 tool_calls 的 thought_signature（如果上层没透传 extra_content）
-    const conversationId = config.uiStreamMeta?.conversationId;
-    if (conversationId) {
-      this.hydrateToolCallExtraContent(messages, conversationId);
-    }
-
-    // 1. 构建请求
-    const { endpoint, headers, body } = this.buildRequest(messages, config);
-
-    // 2. 发送 HTTP 请求
-    const response = await fetch(endpoint, {
+    let response = await fetch(endpoint, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
       signal: (config as any).abortSignal
     });
 
+    // 如果 thinkingConfig 不被支持，去掉后重试
+    if (!response.ok && body.thinkingConfig) {
+      const errorText = await response.text();
+      if (errorText.includes('thinkingConfig')) {
+        delete body.thinkingConfig;
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+          signal: (config as any).abortSignal
+        });
+      } else {
+        throw new Error(`Gemini API 请求失败: ${response.status} ${errorText}`);
+      }
+    }
+
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`Gemini API 请求失败: ${response.status} ${errorText}`);
     }
 
-    // 3. 流式解析响应
     return await this.parseStreamResponse(response, config);
   }
 
-  /**
-   * Manager 聊天接口 - 用于 MultiAgent 模式的 ManagerAgent
-   * 
-   * 与 chat 的区别：
-   * - 不流式输出
-   * - 不更新 UI
-   * - 只返回结果
-   */
   async managerChat(messages: LLMMessage[], config: LLMConfig): Promise<LLMFinalMessage> {
-    logger.debug('[GeminiProvider] managerChat() called', {
-      messageCount: messages.length,
-      modelId: config.modelId
-    });
-
-    // 补回上轮 tool_calls 的 thought_signature
-    const conversationId = config.uiStreamMeta?.conversationId;
-    if (conversationId) {
-      this.hydrateToolCallExtraContent(messages, conversationId);
-    }
-
-    // 1. 构建请求（非流式）
     const { endpoint, headers, body } = this.buildRequest(messages, config, false);
 
-    // 2. 发送 HTTP 请求
-    const response = await fetch(endpoint, {
+    let response = await fetch(endpoint, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
       signal: (config as any).abortSignal
     });
 
+    if (!response.ok && body.thinkingConfig) {
+      const errorText = await response.text();
+      if (errorText.includes('thinkingConfig')) {
+        delete body.thinkingConfig;
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+          signal: (config as any).abortSignal
+        });
+      } else {
+        throw new Error(`Gemini API 请求失败: ${response.status} ${errorText}`);
+      }
+    }
+
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`Gemini API 请求失败: ${response.status} ${errorText}`);
     }
 
-    // 3. 解析非流式响应
     const data = await response.json();
-    return this.parseNonStreamResponse(data, conversationId);
+    return this.parseNonStreamResponse(data);
+  }
+
+  // ==================== 消息格式转换 ====================
+
+  /**
+   * 将 LLMMessage[] 转换为 Gemini 原生 contents[] 格式
+   *
+   * LLMMessage:
+   *   { role: "system"|"user"|"assistant"|"tool", content, tool_calls?, tool_call_id? }
+   *
+   * Gemini contents:
+   *   { role: "user"|"model", parts: [{ text }, { functionCall }, { functionResponse }] }
+   *   systemInstruction 单独提取
+   */
+  private toGeminiFormat(messages: LLMMessage[]): {
+    systemInstruction: any | null;
+    contents: any[];
+  } {
+    let systemInstruction: any | null = null;
+    const contents: any[] = [];
+
+    for (const msg of messages) {
+      // system → systemInstruction（取最后一个）
+      if (msg.role === 'system') {
+        systemInstruction = { parts: [{ text: msg.content || '' }] };
+        continue;
+      }
+
+      // tool result → user 角色 + functionResponse part
+      if (msg.role === 'tool') {
+        let responseData: any;
+        try { responseData = JSON.parse(msg.content || '{}'); }
+        catch { responseData = { result: msg.content || '' }; }
+
+        const tcId = (msg as any).tool_call_id || '';
+        const toolName = this.toolNameCache.get(tcId) || tcId;
+        contents.push({
+          role: 'user',
+          parts: [{
+            functionResponse: {
+              name: toolName,
+              response: responseData
+            }
+          }]
+        });
+        continue;
+      }
+
+      // assistant with tool_calls → model 角色 + functionCall parts（含 thought_signature 回传）
+      if (msg.role === 'assistant' && (msg as any).tool_calls?.length > 0) {
+        const parts: any[] = [];
+        if (msg.content) {
+          parts.push({ text: msg.content });
+        }
+        for (const tc of (msg as any).tool_calls) {
+          const tcId = tc.id || '';
+          const name = tc.function?.name || tc.name || '';
+          let args: any;
+          if (typeof tc.function?.arguments === 'string') {
+            try { args = JSON.parse(tc.function.arguments); }
+            catch { args = {}; }
+          } else {
+            args = tc.function?.arguments || tc.arguments || {};
+          }
+          const part: any = { functionCall: { name, args } };
+          // 回传缓存的 thought_signature（同时写两种命名确保兼容）
+          const sig = this.thoughtSigCache.get(tcId);
+          if (sig) {
+            part.thoughtSignature = sig;
+            part.thought_signature = sig;
+          }
+          parts.push(part);
+        }
+        contents.push({ role: 'model', parts });
+        continue;
+      }
+
+      // user → user, assistant → model
+      const role = msg.role === 'assistant' ? 'model' : 'user';
+      contents.push({
+        role,
+        parts: [{ text: msg.content || '' }]
+      });
+    }
+
+    // Gemini 要求 contents 不能以 model 开头，必须 user 先说
+    // 也不能有连续两个相同 role，需要合并
+    const merged = this.mergeConsecutiveRoles(contents);
+
+    return { systemInstruction, contents: merged };
   }
 
   /**
-   * 解析非流式响应
+   * Gemini 不允许连续两个相同 role 的 content，需要合并 parts
    */
-  private parseNonStreamResponse(data: any, conversationId?: string): LLMFinalMessage {
-    const choice = data?.choices?.[0];
-    if (!choice) {
-      throw new Error('无效的 API 响应');
-    }
+  private mergeConsecutiveRoles(contents: any[]): any[] {
+    if (contents.length === 0) return contents;
 
-    const message = choice.message;
-    const result: LLMFinalMessage = {
-      content: message?.content || '',
-      finishReason: choice.finish_reason as LLMFinalMessage['finishReason']
-    };
-
-    // 处理推理内容
-    if (message?.reasoning_content) {
-      result.thinking = message.reasoning_content;
-    }
-
-    // 处理工具调用
-    if (message?.tool_calls && message.tool_calls.length > 0) {
-      // 🔧 非流式工具调用调试
-      const _debugTC =
-        typeof localStorage !== 'undefined' &&
-        localStorage.getItem('overleaf_ai_debug_tool_calls') === '1';
-      if (_debugTC) {
-        console.group('%c[ToolCall Debug] 📋 非流式响应 - 工具调用解析', 'color:#2196F3;font-weight:bold');
-        for (const tc of message.tool_calls) {
-          console.groupCollapsed(`  🔧 ${tc.function?.name || '(无名称)'} (id=${tc.id})`);
-          console.log('原始 arguments 字符串:', tc.function?.arguments);
-          try {
-            const parsed = tc.function?.arguments ? JSON.parse(tc.function.arguments) : {};
-            console.log('解析结果:', parsed);
-          } catch (e) {
-            console.error('❌ JSON 解析失败:', (e as Error).message);
-          }
-          console.groupEnd();
-        }
-        console.groupEnd();
+    const result: any[] = [contents[0]];
+    for (let i = 1; i < contents.length; i++) {
+      const prev = result[result.length - 1];
+      const curr = contents[i];
+      if (prev.role === curr.role) {
+        prev.parts = [...prev.parts, ...curr.parts];
+      } else {
+        result.push(curr);
       }
+    }
+    return result;
+  }
 
-      result.toolCalls = message.tool_calls.map((tc: any) => {
-        let parsedArgs: Record<string, any> = {};
-        if (tc.function?.arguments) {
-          try {
-            parsedArgs = JSON.parse(tc.function.arguments);
-          } catch {
-            if (_debugTC) {
-              console.error(`[ToolCall Debug] ❌ 非流式 JSON.parse 失败: ${tc.function?.name}`, tc.function.arguments);
-            }
-          }
-        }
+  // ==================== 构建请求 ====================
+
+  private buildRequest(
+    messages: LLMMessage[],
+    config: LLMConfig,
+    stream: boolean
+  ): { endpoint: string; headers: Record<string, string>; body: any } {
+    const filtered = this.formatMessages(messages);
+    const { systemInstruction, contents } = this.toGeminiFormat(filtered);
+
+    const payload: any = { contents };
+
+    if (systemInstruction) {
+      payload.systemInstruction = systemInstruction;
+    }
+
+    // 生成配置
+    payload.generationConfig = {};
+    if (typeof config.temperature === 'number') {
+      payload.generationConfig.temperature = config.temperature;
+    }
+    if (typeof config.topP === 'number') {
+      payload.generationConfig.topP = config.topP;
+    }
+    if (typeof config.maxTokens === 'number') {
+      payload.generationConfig.maxOutputTokens = config.maxTokens;
+    }
+
+    // 思考配置：仅对支持思考的模型启用（Gemini 2.5+ / 3.x 的 flash/pro 系列）
+    const modelId = config.modelId.toLowerCase();
+    const supportsThinking = /gemini.*(2\.5|3|flash|pro)/.test(modelId)
+      && !modelId.includes('nano');
+    if (supportsThinking) {
+      payload.thinkingConfig = { includeThoughts: true };
+    }
+
+    // 工具调用：转换为 Gemini 的 functionDeclarations 格式
+    const tools = (config as any).tools;
+    if (Array.isArray(tools) && tools.length > 0) {
+      const declarations = tools.map((t: any) => {
+        const fn = t.function || t;
         return {
-          id: tc.id,
-          name: tc.function?.name || '',
-          arguments: parsedArgs
+          name: fn.name,
+          description: fn.description,
+          parameters: fn.parameters
         };
       });
+      payload.tools = [{ functionDeclarations: declarations }];
+    }
 
-      // Gemini 3: 非流式也要缓存 tool_call.extra_content（尤其 thought_signature），供下一轮回传
-      if (conversationId) {
-        for (const tc of message.tool_calls) {
-          if (!tc?.id) continue;
-          const extra = tc?.extra_content ?? tc?.function?.extra_content;
-          const thoughtSig =
-            tc?.thought_signature ??
-            tc?.function?.thought_signature ??
-            tc?.extra_content?.google?.thought_signature ??
-            tc?.function?.extra_content?.google?.thought_signature;
+    // 构建端点 URL
+    const normalizedBaseUrl = this.apiConfig.baseUrl.endsWith('/')
+      ? this.apiConfig.baseUrl.slice(0, -1)
+      : this.apiConfig.baseUrl;
 
-          if (extra || thoughtSig) {
-            const cacheObj: any = (extra && typeof extra === 'object') ? { ...extra } : {};
-            if (thoughtSig) {
-              cacheObj.google = cacheObj.google || {};
-              cacheObj.google.thought_signature = thoughtSig;
-            }
-            this.rememberToolCallExtraContent(conversationId, tc.id, cacheObj);
-          }
+    // 支持两种 base URL 格式：
+    // 1. https://generativelanguage.googleapis.com/v1beta (标准)
+    // 2. https://generativelanguage.googleapis.com/v1beta/openai (旧格式，需去掉 /openai)
+    const base = normalizedBaseUrl.replace(/\/openai\/?$/, '');
+
+    const method = stream ? 'streamGenerateContent' : 'generateContent';
+    const sseParam = stream ? '&alt=sse' : '';
+    const endpoint = `${base}/models/${config.modelId}:${method}?key=${this.apiConfig.apiKey}${sseParam}`;
+
+    return {
+      endpoint,
+      headers: { 'Content-Type': 'application/json' },
+      body: payload
+    };
+  }
+
+  // ==================== 解析非流式响应 ====================
+
+  private parseNonStreamResponse(data: any): LLMFinalMessage {
+    const candidate = data?.candidates?.[0];
+    const parts: any[] = candidate?.content?.parts || [];
+
+    const result: LLMFinalMessage = {
+      content: '',
+      finishReason: this.mapFinishReason(candidate?.finishReason)
+    };
+
+    let thinking = '';
+    let content = '';
+    const toolCalls: { id: string; name: string; arguments: Record<string, any> }[] = [];
+
+    for (const part of parts) {
+      if (part.thought && part.text) {
+        thinking += part.text;
+      } else if (part.text) {
+        content += part.text;
+      } else if (part.functionCall) {
+        const callId = `call_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+        const toolName = part.functionCall.name || '';
+        toolCalls.push({ id: callId, name: toolName, arguments: part.functionCall.args || {} });
+        const sig = part.thoughtSignature ?? part.thought_signature
+          ?? part.functionCall?.thoughtSignature ?? part.functionCall?.thought_signature;
+        if (sig) {
+          this.thoughtSigCache.set(callId, sig);
         }
+        this.toolNameCache.set(callId, toolName);
       }
     }
 
-    // 处理使用统计
-    if (data.usage) {
+    result.content = content;
+    if (thinking) result.thinking = thinking;
+    if (toolCalls.length > 0) result.toolCalls = toolCalls;
+
+    if (data.usageMetadata) {
       result.usage = {
-        promptTokens: data.usage.prompt_tokens ?? 0,
-        completionTokens: data.usage.completion_tokens ?? 0,
-        totalTokens: data.usage.total_tokens ?? 0
+        promptTokens: data.usageMetadata.promptTokenCount ?? 0,
+        completionTokens: data.usageMetadata.candidatesTokenCount ?? 0,
+        totalTokens: data.usageMetadata.totalTokenCount ?? 0
       };
     }
 
     return result;
   }
 
-  /**
-   * 构建 Gemini 请求配置（内部方法）
-   */
-  private buildRequest(
-    messages: LLMMessage[],
-    config: LLMConfig,
-    stream: boolean = true
-  ): { endpoint: string; headers: Record<string, string>; body: any } {
-    const modelInfo = this.modelRegistry.getModelInfo(config.modelId);
-    const maxTokensParamName = 
-      (modelInfo?.defaultConfig as any)?.maxTokensParamName || 'max_tokens';
-
-    const payload = this.buildBasePayload(messages, config);
-    
-    // 设置流式参数
-    payload.stream = stream;
-
-    // 设置 max_tokens 参数
-    if (typeof config.maxTokens === 'number') {
-      payload[maxTokensParamName] = config.maxTokens;
-    }
-
-    // 工具调用
-    const tools = (config as any).tools;
-    if (Array.isArray(tools) && tools.length > 0) {
-      payload.tools = tools;
-      const toolChoice = (config as any).tool_choice;
-      if (toolChoice) {
-        payload.tool_choice = toolChoice;
-      }
-
-      // 🔧 工具调用调试：打印发送给 API 的工具定义
-      const _debugTC =
-        typeof localStorage !== 'undefined' &&
-        localStorage.getItem('overleaf_ai_debug_tool_calls') === '1';
-      if (_debugTC) {
-        console.group('%c[ToolCall Debug] 📤 发送给 Gemini 的工具定义', 'color:#2196F3;font-weight:bold');
-        console.log(`工具数量: ${tools.length}`);
-        for (const t of tools) {
-          const fn = t.function || t;
-          console.groupCollapsed(`  🔧 ${fn.name}`);
-          console.log('描述:', fn.description);
-          console.log('参数 Schema:', JSON.stringify(fn.parameters, null, 2));
-          console.groupEnd();
-        }
-        console.log('tool_choice:', toolChoice || 'auto');
-        console.groupEnd();
-      }
-    }
-
-    // 🔑 Gemini 特定参数：启用思考过程输出
-    // 如果模型支持推理能力，自动启用 thinking_config
-    // 官方：include_thoughts 会让响应中包含 thought summaries（在 parts 上打 thought 标记）
-    if (modelInfo?.capabilities?.supportsReasoning) {
-      payload.extra_body = {
-        google: {
-          thinking_config: {
-            include_thoughts: true
-          }
-        }
-      };
-      logger.debug('[GeminiProvider] 已启用思考过程输出', { modelId: config.modelId });
-    }
-
-    // 确保 API 端点格式正确
-    const normalizedBaseUrl = this.apiConfig.baseUrl.endsWith('/') 
-      ? this.apiConfig.baseUrl.slice(0, -1) 
-      : this.apiConfig.baseUrl;
-
-    return {
-      endpoint: config.apiEndpoint || `${normalizedBaseUrl}/chat/completions`,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiConfig.apiKey}`
-      },
-      body: payload
-    };
-  }
+  // ==================== 解析流式响应 ====================
 
   /**
-   * 解析流式响应（内部方法）
-   * 
-   * Gemini 思考/回复拆分规则（参考 OpenAI 兼容流式网关）：
-   * - `delta.reasoning_content` -> 思考内容（thinking）
-   * - `delta.content` -> 根据 `delta.extra_content.google.thought` 判定：
-   *   - truthy（true/1/"true"）-> 思考内容（thinking）
-   *   - 否则 -> 最终回复（content）
+   * Gemini 流式响应（?alt=sse）格式：
+   *   data: {"candidates":[{"content":{"parts":[{"text":"..."}],"role":"model"}}]}
+   *   data: {"candidates":[{"content":{"parts":[{"text":"...","thought":true}],"role":"model"}}]}
+   *   data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"...","args":{...}}}]}}]}
+   *   data: {"usageMetadata":{...},"candidates":[{"finishReason":"STOP",...}]}
    */
   private async parseStreamResponse(
     response: Response,
     config: LLMConfig
   ): Promise<LLMFinalMessage> {
     const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('无法获取响应流');
-    }
+    if (!reader) throw new Error('无法获取响应流');
 
     const decoder = new TextDecoder();
     const conversationId = config.uiStreamMeta?.conversationId;
     const messageId = config.uiStreamMeta?.messageId;
 
-    // 累积完整内容
     let fullContent = '';
     let fullThinking = '';
-    // 使用 index 作为稳定 key：避免流式 chunk 缺失 id 时将同一 tool call 拆成两条
-    const toolCallsMap = new Map<
-      string,
-      { id: string; name: string; args: string; extra_content?: any }
-    >();
-    
+    const toolCalls: { id: string; name: string; args: any }[] = [];
     let finishReason: LLMFinalMessage['finishReason'];
     let usage: LLMFinalMessage['usage'];
-    
-    // 可开关 debug：localStorage.setItem('overleaf_ai_debug_gemini_stream','1')
-    const debugGeminiStream =
-      isAgentDebugEnabled() &&
-      typeof localStorage !== 'undefined' &&
-      localStorage.getItem('overleaf_ai_debug_gemini_stream') === '1';
-    // 输出完整原始文本（包含 <thought> 标签）：localStorage.setItem('overleaf_ai_debug_gemini_stream_text','1')
-    const debugGeminiStreamText =
-      isAgentDebugEnabled() &&
-      typeof localStorage !== 'undefined' &&
-      localStorage.getItem('overleaf_ai_debug_gemini_stream_text') === '1';
-    // 🔧 工具调用参数调试：localStorage.setItem('overleaf_ai_debug_tool_calls','1')
-    const debugToolCalls =
-      typeof localStorage !== 'undefined' &&
-      localStorage.getItem('overleaf_ai_debug_tool_calls') === '1';
-    let debugDeltaCount = 0;
-    // 自动诊断：缓存少量原始 SSE data，便于定位“开头缺字/思考缺失”
-    const rawSseSamples: Array<{
-      dataStr: string;
-      parsedKeys?: string[];
-      deltaKeys?: string[];
-      contentPreview?: string;
-      reasoningPreview?: string;
-      extraGoogleKeys?: string[];
-      extraGooglePreview?: any;
-    }> = [];
-    const pushRawSample = (sample: (typeof rawSseSamples)[number]) => {
-      if (rawSseSamples.length < 30) rawSseSamples.push(sample);
-    };
-
-    // 兼容：部分上游会用 <thought>...</thought> 包裹思考内容，这里统一剥离标签，避免渲染到 UI。
-    const stripThoughtTags = (text: string): string => {
-      if (!text) return '';
-      return text.replace(/<\/?thought\b[^>]*>/gi, '');
-    };
 
     try {
       let buffer = '';
-
-      const emitThinking = (text: string) => {
-        if (!text) return;
-        const nextText = stripThoughtTags(text);
-        if (!nextText) return;
-        // 轻量去重：避免同一段 thinking 被重复写入（常见于 reasoning_content 与 thought summary 重叠）
-        if (fullThinking.endsWith(nextText)) return;
-        fullThinking += nextText;
-        if (this.uiStreamService && messageId) {
-          this.uiStreamService.pushThinking({
-            conversationId,
-            messageId,
-            delta: nextText
-          });
-        }
-      };
-
-      const emitContent = (text: string) => {
-        if (!text) return;
-        // 防御：有些网关/模型会把首段 content 以 ", " 开头（看起来像“被截断”）
-        // 这里仅在“正文尚未开始”时做一次非常保守的清洗。
-        let nextText = stripThoughtTags(text);
-        if (!nextText) return;
-        if (!fullContent) {
-          nextText = nextText.replace(/^\s*[，,]\s+/, '');
-        }
-        if (!nextText) return;
-
-        fullContent += nextText;
-        if (this.uiStreamService && messageId) {
-          this.uiStreamService.pushContent({
-            conversationId,
-            messageId,
-            delta: nextText
-          });
-        }
-      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -417,344 +371,133 @@ export class GeminiProvider extends BaseLLMProvider {
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed) continue;
-          // SSE 兼容：既可能是 "data: {...}" 也可能是 "data:{...}"（无空格）
-          if (!trimmed.startsWith('data:')) continue;
+          if (!trimmed || !trimmed.startsWith('data:')) continue;
 
-          const dataStr = trimmed.slice(5).trimStart();
+          const dataStr = trimmed.slice(5).trim();
           if (!dataStr || dataStr === '[DONE]') continue;
+
           try {
             const parsed = JSON.parse(dataStr);
-            const choice = parsed?.choices?.[0];
-            if (!choice) continue;
+            const candidate = parsed?.candidates?.[0];
+            const parts: any[] = candidate?.content?.parts || [];
 
-            const delta = choice.delta;
-
-            // Debug：抓前若干个 delta 的形状，方便定位 thought 字段实际在哪里
-            let debugN: number | null = null;
-            if (debugGeminiStream && debugDeltaCount < 20) {
-              debugN = ++debugDeltaCount;
-              const extraGoogle = (delta as any)?.extra_content?.google;
-              logger.debug('[GeminiProvider][debug] delta snapshot', {
-                n: debugN,
-                deltaKeys: delta ? Object.keys(delta) : [],
-                finish_reason: choice.finish_reason,
-                hasContent: typeof (delta as any)?.content === 'string' && (delta as any).content.length > 0,
-                contentPreview: typeof (delta as any)?.content === 'string' ? (delta as any).content.slice(0, 120) : undefined,
-                reasoning_content_preview: typeof (delta as any)?.reasoning_content === 'string'
-                  ? (delta as any).reasoning_content.slice(0, 120)
-                  : undefined,
-                extra_google_keys: extraGoogle ? Object.keys(extraGoogle) : [],
-                extra_google_preview: extraGoogle
-              });
+            // 先扫描所有 parts 收集 thought_signature（可能和 functionCall 分开到达）
+            let chunkSig: string | undefined;
+            for (const p of parts) {
+              const s = p.thoughtSignature ?? p.thought_signature;
+              if (s) { chunkSig = s; break; }
             }
 
-            // 自动缓存原始片段（只存很少），便于用户直接贴日志定位
-            if (rawSseSamples.length < 30) {
-              const extraGoogle = (delta as any)?.extra_content?.google;
-              pushRawSample({
-                dataStr,
-                parsedKeys: parsed ? Object.keys(parsed) : undefined,
-                deltaKeys: delta ? Object.keys(delta) : undefined,
-                contentPreview: typeof (delta as any)?.content === 'string' ? (delta as any).content.slice(0, 200) : undefined,
-                reasoningPreview: typeof (delta as any)?.reasoning_content === 'string' ? (delta as any).reasoning_content.slice(0, 200) : undefined,
-                extraGoogleKeys: extraGoogle ? Object.keys(extraGoogle) : undefined,
-                extraGooglePreview: extraGoogle
-              });
-            }
-
-            // 1) reasoning_content -> 思考（thinking）
-            const reasoningDeltaRaw = (delta as any)?.reasoning_content;
-            if (debugGeminiStreamText && reasoningDeltaRaw != null && reasoningDeltaRaw !== '') {
-              logger.debug('[GeminiProvider][debug][raw] reasoning_content', reasoningDeltaRaw);
-            }
-            const reasoningDelta =
-              typeof reasoningDeltaRaw === 'string'
-                ? stripThoughtTags(reasoningDeltaRaw)
-                : reasoningDeltaRaw != null && reasoningDeltaRaw !== ''
-                  ? stripThoughtTags(String(reasoningDeltaRaw))
-                  : '';
-            const hasReasoningDelta = reasoningDelta.length > 0;
-            if (hasReasoningDelta) {
-              emitThinking(reasoningDelta);
-            }
-
-            // 2) content -> 根据 extra_content.google.thought 判定是思考还是最终回复
-            const contentRaw = (delta as any)?.content;
-            if (!hasReasoningDelta && typeof contentRaw === 'string' && contentRaw) {
-              if (debugGeminiStreamText) {
-                logger.debug('[GeminiProvider][debug][raw] content', contentRaw);
+            for (const part of parts) {
+              // 思考内容（part.thought === true）
+              if (part.thought && part.text) {
+                fullThinking += part.text;
+                if (this.uiStreamService && messageId) {
+                  this.uiStreamService.pushThinking({
+                    conversationId, messageId, delta: part.text
+                  });
+                }
               }
-              const thoughtFlag = (delta as any)?.extra_content?.google?.thought;
-              const isThought =
-                thoughtFlag === true ||
-                thoughtFlag === 1 ||
-                (typeof thoughtFlag === 'string' && thoughtFlag.toLowerCase() === 'true');
-
-              if (isThought) {
-                emitThinking(contentRaw);
-              } else {
-                emitContent(contentRaw);
+              // 普通文本内容
+              else if (part.text) {
+                fullContent += part.text;
+                if (this.uiStreamService && messageId) {
+                  this.uiStreamService.pushContent({
+                    conversationId, messageId, delta: part.text
+                  });
+                }
               }
-
-              if (debugN != null) {
-                logger.debug('[GeminiProvider][debug] route decision', {
-                  n: debugN,
-                  isThought,
-                  thoughtFlag
+              // 工具调用（捕获 thought_signature / thoughtSignature 供下一轮回传）
+              else if (part.functionCall) {
+                const callId = `call_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+                const toolName = part.functionCall.name || '';
+                toolCalls.push({
+                  id: callId,
+                  name: toolName,
+                  args: part.functionCall.args || {}
                 });
-              }
-            }
-
-            // 处理工具调用
-            const toolCallsDelta = (delta as any)?.tool_calls;
-            if (Array.isArray(toolCallsDelta) && toolCallsDelta.length > 0) {
-              for (const tcDelta of toolCallsDelta) {
-                const index = tcDelta.index ?? 0;
-                const stableKey = `tool_call_${index}`;
-                const apiId = tcDelta.id;
-                const name = tcDelta.function?.name;
-                const argsText = tcDelta.function?.arguments || '';
-
-                // 🔧 记录每个 tool_call chunk
-                if (debugToolCalls) {
-                  console.log(
-                    `%c[ToolCall Debug] 📥 chunk idx=${index}` +
-                    (apiId ? ` id=${apiId}` : '') +
-                    (name ? ` name=${name}` : '') +
-                    ` argsChunk(${argsText.length}字符)`,
-                    'color:#FF9800',
-                    argsText.length <= 200 ? argsText : argsText.slice(0, 200) + '...'
-                  );
+                // Gemini REST API 可能用 camelCase(thoughtSignature) 或 snake_case(thought_signature)
+                // 可能在 part 上、functionCall 内、或同一 chunk 的其他 part 上
+                const sig = part.thoughtSignature ?? part.thought_signature
+                  ?? part.functionCall?.thoughtSignature ?? part.functionCall?.thought_signature
+                  ?? chunkSig;
+                if (sig) {
+                  this.thoughtSigCache.set(callId, sig);
                 }
-
-                let existing = toolCallsMap.get(stableKey);
-                if (!existing) {
-                  existing = { id: apiId || stableKey, name: name || '', args: '' };
-                  toolCallsMap.set(stableKey, existing);
-                }
-
-                if (apiId) existing.id = apiId;
-                if (name) existing.name = name;
-                existing.args += argsText;
-
-                // Gemini 3: thought_signature 通常在 tcDelta.extra_content.google.thought_signature
-                const extraFromDelta =
-                  tcDelta?.extra_content ??
-                  tcDelta?.function?.extra_content ??
-                  undefined;
-                const thoughtSig =
-                  tcDelta?.thought_signature ??
-                  tcDelta?.function?.thought_signature ??
-                  tcDelta?.extra_content?.google?.thought_signature ??
-                  tcDelta?.function?.extra_content?.google?.thought_signature;
-
-                if (extraFromDelta || thoughtSig) {
-                  if (!existing.extra_content) existing.extra_content = {};
-                  if (extraFromDelta && typeof extraFromDelta === 'object') {
-                    this.deepMerge(existing.extra_content, extraFromDelta);
-                  }
-                  if (thoughtSig) {
-                    if (!existing.extra_content.google) existing.extra_content.google = {};
-                    existing.extra_content.google.thought_signature = thoughtSig;
-                  }
-
-                  // 缓存，供下一轮请求补全 messages[].tool_calls
-                  if (conversationId) {
-                    const cacheObj = existing.extra_content;
-                    // 既存 stableKey 也存 apiId，增加命中率（上层可能用任意一种作为 tool_call_id）
-                    this.rememberToolCallExtraContent(conversationId, stableKey, cacheObj);
-                    if (existing.id) this.rememberToolCallExtraContent(conversationId, existing.id, cacheObj);
-                    if (apiId) this.rememberToolCallExtraContent(conversationId, apiId, cacheObj);
-                  }
-                }
+                this.toolNameCache.set(callId, toolName);
 
                 if (this.uiStreamService && messageId) {
                   this.uiStreamService.pushToolCall({
-                    conversationId,
-                    messageId,
-                    toolCallId: existing.id,
+                    conversationId, messageId,
+                    toolCallId: callId,
                     phase: 'args',
-                    name: existing.name,
-                    argsDelta: argsText
+                    name: toolName,
+                    argsDelta: JSON.stringify(part.functionCall.args || {})
+                  });
+                  this.uiStreamService.pushToolCall({
+                    conversationId, messageId,
+                    toolCallId: callId,
+                    phase: 'end'
                   });
                 }
               }
             }
 
-            // 处理完成原因
-            if (choice.finish_reason) {
-              finishReason = choice.finish_reason as LLMFinalMessage['finishReason'];
+            // 完成原因 + 最终兜底扫描签名
+            if (candidate?.finishReason) {
+              finishReason = this.mapFinishReason(candidate.finishReason);
+              // 最终 chunk 可能包含签名，补给缺失签名的工具调用
+              if (chunkSig) {
+                for (const tc of toolCalls) {
+                  if (!this.thoughtSigCache.has(tc.id)) {
+                    this.thoughtSigCache.set(tc.id, chunkSig);
+                  }
+                }
+              }
             }
 
-            // 处理使用统计
-            if (parsed.usage) {
+            // 使用统计
+            if (parsed.usageMetadata) {
               usage = {
-                promptTokens: parsed.usage.prompt_tokens ?? 0,
-                completionTokens: parsed.usage.completion_tokens ?? 0,
-                totalTokens: parsed.usage.total_tokens ?? 0
+                promptTokens: parsed.usageMetadata.promptTokenCount ?? 0,
+                completionTokens: parsed.usageMetadata.candidatesTokenCount ?? 0,
+                totalTokens: parsed.usageMetadata.totalTokenCount ?? 0
               };
             }
-          } catch (err) {
-            console.warn('[GeminiProvider] 解析流数据失败:', err);
-            // JSON 解析失败时，也缓存一条原始数据，方便定位中转格式问题
-            pushRawSample({ dataStr });
+          } catch {
+            // JSON 解析失败，跳过
           }
         }
       }
 
-      // 自动异常诊断输出：当没有思考且正文像被截断（以逗号开头）时，打印前几个 raw SSE 片段
-      const contentTrimmed = (fullContent || '').trimStart();
-      const looksTruncated = contentTrimmed.startsWith(',') || contentTrimmed.startsWith('，');
-      if (!fullThinking && looksTruncated && rawSseSamples.length > 0) {
-        // 将诊断信息写入 localStorage，便于用户在页面控制台直接复制。
-        // 注意：content script 是隔离世界，window 挂载的对象在页面控制台拿不到。
-        const diag = {
-          ts: Date.now(),
-          modelId: config.modelId,
-          samples: rawSseSamples,
-          fullContentPreview: fullContent.slice(0, 500),
-          fullThinkingPreview: fullThinking.slice(0, 500)
-        };
-        try {
-          if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('overleaf_ai_gemini_diag', JSON.stringify(diag));
-          }
-        } catch {
-          // ignore
-        }
-        console.warn('[GeminiProvider][diagnostic] thinking is empty and content looks truncated. First SSE samples:', {
-          samples: rawSseSamples.slice(0, 12),
-          fullContentPreview: fullContent.slice(0, 200),
-          // 用户可在页面控制台运行：localStorage.getItem('overleaf_ai_gemini_diag')
-          diagKey: 'overleaf_ai_gemini_diag'
-        });
-      }
-
-      // 发送完成信号给 UI
+      // 发送完成信号
       if (this.uiStreamService && messageId) {
         if (fullThinking) {
           this.uiStreamService.pushThinking({
-            conversationId,
-            messageId,
-            delta: '',
-            done: true
+            conversationId, messageId, delta: '', done: true
           });
         }
         if (fullContent) {
           this.uiStreamService.pushContent({
-            conversationId,
-            messageId,
-            delta: '',
-            done: true
-          });
-        }
-        for (const [, tc] of toolCallsMap) {
-          this.uiStreamService.pushToolCall({
-            conversationId,
-            messageId,
-            toolCallId: tc.id,
-            phase: 'end'
+            conversationId, messageId, delta: '', done: true
           });
         }
       }
 
-      // 构建最终结果
       const result: LLMFinalMessage = {
         content: fullContent,
         finishReason,
         usage
       };
 
-      if (fullThinking) {
-        result.thinking = fullThinking;
-      }
+      if (fullThinking) result.thinking = fullThinking;
 
-      if (toolCallsMap.size > 0) {
-        // 🔧 工具调用调试：打印累积的原始参数
-        if (debugToolCalls) {
-          console.group('%c[ToolCall Debug] 🔍 流式累积完成，开始解析工具调用', 'color:#4CAF50;font-weight:bold');
-          console.log(`共 ${toolCallsMap.size} 个工具调用`);
-          for (const [key, tc] of toolCallsMap) {
-            console.groupCollapsed(`  ${key}: ${tc.name} (id=${tc.id})`);
-            console.log('累积的原始参数字符串 (args):', tc.args);
-            console.log('参数字符串长度:', tc.args.length);
-            console.groupEnd();
-          }
-          console.groupEnd();
-        }
-
-        result.toolCalls = Array.from(toolCallsMap.values())
-          .filter(tc => typeof tc.name === 'string' && tc.name.trim().length > 0)
-          .map(tc => {
-            let parsedArgs: Record<string, any> = {};
-            let parseMethod = 'none';
-            if (tc.args) {
-              try {
-                parsedArgs = JSON.parse(tc.args);
-                parseMethod = 'direct';
-              } catch (e1) {
-                // 🔧 JSON 解析失败，这是参数出错的高危点！
-                if (debugToolCalls) {
-                  console.warn(
-                    `%c[ToolCall Debug] ⚠️ JSON.parse 失败! 工具: ${tc.name}`,
-                    'color:#F44336;font-weight:bold'
-                  );
-                  console.warn('原始字符串:', tc.args);
-                  console.warn('错误:', (e1 as Error).message);
-                  console.warn('尝试 fallback: JSON.parse(args + "}")...');
-                }
-                try {
-                  parsedArgs = JSON.parse(tc.args + '}');
-                  parseMethod = 'fallback_append_brace';
-                  if (debugToolCalls) {
-                    console.warn(
-                      `%c[ToolCall Debug] ⚠️ Fallback 成功，但参数可能不完整!`,
-                      'color:#FF9800;font-weight:bold'
-                    );
-                    console.warn('Fallback 解析结果:', parsedArgs);
-                  }
-                } catch (e2) {
-                  parseMethod = 'failed';
-                  if (debugToolCalls) {
-                    console.error(
-                      `%c[ToolCall Debug] ❌ 所有解析尝试均失败! 工具: ${tc.name}`,
-                      'color:#F44336;font-weight:bold'
-                    );
-                    console.error('Fallback 错误:', (e2 as Error).message);
-                    console.error('将使用空参数 {} 继续执行');
-                  }
-                  parsedArgs = {};
-                }
-              }
-            }
-
-            // 🔧 打印最终解析结果
-            if (debugToolCalls) {
-              const paramKeys = Object.keys(parsedArgs);
-              const style = parseMethod === 'direct'
-                ? 'color:#4CAF50;font-weight:bold'
-                : parseMethod === 'fallback_append_brace'
-                  ? 'color:#FF9800;font-weight:bold'
-                  : 'color:#F44336;font-weight:bold';
-              console.group(`%c[ToolCall Debug] 📋 ${tc.name} 最终参数 (解析方式: ${parseMethod})`, style);
-              console.log('参数 keys:', paramKeys);
-              for (const key of paramKeys) {
-                const val = parsedArgs[key];
-                const valStr = typeof val === 'string'
-                  ? (val.length > 300 ? val.slice(0, 300) + `...(共${val.length}字符)` : val)
-                  : JSON.stringify(val);
-                console.log(`  ${key}:`, valStr);
-              }
-              console.groupEnd();
-            }
-
-            return {
-              id: tc.id,
-              name: tc.name,
-              arguments: parsedArgs
-            };
-          });
+      if (toolCalls.length > 0) {
+        result.toolCalls = toolCalls.map(tc => ({
+          id: tc.id,
+          name: tc.name,
+          arguments: typeof tc.args === 'object' ? tc.args : {}
+        }));
       }
 
       return result;
@@ -763,100 +506,15 @@ export class GeminiProvider extends BaseLLMProvider {
     }
   }
 
-  /**
-   * 将 src 合并进 dst（递归合并对象），用于聚合 streaming extra_content。
-   */
-  private deepMerge(dst: Record<string, any>, src: Record<string, any>): Record<string, any> {
-    for (const [k, v] of Object.entries(src || {})) {
-      if (v && typeof v === 'object' && !Array.isArray(v) && dst[k] && typeof dst[k] === 'object' && !Array.isArray(dst[k])) {
-        this.deepMerge(dst[k], v);
-      } else {
-        dst[k] = v;
-      }
-    }
-    return dst;
-  }
+  // ==================== 工具方法 ====================
 
-  /**
-   * 记忆 tool_call 对应的 extra_content（尤其是 thought_signature）。
-   * 做简单的上限裁剪，避免长会话无限增长。
-   */
-  private rememberToolCallExtraContent(conversationId: string, toolCallId: string, extra: any) {
-    if (!conversationId || !toolCallId || !extra) return;
-    let m = this.toolCallExtraContentCache.get(conversationId);
-    if (!m) {
-      m = new Map<string, any>();
-      this.toolCallExtraContentCache.set(conversationId, m);
-    }
-    m.set(toolCallId, extra);
-
-    // 简单裁剪：每个 conversation 保留最近 200 个 tool call 额外信息
-    const MAX = 200;
-    if (m.size > MAX) {
-      const firstKey = m.keys().next().value;
-      if (firstKey) m.delete(firstKey);
-    }
-  }
-
-  /**
-   * 在发送请求前，补全历史 messages[].tool_calls[*].extra_content.google.thought_signature
-   * 以满足 Gemini 3 的强制校验。
-   */
-  private hydrateToolCallExtraContent(messages: LLMMessage[], conversationId: string) {
-    const cache = this.toolCallExtraContentCache.get(conversationId);
-    if (!cache || cache.size === 0) return;
-
-    for (const msg of messages) {
-      const toolCalls = (msg as any)?.tool_calls;
-      if (!Array.isArray(toolCalls) || toolCalls.length === 0) continue;
-
-      for (const tc of toolCalls) {
-        if (!tc?.id) continue;
-        const cached = cache.get(tc.id);
-        if (!cached) continue;
-
-        // 只在缺失时注入，避免覆盖上层显式传入的 extra_content
-        if (!(tc as any).extra_content) {
-          (tc as any).extra_content = cached;
-        } else if (cached && typeof cached === 'object') {
-          try {
-            this.deepMerge((tc as any).extra_content, cached);
-          } catch {
-            // ignore
-          }
-        }
-
-        // Gemini 3 / Vertex AI: 某些网关会强校验 tool_call 的 thought_signature 字段本身，
-        // 仅在 extra_content.google.thought_signature 存在还不够（会 400）。
-        // 因此这里把签名同时“镜像”到常见位置：tc.thought_signature / tc.function.thought_signature。
-        const thoughtSig =
-          (tc as any)?.thought_signature ??
-          (tc as any)?.function?.thought_signature ??
-          (tc as any)?.extra_content?.google?.thought_signature;
-
-        const cachedThoughtSig =
-          (cached as any)?.google?.thought_signature ??
-          (cached as any)?.extra_content?.google?.thought_signature;
-
-        const finalThoughtSig = thoughtSig || cachedThoughtSig;
-        if (finalThoughtSig) {
-          // 顶层
-          if (!(tc as any).thought_signature) {
-            (tc as any).thought_signature = finalThoughtSig;
-          }
-          // function 层（OpenAI tool_calls 结构常见）
-          if ((tc as any).function && !(tc as any).function.thought_signature) {
-            (tc as any).function.thought_signature = finalThoughtSig;
-          }
-          // extra_content 层（我们自己的缓存结构）
-          (tc as any).extra_content = (tc as any).extra_content || {};
-          (tc as any).extra_content.google = (tc as any).extra_content.google || {};
-          if (!(tc as any).extra_content.google.thought_signature) {
-            (tc as any).extra_content.google.thought_signature = finalThoughtSig;
-          }
-        }
-      }
+  private mapFinishReason(reason?: string): LLMFinalMessage['finishReason'] {
+    if (!reason) return undefined;
+    switch (reason) {
+      case 'STOP': return 'stop';
+      case 'MAX_TOKENS': return 'length';
+      case 'SAFETY': return 'content_filter';
+      default: return 'stop';
     }
   }
 }
-

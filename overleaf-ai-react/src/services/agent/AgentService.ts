@@ -642,8 +642,8 @@ export class AgentService implements IAgentService {
   private selectToolsForModel(modelId: string, mode: string): ITool[] {
     const capabilities = this.modelRegistry.getCapabilities(modelId);
 
-    if (!capabilities?.supportsTools) {
-      // console.log(`[AgentService] 模型 ${modelId} 不支持工具调用`);
+    // 注册表未找到时，默认认为支持工具调用
+    if (capabilities && !capabilities.supportsTools) {
       return [];
     }
 
@@ -663,10 +663,13 @@ export class AgentService implements IAgentService {
    * 构建 LLM 配置
    */
   private buildLLMConfig(modelId: string, tools: ITool[]): LLMConfig {
-    const defaultConfig = this.modelRegistry.getDefaultConfig(modelId);
-    if (!defaultConfig) {
-      throw new Error(`未找到模型配置: ${modelId}`);
-    }
+    const defaultConfig = this.modelRegistry.getDefaultConfig(modelId) || {
+      modelId,
+      temperature: 1.0,
+      topP: 1.0,
+      maxTokens: 16384,
+      maxTokensParamName: 'max_completion_tokens' as const
+    };
 
     const config = {
       ...defaultConfig,

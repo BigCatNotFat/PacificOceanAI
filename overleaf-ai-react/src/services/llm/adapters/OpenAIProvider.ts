@@ -1,13 +1,16 @@
 /**
- * OpenAIProvider
+ * OpenAIProvider - 基于 Responses API 实现
  *
- * 职责：
- * - 完整的 OpenAI 客户端实现
- * - 接收历史上下文（messages + config）
- * - 内部构建请求并发送给 OpenAI API
- * - 流式接收响应，实时解析
- * - 每收到一个 chunk，立即通过 UIStreamService 更新 UI
- * - 等流式完成后，返回完整的最终结果
+ * 使用 OpenAI Responses API (/v1/responses) 而非旧的 Chat Completions API，
+ * 以支持推理模型的思考过程输出（reasoning summary）。
+ *
+ * Responses API 关键差异：
+ * - 端点：/v1/responses
+ * - 消息字段：input（而非 messages）
+ * - 推理配置：reasoning.effort + reasoning.summary
+ * - token 限制：max_output_tokens（而非 max_completion_tokens）
+ * - 工具格式：扁平化（name/description/parameters 直接在对象上）
+ * - SSE 事件：带 event: 类型前缀
  */
 
 import type { LLMMessage, LLMConfig, LLMFinalMessage } from '../../../platform/llm/ILLMService';
@@ -24,25 +27,9 @@ export class OpenAIProvider extends BaseLLMProvider {
     super();
   }
 
-  /**
-   * 唯一公共接口：发送请求并返回完整结果
-   * @param messages - 历史上下文消息列表
-   * @param config - LLM 配置
-   * @returns 完整的最终响应
-   */
   async chat(messages: LLMMessage[], config: LLMConfig): Promise<LLMFinalMessage> {
-    console.log('[OpenAIProvider] chat() called', {
-      messageCount: messages.length,
-      hasUIStreamMeta: !!config.uiStreamMeta,
-      conversationId: config.uiStreamMeta?.conversationId,
-      messageId: config.uiStreamMeta?.messageId,
-      hasUIStreamService: !!this.uiStreamService
-    });
+    const { endpoint, headers, body } = this.buildRequest(messages, config, true);
 
-    // 1. 构建请求
-    const { endpoint, headers, body } = this.buildRequest(messages, config);
-
-    // 2. 发送 HTTP 请求（支持上层通过 AbortController 中断）
     const response = await fetch(endpoint, {
       method: 'POST',
       headers,
@@ -55,28 +42,12 @@ export class OpenAIProvider extends BaseLLMProvider {
       throw new Error(`OpenAI API 请求失败: ${response.status} ${errorText}`);
     }
 
-    // 3. 流式解析响应
     return await this.parseStreamResponse(response, config);
   }
 
-  /**
-   * Manager 聊天接口 - 用于 MultiAgent 模式的 ManagerAgent
-   * 
-   * 与 chat 的区别：
-   * - 不流式输出
-   * - 不更新 UI
-   * - 只返回结果
-   */
   async managerChat(messages: LLMMessage[], config: LLMConfig): Promise<LLMFinalMessage> {
-    console.log('[OpenAIProvider] managerChat() called', {
-      messageCount: messages.length,
-      modelId: config.modelId
-    });
-
-    // 1. 构建请求（非流式）
     const { endpoint, headers, body } = this.buildRequest(messages, config, false);
 
-    // 2. 发送 HTTP 请求
     const response = await fetch(endpoint, {
       method: 'POST',
       headers,
@@ -89,96 +60,138 @@ export class OpenAIProvider extends BaseLLMProvider {
       throw new Error(`OpenAI API 请求失败: ${response.status} ${errorText}`);
     }
 
-    // 3. 解析非流式响应
     const data = await response.json();
     return this.parseNonStreamResponse(data);
   }
 
+  // ==================== 构建请求 ====================
+
   /**
-   * 解析非流式响应
+   * 将 Chat Completions 格式的消息转换为 Responses API 的 input 格式
+   *
+   * Chat Completions:
+   *   { role: "system", content }
+   *   { role: "assistant", content, tool_calls: [{ id, function: { name, arguments } }] }
+   *   { role: "tool", tool_call_id, content }
+   *
+   * Responses API:
+   *   { role: "developer", content }
+   *   { role: "assistant", content }
+   *   { type: "function_call", call_id, name, arguments }
+   *   { type: "function_call_output", call_id, output }
    */
-  private parseNonStreamResponse(data: any): LLMFinalMessage {
-    const choice = data?.choices?.[0];
-    if (!choice) {
-      throw new Error('无效的 API 响应');
-    }
+  private toResponsesInput(messages: LLMMessage[]): any[] {
+    const result: any[] = [];
 
-    const message = choice.message;
-    const result: LLMFinalMessage = {
-      content: message?.content || '',
-      finishReason: choice.finish_reason as LLMFinalMessage['finishReason']
-    };
+    for (const msg of messages) {
+      // system → developer
+      if (msg.role === 'system') {
+        result.push({ role: 'developer', content: msg.content || '' });
+        continue;
+      }
 
-    // 处理推理内容
-    if (message?.reasoning_content) {
-      result.thinking = message.reasoning_content;
-    }
+      // tool result → function_call_output
+      if (msg.role === 'tool') {
+        result.push({
+          type: 'function_call_output',
+          call_id: (msg as any).tool_call_id || '',
+          output: msg.content || ''
+        });
+        continue;
+      }
 
-    // 处理工具调用
-    if (message?.tool_calls && message.tool_calls.length > 0) {
-      result.toolCalls = message.tool_calls.map((tc: any) => ({
-        id: tc.id,
-        name: tc.function?.name || '',
-        arguments: tc.function?.arguments ? JSON.parse(tc.function.arguments) : {}
-      }));
-    }
+      // assistant with tool_calls → split
+      if (msg.role === 'assistant' && (msg as any).tool_calls?.length > 0) {
+        if (msg.content) {
+          result.push({ role: 'assistant', content: msg.content });
+        }
+        for (const tc of (msg as any).tool_calls) {
+          result.push({
+            type: 'function_call',
+            call_id: tc.id || '',
+            name: tc.function?.name || tc.name || '',
+            arguments: typeof tc.function?.arguments === 'string'
+              ? tc.function.arguments
+              : JSON.stringify(tc.function?.arguments || tc.arguments || {})
+          });
+        }
+        continue;
+      }
 
-    // 处理使用统计
-    if (data.usage) {
-      result.usage = {
-        promptTokens: data.usage.prompt_tokens ?? 0,
-        completionTokens: data.usage.completion_tokens ?? 0,
-        totalTokens: data.usage.total_tokens ?? 0
-      };
+      // user / assistant (normal)
+      result.push({
+        role: msg.role,
+        content: msg.content || ''
+      });
     }
 
     return result;
   }
 
-  /**
-   * 构建 OpenAI 请求配置（内部方法）
-   */
   private buildRequest(
     messages: LLMMessage[],
     config: LLMConfig,
-    stream: boolean = true
+    stream: boolean
   ): { endpoint: string; headers: Record<string, string>; body: any } {
-    const modelInfo = this.modelRegistry.getModelInfo(config.modelId);
-    const maxTokensParamName = 
-      (modelInfo?.defaultConfig as any)?.maxTokensParamName || 'max_tokens';
+    const filtered = this.formatMessages(messages);
+    const input = this.toResponsesInput(filtered);
 
-    const payload = this.buildBasePayload(messages, config);
-    
-    // 设置流式参数
-    payload.stream = stream;
+    // 确定推理深度
+    const effort = config.reasoningEffort || 'medium';
 
-    // 设置 max_tokens 参数
-    if (typeof config.maxTokens === 'number') {
-      payload[maxTokensParamName] = config.maxTokens;
+    const payload: any = {
+      model: config.modelId,
+      input,
+      stream,
+      reasoning: {
+        effort,
+        summary: 'auto'
+      }
+    };
+
+    // OpenAI 规定：GPT-5.2+ 当 reasoning.effort 不为 none 时，
+    // 不允许发送 temperature / top_p，否则返回 400
+    if (effort === 'none') {
+      if (typeof config.temperature === 'number') {
+        payload.temperature = config.temperature;
+      }
+      if (typeof config.topP === 'number') {
+        payload.top_p = config.topP;
+      }
     }
 
-    // 工具调用
+    if (typeof config.maxTokens === 'number') {
+      payload.max_output_tokens = config.maxTokens;
+    }
+
+    // 工具调用（Responses API 的工具格式是扁平的）
     const tools = (config as any).tools;
     if (Array.isArray(tools) && tools.length > 0) {
-      payload.tools = tools;
+      payload.tools = tools.map((t: any) => {
+        const fn = t.function || t;
+        return {
+          type: 'function',
+          name: fn.name,
+          description: fn.description,
+          parameters: fn.parameters,
+          strict: fn.strict ?? false
+        };
+      });
       const toolChoice = (config as any).tool_choice;
       if (toolChoice) {
         payload.tool_choice = toolChoice;
       }
     }
 
-    // 推理参数（OpenAI o1 系列）
-    if (config.reasoningEffort) {
-      payload.reasoning_effort = config.reasoningEffort;
-    }
-
-    // 确保 API 端点格式正确
-    const normalizedBaseUrl = this.apiConfig.baseUrl.endsWith('/') 
-      ? this.apiConfig.baseUrl.slice(0, -1) 
+    const normalizedBaseUrl = this.apiConfig.baseUrl.endsWith('/')
+      ? this.apiConfig.baseUrl.slice(0, -1)
       : this.apiConfig.baseUrl;
 
+    // /v1/responses 端点
+    const base = normalizedBaseUrl.replace(/\/v1$/, '');
+
     return {
-      endpoint: config.apiEndpoint || `${normalizedBaseUrl}/chat/completions`,
+      endpoint: `${base}/v1/responses`,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.apiConfig.apiKey}`
@@ -187,34 +200,95 @@ export class OpenAIProvider extends BaseLLMProvider {
     };
   }
 
+  // ==================== 解析非流式响应 ====================
+
+  private parseNonStreamResponse(data: any): LLMFinalMessage {
+    const result: LLMFinalMessage = {
+      content: '',
+      finishReason: data.status === 'completed' ? 'stop' : 'length'
+    };
+
+    const output: any[] = data.output || [];
+
+    for (const item of output) {
+      if (item.type === 'reasoning' && item.summary) {
+        const texts = item.summary
+          .filter((s: any) => s.type === 'summary_text')
+          .map((s: any) => s.text);
+        if (texts.length > 0) {
+          result.thinking = texts.join('\n');
+        }
+      }
+
+      if (item.type === 'message' && item.role === 'assistant') {
+        const textParts = (item.content || [])
+          .filter((c: any) => c.type === 'output_text')
+          .map((c: any) => c.text);
+        result.content = textParts.join('');
+      }
+
+      if (item.type === 'function_call') {
+        if (!result.toolCalls) result.toolCalls = [];
+        let parsedArgs: Record<string, any> = {};
+        try { parsedArgs = JSON.parse(item.arguments || '{}'); } catch { /* ignore */ }
+        result.toolCalls.push({
+          id: item.call_id || item.id,
+          name: item.name,
+          arguments: parsedArgs
+        });
+      }
+    }
+
+    if (data.usage) {
+      result.usage = {
+        promptTokens: data.usage.input_tokens ?? 0,
+        completionTokens: data.usage.output_tokens ?? 0,
+        totalTokens: data.usage.total_tokens ?? 0
+      };
+    }
+
+    return result;
+  }
+
+  // ==================== 解析流式响应 ====================
+
   /**
-   * 解析流式响应（内部方法）
+   * Responses API SSE 事件格式：
+   *   event: response.reasoning_summary_text.delta
+   *   data: { "delta": "...", ... }
+   *
+   *   event: response.output_text.delta
+   *   data: { "delta": "...", ... }
+   *
+   *   event: response.function_call_arguments.delta
+   *   data: { "delta": "...", "item_id": "...", ... }
+   *
+   *   event: response.completed
+   *   data: { ... full response ... }
    */
   private async parseStreamResponse(
     response: Response,
     config: LLMConfig
   ): Promise<LLMFinalMessage> {
     const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('无法获取响应流');
-    }
+    if (!reader) throw new Error('无法获取响应流');
 
     const decoder = new TextDecoder();
     const conversationId = config.uiStreamMeta?.conversationId;
     const messageId = config.uiStreamMeta?.messageId;
 
-    // 累积完整内容
     let fullContent = '';
     let fullThinking = '';
-    // 使用 index 作为稳定 key：流式传输中 id 可能只在第一个 chunk 出现
-    // 如果用 id 作为 key，后续 chunk 缺失 id 会导致同一个 tool call 被拆成两条（name/args 分裂）
-    const toolCallsMap = new Map<string, { id: string; name: string; args: string }>();
-    
+    let thinkingDone = false;
+    let contentDone = false;
+    // key = item.id（流式 delta 用的标识符），value.callId = call_id（回传给上层用于匹配工具结果）
+    const toolCallsMap = new Map<string, { itemId: string; callId: string; name: string; args: string }>();
     let finishReason: LLMFinalMessage['finishReason'];
     let usage: LLMFinalMessage['usage'];
 
     try {
       let buffer = '';
+      let currentEventType = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -226,133 +300,175 @@ export class OpenAIProvider extends BaseLLMProvider {
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed || trimmed === 'data: [DONE]') continue;
-          if (!trimmed.startsWith('data: ')) continue;
 
-          const dataStr = trimmed.slice(6);
+          // 解析 event: 行
+          if (trimmed.startsWith('event:')) {
+            currentEventType = trimmed.slice(6).trim();
+            continue;
+          }
+
+          // 解析 data: 行
+          if (!trimmed.startsWith('data:')) continue;
+          const dataStr = trimmed.slice(5).trim();
+          if (!dataStr || dataStr === '[DONE]') continue;
+
           try {
             const parsed = JSON.parse(dataStr);
-            const choice = parsed?.choices?.[0];
-            if (!choice) continue;
 
-            const delta = choice.delta;
-
-            // 处理推理内容（thinking）
-            const reasoningDelta = (delta as any)?.reasoning_content;
-            if (reasoningDelta) {
-              const text = String(reasoningDelta);
-              fullThinking += text;
-
-              if (this.uiStreamService && messageId) {
-                this.uiStreamService.pushThinking({
-                  conversationId,
-                  messageId,
-                  delta: text
-                });
-              }
-            }
-
-            // 处理普通内容
-            if (delta?.content) {
-              const text = String(delta.content);
-              fullContent += text;
-
-              if (this.uiStreamService && messageId) {
-                this.uiStreamService.pushContent({
-                  conversationId,
-                  messageId,
-                  delta: text
-                });
-              } else {
-                console.warn('[OpenAIProvider] Cannot push content - missing service or messageId', {
-                  hasService: !!this.uiStreamService,
-                  messageId
-                });
-              }
-            }
-
-            // 处理工具调用
-            const toolCallsDelta = (delta as any)?.tool_calls;
-            if (Array.isArray(toolCallsDelta) && toolCallsDelta.length > 0) {
-              for (const tcDelta of toolCallsDelta) {
-                const index = tcDelta.index ?? 0;
-                const stableKey = `tool_call_${index}`;
-                const apiId = tcDelta.id;
-                const name = tcDelta.function?.name;
-                const argsText = tcDelta.function?.arguments || '';
-
-                let existing = toolCallsMap.get(stableKey);
-                if (!existing) {
-                  existing = { id: apiId || stableKey, name: name || '', args: '' };
-                  toolCallsMap.set(stableKey, existing);
+            switch (currentEventType) {
+              // 思考摘要增量
+              case 'response.reasoning_summary_text.delta': {
+                const delta = parsed.delta;
+                if (delta) {
+                  fullThinking += delta;
+                  if (this.uiStreamService && messageId) {
+                    this.uiStreamService.pushThinking({
+                      conversationId, messageId, delta
+                    });
+                  }
                 }
+                break;
+              }
 
-                // 更新 id（第一个 chunk 通常包含真实 id）
-                if (apiId) existing.id = apiId;
-                if (name) existing.name = name;
-                existing.args += argsText;
-
-                if (this.uiStreamService && messageId) {
-                  this.uiStreamService.pushToolCall({
-                    conversationId,
-                    messageId,
-                    toolCallId: existing.id,
-                    phase: 'args',
-                    name: existing.name,
-                    argsDelta: argsText
+              // 思考摘要完成
+              case 'response.reasoning_summary_text.done': {
+                if (this.uiStreamService && messageId && fullThinking && !thinkingDone) {
+                  thinkingDone = true;
+                  this.uiStreamService.pushThinking({
+                    conversationId, messageId, delta: '', done: true
                   });
                 }
+                break;
               }
+
+              // 内容增量
+              case 'response.output_text.delta': {
+                const delta = parsed.delta;
+                if (delta) {
+                  fullContent += delta;
+                  if (this.uiStreamService && messageId) {
+                    this.uiStreamService.pushContent({
+                      conversationId, messageId, delta
+                    });
+                  }
+                }
+                break;
+              }
+
+              // 内容完成
+              case 'response.output_text.done': {
+                if (this.uiStreamService && messageId && fullContent && !contentDone) {
+                  contentDone = true;
+                  this.uiStreamService.pushContent({
+                    conversationId, messageId, delta: '', done: true
+                  });
+                }
+                break;
+              }
+
+              // 新输出项（可能是 function_call）
+              case 'response.output_item.added': {
+                if (parsed.item?.type === 'function_call') {
+                  const item = parsed.item;
+                  // item.id 是流式 delta 事件的查找 key
+                  // item.call_id 是回传给上层做工具结果匹配的 key
+                  const itemId = item.id || `tool_${toolCallsMap.size}`;
+                  const callId = item.call_id || itemId;
+                  toolCallsMap.set(itemId, {
+                    itemId,
+                    callId,
+                    name: item.name || '',
+                    args: ''
+                  });
+                  if (this.uiStreamService && messageId) {
+                    this.uiStreamService.pushToolCall({
+                      conversationId, messageId,
+                      toolCallId: callId,
+                      phase: 'args',
+                      name: item.name || ''
+                    });
+                  }
+                }
+                break;
+              }
+
+              // 工具调用参数增量
+              case 'response.function_call_arguments.delta': {
+                const delta = parsed.delta || '';
+                const itemId = parsed.item_id;
+                if (itemId && delta) {
+                  const existing = toolCallsMap.get(itemId);
+                  if (existing) {
+                    existing.args += delta;
+                    if (this.uiStreamService && messageId) {
+                      this.uiStreamService.pushToolCall({
+                        conversationId, messageId,
+                        toolCallId: existing.callId,
+                        phase: 'args',
+                        name: existing.name,
+                        argsDelta: delta
+                      });
+                    }
+                  }
+                }
+                break;
+              }
+
+              // 工具调用参数完成
+              case 'response.function_call_arguments.done': {
+                const itemId = parsed.item_id;
+                if (itemId) {
+                  const existing = toolCallsMap.get(itemId);
+                  if (existing && this.uiStreamService && messageId) {
+                    this.uiStreamService.pushToolCall({
+                      conversationId, messageId,
+                      toolCallId: existing.callId,
+                      phase: 'end'
+                    });
+                  }
+                }
+                break;
+              }
+
+              // 响应完成
+              case 'response.completed': {
+                const resp = parsed.response || parsed;
+                finishReason = resp.status === 'completed' ? 'stop' : 'length';
+                if (resp.usage) {
+                  usage = {
+                    promptTokens: resp.usage.input_tokens ?? 0,
+                    completionTokens: resp.usage.output_tokens ?? 0,
+                    totalTokens: resp.usage.total_tokens ?? 0
+                  };
+                }
+                break;
+              }
+
+              default:
+                break;
             }
 
-            // 处理完成原因
-            if (choice.finish_reason) {
-              finishReason = choice.finish_reason as LLMFinalMessage['finishReason'];
-            }
-
-            // 处理使用统计
-            if (parsed.usage) {
-              usage = {
-                promptTokens: parsed.usage.prompt_tokens ?? 0,
-                completionTokens: parsed.usage.completion_tokens ?? 0,
-                totalTokens: parsed.usage.total_tokens ?? 0
-              };
-            }
-          } catch (err) {
-            console.warn('[OpenAIProvider] 解析流数据失败:', err);
+            currentEventType = '';
+          } catch {
+            // JSON 解析失败，跳过
           }
         }
       }
 
-      // 发送完成信号给 UI
+      // 兜底：确保发送完成信号（仅在事件中未发送时）
       if (this.uiStreamService && messageId) {
-        if (fullThinking) {
+        if (fullThinking && !thinkingDone) {
           this.uiStreamService.pushThinking({
-            conversationId,
-            messageId,
-            delta: '',
-            done: true
+            conversationId, messageId, delta: '', done: true
           });
         }
-        if (fullContent) {
+        if (fullContent && !contentDone) {
           this.uiStreamService.pushContent({
-            conversationId,
-            messageId,
-            delta: '',
-            done: true
-          });
-        }
-        for (const [, tc] of toolCallsMap) {
-          this.uiStreamService.pushToolCall({
-            conversationId,
-            messageId,
-            toolCallId: tc.id,
-            phase: 'end'
+            conversationId, messageId, delta: '', done: true
           });
         }
       }
 
-      // 构建最终结果
       const result: LLMFinalMessage = {
         content: fullContent,
         finishReason,
@@ -365,27 +481,17 @@ export class OpenAIProvider extends BaseLLMProvider {
 
       if (toolCallsMap.size > 0) {
         result.toolCalls = Array.from(toolCallsMap.values())
-          // 防御：过滤掉缺失 name 的 tool call，否则下一轮回传会触发 400
-          .filter(tc => typeof tc.name === 'string' && tc.name.trim().length > 0)
+          .filter(tc => tc.name.trim().length > 0)
           .map(tc => {
             let parsedArgs: Record<string, any> = {};
             if (tc.args) {
-              try {
-                parsedArgs = JSON.parse(tc.args);
-              } catch {
-                // 常见情况：JSON 被截断（缺少末尾 }）
-                try {
-                  parsedArgs = JSON.parse(tc.args + '}');
-                } catch {
-                  parsedArgs = {};
-                }
+              try { parsedArgs = JSON.parse(tc.args); }
+              catch {
+                try { parsedArgs = JSON.parse(tc.args + '}'); }
+                catch { parsedArgs = {}; }
               }
             }
-            return {
-              id: tc.id,
-              name: tc.name,
-              arguments: parsedArgs
-            };
+            return { id: tc.callId, name: tc.name, arguments: parsedArgs };
           });
       }
 
@@ -395,4 +501,3 @@ export class OpenAIProvider extends BaseLLMProvider {
     }
   }
 }
-

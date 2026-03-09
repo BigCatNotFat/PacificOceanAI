@@ -1,30 +1,34 @@
 import type { Event } from '../../base/common/event';
 
 /**
- * AI 模型配置
+ * AI 模型配置（每个模型自包含完整的调用凭证）
  */
 export interface AIModelConfig {
-  /** 模型唯一标识 */
+  /** 模型唯一标识（同时也是 API 调用时的 model 参数） */
   id: string;
   /** 模型显示名称 */
   name: string;
-  /** 模型描述 */
-  description?: string;
   /** 是否启用 */
   enabled: boolean;
+  /** 供应商类型 */
+  provider: 'openai' | 'gemini' | 'codex-oauth';
+  /** 该模型使用的 API Key（codex-oauth 模式下为空） */
+  apiKey: string;
+  /** 该模型使用的 Base URL（codex-oauth 模式下为 chatgpt.com/backend-api） */
+  baseUrl: string;
 }
 
 /**
  * API 配置
  */
 export interface APIConfig {
-  /** API Key */
+  /** @deprecated 兼容旧版 */
   apiKey: string;
-  /** Base URL */
+  /** @deprecated 兼容旧版 */
   baseUrl: string;
-  /** 自定义模型列表 */
+  /** 模型列表（每个模型自带凭证） */
   models: AIModelConfig[];
-  /** API Key 是否已验证 */
+  /** @deprecated 兼容旧版 */
   isVerified?: boolean;
   /** 创建时间 */
   createdAt?: number;

@@ -678,10 +678,13 @@ export class ManagerAgentLoopService {
    * 构建 Manager Agent 的 LLM 配置
    */
   private buildManagerLLMConfig(modelId: string): LLMConfig {
-    const defaultConfig = this.modelRegistry.getDefaultConfig(modelId);
-    if (!defaultConfig) {
-      throw new Error(`未找到模型配置: ${modelId}`);
-    }
+    const defaultConfig = this.modelRegistry.getDefaultConfig(modelId) || {
+      modelId,
+      temperature: 1.0,
+      topP: 1.0,
+      maxTokens: 16384,
+      maxTokensParamName: 'max_completion_tokens' as const
+    };
 
     const config: LLMConfig = {
       ...defaultConfig,

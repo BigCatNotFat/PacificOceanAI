@@ -238,13 +238,12 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
   private buildLLMConfig(modelId: string, abortSignal?: AbortSignal): LLMConfig {
     const defaultConfig = this.modelRegistry.getDefaultConfig(modelId);
     
-    // 生成唯一的消息 ID 用于流式更新
     this.currentMessageId = `${TEXT_ACTION_MESSAGE_PREFIX}${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     const config: LLMConfig = {
       modelId,
-      temperature: 0.7, // 文本操作使用适中的温度
-      maxTokens: defaultConfig?.maxTokens || 4096,
+      temperature: 0.7,
+      maxTokens: defaultConfig?.maxTokens || 16384,
       stream: true,
       uiStreamMeta: {
         messageId: this.currentMessageId

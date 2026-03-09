@@ -243,18 +243,14 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
     return () => disposable.dispose();
   }, [configService, loadModels]);
 
-  // 检查是否配置了 API Key
+  // 检查是否配置了 API Key（至少一个供应商有 key 且有模型）
   useEffect(() => {
     const checkApiKey = async () => {
-      // setIsCheckingApiKey(true); // 移除这行，避免不必要的重新渲染
       try {
         const config = await configService.getAPIConfig();
-        // 只要有 apiKey 且 models 列表不为空，就认为已配置
-        // 我们不强求 model.enabled，因为用户可能手动禁用了所有模型但 key 是有效的
-        // 何况上面 loadModels 会处理默认选中逻辑
-        const hasValidConfig = !!(config?.apiKey && config?.models?.length > 0);
+        const hasConfiguredModel = !!(config?.models?.some(m => m.enabled && m.apiKey));
         
-        setHasApiKey(hasValidConfig);
+        setHasApiKey(hasConfiguredModel);
       } catch (error) {
         console.error('[ConversationPane] 检查 API Key 失败:', error);
         setHasApiKey(false);
@@ -347,8 +343,12 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
     if (!value) return;
     
     if (!hasApiKey) {
-      console.warn('[ConversationPane] 未配置 API Key，请求用户激活');
-      window.dispatchEvent(new CustomEvent('SHOW_ACTIVATION_MODAL'));
+      console.warn('[ConversationPane] 未配置 API Key，请前往设置页面配置');
+      try {
+        if (typeof chrome !== 'undefined' && chrome.runtime?.openOptionsPage) {
+          chrome.runtime.openOptionsPage();
+        }
+      } catch { /* ignore */ }
       return;
     }
 

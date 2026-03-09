@@ -132,9 +132,8 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
   getDefaultConfig(): APIConfig {
     return {
       apiKey: '',
-      baseUrl: API_ENDPOINTS.LLM_BASE_URL,
+      baseUrl: '',
       models: [],
-      isVerified: false,
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
@@ -153,11 +152,7 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
         return this.getDefaultConfig();
       }
       
-      // 强制使用固定的 Base URL
-      return {
-        ...config,
-        baseUrl: API_ENDPOINTS.LLM_BASE_URL
-      };
+      return config;
     } catch (error) {
       console.error('[ConfigurationService] Failed to get API config:', error);
       return this.getDefaultConfig();
@@ -256,18 +251,33 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
     const startTime = Date.now();
 
     try {
-      // 规范化 URL
       const normalizedUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-      const testUrl = `${normalizedUrl}/models`;
+      const isGemini = normalizedUrl.includes('generativelanguage.googleapis.com');
 
-      const response = await fetch(testUrl, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      let testUrl: string;
+      let fetchOptions: RequestInit;
 
+      if (isGemini) {
+        // Gemini 原生 API：key 在查询参数中
+        const base = normalizedUrl.replace(/\/openai\/?$/, '');
+        testUrl = `${base}/models?key=${apiKey}`;
+        fetchOptions = {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' }
+        };
+      } else {
+        // OpenAI 及兼容 API：Bearer token
+        testUrl = `${normalizedUrl}/models`;
+        fetchOptions = {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          }
+        };
+      }
+
+      const response = await fetch(testUrl, fetchOptions);
       const latency = Date.now() - startTime;
 
       if (!response.ok) {
@@ -280,7 +290,17 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
       }
 
       const data = await response.json();
-      const availableModels = data.data?.map((model: any) => model.id) || [];
+
+      // OpenAI 返回 data.data[]，Gemini 返回 data.models[]
+      let availableModels: string[] = [];
+      if (data.data) {
+        availableModels = data.data.map((m: any) => m.id);
+      } else if (data.models) {
+        availableModels = data.models.map((m: any) => {
+          const name: string = m.name || '';
+          return name.startsWith('models/') ? name.slice(7) : name;
+        });
+      }
 
       return {
         success: true,

@@ -24,7 +24,7 @@ async function pushModelListToBridge(configService: IConfigurationService): Prom
     const bridgeModels = enabledModels.map(model => ({
       id: model.id,
       name: model.name,
-      provider: 'openai-compatible' // ConfigurationService 的模型没有 provider 字段，使用默认值
+      provider: model.provider || 'openai'
     }));
     
     // 发送消息到 bridge

@@ -14,10 +14,8 @@ import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService'
 import type { ITelemetryService } from '../../platform/telemetry/ITelemetryService';
 import MultiPaneContainer, { MultiPaneContainerHandle } from './MultiPaneContainer';
 import LiteraturePanel from './LiteraturePanel';
-import ActivationModal from './ActivationModal';
 import 'katex/dist/katex.min.css';
 import '../styles/literature.css';
-import { API_ENDPOINTS } from '../../base/common/apiConfig';
 
 /** 侧边栏标签页类型 */
 type SidebarTab = 'chat' | 'literature';
@@ -209,80 +207,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
       return multiPaneRef.current?.getColumnCount() ?? 1;
     });
   }, [telemetryService]);
-  const [isActivationModalOpen, setIsActivationModalOpen] = useState(false);
-
   useSidebarResize({ sidebarRef, handleRef, onWidthChange });
-
-  // 检查启动码状态
-  useEffect(() => {
-    const checkActivation = async () => {
-      const config = await configService.getAPIConfig();
-      if (!config || !config.apiKey) {
-        // 初始加载时不强制弹出，或者可以根据需求决定是否弹出
-        // 这里我们选择初始检查并弹出，但允许用户关闭
-        setIsActivationModalOpen(true);
-      }
-    };
-    checkActivation();
-
-    // 监听显示 Activation Modal 的自定义事件
-    const handleShowActivation = () => {
-      setIsActivationModalOpen(true);
-    };
-    window.addEventListener('SHOW_ACTIVATION_MODAL', handleShowActivation);
-
-    return () => {
-      window.removeEventListener('SHOW_ACTIVATION_MODAL', handleShowActivation);
-    };
-  }, [configService]);
-
-  // 处理启动码提交
-  const handleActivationSubmit = async (code: string) => {
-    try {
-      // 验证启动码（测试连通性）
-      const result = await configService.testConnectivity(code, API_ENDPOINTS.LLM_BASE_URL);
-      
-      if (result.success) {
-        // 验证成功，先保存基本配置
-        let config = await configService.getAPIConfig();
-        if (config) {
-          await configService.setAPIConfig({
-            ...config,
-            apiKey: code,
-            isVerified: true  // 标记为已验证
-          });
-
-          // 同步模型列表（这会根据最新的 apiKey 获取并更新模型）
-          if (result.availableModels && result.availableModels.length > 0) {
-            try {
-              const syncResult = await configService.syncModelsFromConnectivityResult(result.availableModels);
-              console.log('[Sidebar] Models synced:', syncResult);
-            } catch (err) {
-              console.error('[Sidebar] Failed to sync models:', err);
-            }
-          }
-
-          setIsActivationModalOpen(false);
-          
-          // 同步激活状态到注入脚本
-          window.postMessage({
-            type: 'OVERLEAF_ACTIVATION_STATUS_UPDATE',
-            data: { isActivated: true }
-          }, '*');
-          console.log('[Sidebar] Activation successful, sent status update');
-          
-          return true;
-        }
-      } else {
-        console.warn('Activation failed:', result.error);
-        return false;
-      }
-      return false;
-    } catch (error) {
-      console.error('Activation failed:', error);
-      return false;
-    }
-  };
 
   // 打开设置页面
   const openSettings = useCallback(() => {
@@ -552,12 +477,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
         </div>
       </div>
 
-      {/* ActivationModal 放在 Sidebar div 外面，这样即使侧边栏隐藏，模态框也能显示 */}
-      <ActivationModal
-        isOpen={isActivationModalOpen}
-        onSubmit={handleActivationSubmit}
-        onClose={() => setIsActivationModalOpen(false)}
-      />
     </>
   );
 };

@@ -5,11 +5,17 @@ export default defineManifest({
   name: 'PacificOceanAI',
   version: '2.0.3',
   description: 'PacificOceanAI - AI Assistant for Overleaf LaTeX Editor',
-  permissions: ['storage'],
+  permissions: ['storage', 'tabs'],
   host_permissions: [
     'https://www.overleaf.com/*',
-    'https://latex.sysu.edu.cn/*'
+    'https://latex.sysu.edu.cn/*',
+    'https://auth.openai.com/*',
+    'https://chatgpt.com/*'
   ],
+  background: {
+    service_worker: 'src/extension/background/service-worker.ts',
+    type: 'module' as const
+  },
   options_page: 'src/extension/options/index.html',
   action: {
     default_popup: 'src/extension/popup/index.html',

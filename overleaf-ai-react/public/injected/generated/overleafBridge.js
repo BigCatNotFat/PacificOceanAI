@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-02-27T06:58:07.567Z
+ * 构建时间: 2026-03-09T07:24:58.624Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */
@@ -1179,10 +1179,10 @@
   function showActivationRequiredHint() {
     hideSelectionTooltip();
     window.postMessage({
-      type: "OVERLEAF_SHOW_ACTIVATION_MODAL",
+      type: "OVERLEAF_OPEN_SETTINGS",
       data: {}
     }, "*");
-    debug("[OverleafBridge] Requesting to show activation modal");
+    debug("[OverleafBridge] Requesting to open settings page");
   }
   function requestActivationStatus() {
     window.postMessage({
@@ -1261,24 +1261,7 @@
         newContentDiv.className = "diff-new-content";
         const text = document.createElement("span");
         text.className = "diff-new-text";
-        if (config.charDiffs && config.charDiffs.length > 0) {
-          for (let d = 0; d < config.charDiffs.length; d++) {
-            const diffType = config.charDiffs[d][0];
-            const diffText = config.charDiffs[d][1];
-            if (diffType === 0) {
-              const span = document.createElement("span");
-              span.textContent = diffText;
-              text.appendChild(span);
-            } else if (diffType === 1) {
-              const span = document.createElement("span");
-              span.className = "diff-char-added";
-              span.textContent = diffText;
-              text.appendChild(span);
-            }
-          }
-        } else {
-          text.textContent = newContent;
-        }
+        text.textContent = newContent;
         newContentDiv.appendChild(text);
         const buttons = document.createElement("div");
         buttons.className = "diff-buttons";
@@ -1513,25 +1496,6 @@
                 decorations.push(
                   Decoration.line({ class: "diff-line-deleted" }).range(line.from)
                 );
-              }
-              if (config.charDiffs && config.charDiffs.length > 0) {
-                let offset = config.lineFrom;
-                for (let d = 0; d < config.charDiffs.length; d++) {
-                  const diffType = config.charDiffs[d][0];
-                  const diffText = config.charDiffs[d][1];
-                  if (diffType === -1) {
-                    var from = offset;
-                    var to = offset + diffText.length;
-                    if (from < to && from >= 0 && to <= state.doc.length) {
-                      decorations.push(
-                        Decoration.mark({ class: "diff-char-deleted" }).range(from, to)
-                      );
-                    }
-                    offset += diffText.length;
-                  } else if (diffType === 0) {
-                    offset += diffText.length;
-                  }
-                }
               }
               decorations.push(
                 Decoration.widget({
@@ -1995,9 +1959,12 @@
   // public/injected/modules/diff/ui.js
   var diffControlBar = null;
   var DIFF_CSS = `
-  /* \u539F\u59CB\u5185\u5BB9 - \u6D45\u7EA2\u8272\u80CC\u666F\uFF08\u4E0D\u518D\u6574\u884C\u5220\u9664\u7EBF\uFF0C\u6539\u4E3A\u5B57\u7B26\u7EA7\u9AD8\u4EAE\uFF09 */
+  /* \u539F\u59CB\u5185\u5BB9 - \u6D45\u7EA2\u8272\u80CC\u666F\uFF0C\u9ED1\u8272\u5220\u9664\u7EBF */
   .diff-line-deleted {
     background: rgba(255, 0, 0, 0.08) !important;
+    text-decoration: line-through !important;
+    text-decoration-color: #000000 !important;
+    color: #000000 !important;
     position: relative !important;
   }
   
@@ -2007,22 +1974,6 @@
     left: -20px;
     color: #c62828;
     font-weight: bold;
-  }
-  
-  /* \u5B57\u7B26\u7EA7\u5220\u9664\u9AD8\u4EAE - \u65E7\u884C\u4E2D\u771F\u6B63\u88AB\u4FEE\u6539\u7684\u90E8\u5206 */
-  .diff-char-deleted {
-    background: rgba(255, 0, 0, 0.25) !important;
-    text-decoration: line-through !important;
-    text-decoration-color: #c62828 !important;
-    text-decoration-thickness: 2px !important;
-    border-radius: 2px;
-  }
-  
-  /* \u5B57\u7B26\u7EA7\u65B0\u589E\u9AD8\u4EAE - \u65B0\u5185\u5BB9\u4E2D\u771F\u6B63\u88AB\u4FEE\u6539\u7684\u90E8\u5206 */
-  .diff-char-added {
-    background: rgba(76, 175, 80, 0.3) !important;
-    border-radius: 2px;
-    padding: 1px 0;
   }
   
   /* \u66FF\u6362\u5185\u5BB9\u5757 - \u6D45\u7EFF\u8272\u80CC\u666F\uFF0C\u9ED1\u8272\u6587\u5B57 */
@@ -2450,96 +2401,6 @@
     }
   }
 
-  // public/injected/modules/diff/charDiff.js
-  function tokenize(str) {
-    return str.match(/\S+|\s+/g) || [];
-  }
-  function lcsTable(a, b) {
-    const m = a.length, n = b.length;
-    const dp = [];
-    for (let i = 0; i <= m; i++) {
-      dp[i] = new Array(n + 1);
-      dp[i][0] = 0;
-    }
-    for (let j = 0; j <= n; j++) {
-      dp[0][j] = 0;
-    }
-    for (let i = 1; i <= m; i++) {
-      for (let j = 1; j <= n; j++) {
-        if (a[i - 1] === b[j - 1]) {
-          dp[i][j] = dp[i - 1][j - 1] + 1;
-        } else {
-          dp[i][j] = dp[i - 1][j] > dp[i][j - 1] ? dp[i - 1][j] : dp[i][j - 1];
-        }
-      }
-    }
-    return dp;
-  }
-  function buildDiff(a, b, dp) {
-    const result = [];
-    let i = a.length, j = b.length;
-    while (i > 0 || j > 0) {
-      if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
-        result.unshift([0, a[i - 1]]);
-        i--;
-        j--;
-      } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-        result.unshift([1, b[j - 1]]);
-        j--;
-      } else {
-        result.unshift([-1, a[i - 1]]);
-        i--;
-      }
-    }
-    return result;
-  }
-  function mergeDiffs(diffs) {
-    if (diffs.length === 0) return diffs;
-    const merged = [[diffs[0][0], diffs[0][1]]];
-    for (let k = 1; k < diffs.length; k++) {
-      const last = merged[merged.length - 1];
-      if (diffs[k][0] === last[0]) {
-        last[1] = last[1] + diffs[k][1];
-      } else {
-        merged.push([diffs[k][0], diffs[k][1]]);
-      }
-    }
-    return merged;
-  }
-  function computeInlineDiff(oldStr, newStr) {
-    if (oldStr === newStr) return [[0, oldStr]];
-    if (!oldStr && !newStr) return [];
-    if (!oldStr) return [[1, newStr]];
-    if (!newStr) return [[-1, oldStr]];
-    const oldTokens = tokenize(oldStr);
-    const newTokens = tokenize(newStr);
-    if (oldTokens.length * newTokens.length > 25e4) {
-      return simpleDiff(oldStr, newStr);
-    }
-    const dp = lcsTable(oldTokens, newTokens);
-    const rawDiff = buildDiff(oldTokens, newTokens, dp);
-    return mergeDiffs(rawDiff);
-  }
-  function simpleDiff(oldStr, newStr) {
-    let prefixLen = 0;
-    const minLen = oldStr.length < newStr.length ? oldStr.length : newStr.length;
-    while (prefixLen < minLen && oldStr[prefixLen] === newStr[prefixLen]) {
-      prefixLen++;
-    }
-    let suffixLen = 0;
-    while (suffixLen < minLen - prefixLen && oldStr[oldStr.length - 1 - suffixLen] === newStr[newStr.length - 1 - suffixLen]) {
-      suffixLen++;
-    }
-    const result = [];
-    if (prefixLen > 0) result.push([0, oldStr.substring(0, prefixLen)]);
-    const oldMiddle = oldStr.substring(prefixLen, oldStr.length - suffixLen);
-    const newMiddle = newStr.substring(prefixLen, newStr.length - suffixLen);
-    if (oldMiddle) result.push([-1, oldMiddle]);
-    if (newMiddle) result.push([1, newMiddle]);
-    if (suffixLen > 0) result.push([0, oldStr.substring(oldStr.length - suffixLen)]);
-    return result;
-  }
-
   // public/injected/modules/diff/api.js
   var diffSuggestionId = 0;
   function getLatestSuggestionPosition(suggestionId) {
@@ -2672,7 +2533,6 @@
             endLine: lineNum,
             oldContent,
             newContent,
-            charDiffs: computeInlineDiff(oldContent, newContent),
             lineFrom: line.from,
             lineTo: line.to,
             widgetPos: line.to,
@@ -2744,7 +2604,6 @@
             endLine,
             oldContent,
             newContent,
-            charDiffs: computeInlineDiff(oldContent, newContent),
             lineFrom: lineStart.from,
             lineTo: lineEnd.to,
             widgetPos: lineEnd.to,

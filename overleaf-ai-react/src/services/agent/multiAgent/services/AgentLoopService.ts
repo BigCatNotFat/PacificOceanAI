@@ -356,17 +356,19 @@ export class AgentLoopService {
     options: AgentLoopOptions,
     streamMessageId?: string
   ): LLMConfig {
-    const defaultConfig = this.modelRegistry.getDefaultConfig(modelId);
-    if (!defaultConfig) {
-      throw new Error(`未找到模型配置: ${modelId}`);
-    }
+    const defaultConfig = this.modelRegistry.getDefaultConfig(modelId) || {
+      modelId,
+      temperature: 1.0,
+      topP: 1.0,
+      maxTokens: 16384,
+      maxTokensParamName: 'max_completion_tokens' as const
+    };
 
     const config: LLMConfig = {
       ...defaultConfig,
       stream: true
     };
 
-    // 添加工具定义
     if (tools.length > 0) {
       (config as any).tools = tools.map(tool => ({
         type: 'function',

@@ -16,19 +16,18 @@ export function checkIsActivated() {
 }
 
 /**
- * 显示激活模态框（复用 React 的 ActivationModal 组件）
+ * 提示用户需要配置 API Key（打开设置页面）
  */
 export function showActivationRequiredHint() {
-  // 先隐藏选区提示框
   hideSelectionTooltip();
   
-  // 发送消息触发显示 React 的 ActivationModal 组件
+  // 发送消息请求打开设置页面
   window.postMessage({
-    type: 'OVERLEAF_SHOW_ACTIVATION_MODAL',
+    type: 'OVERLEAF_OPEN_SETTINGS',
     data: {}
   }, '*');
   
-  debug('[OverleafBridge] Requesting to show activation modal');
+  debug('[OverleafBridge] Requesting to open settings page');
 }
 
 /**
