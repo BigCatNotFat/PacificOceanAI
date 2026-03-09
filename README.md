@@ -7,7 +7,7 @@
 **AI-Powered Writing Assistant for Overleaf LaTeX Editor**
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![Version](https://img.shields.io/badge/version-2.0.3-blue.svg)](https://github.com/yourusername/pacific-ocean-ai)
+[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/BigCatNotFat/PacificOceanAI)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18.2-61dafb)](https://reactjs.org/)
 

@@ -5,6 +5,23 @@ All notable changes to PacificOceanAI will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-03-09
+
+### Added
+- Open-sourced under AGPL-3.0 license
+- GitHub Actions CI/CD workflows
+- Issue and PR templates
+- Contributing guidelines and code of conduct
+- Image recognition tool support
+
+### Changed
+- Major version bump for open-source release
+- License changed from MIT to AGPL-3.0
+- Removed telemetry service for better privacy
+- Adopted Git Flow branching strategy (main + develop)
+
+---
+
 ## [2.0.3] - 2026-01-21
 
 ### Added
