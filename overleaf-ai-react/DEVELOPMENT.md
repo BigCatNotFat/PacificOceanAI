@@ -187,7 +187,7 @@ service.onMyEvent(event => {
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/pacific-ocean-ai.git
+git clone https://github.com/BigCatNotFat/PacificOceanAI.git
 cd pacific-ocean-ai
 
 # Install dependencies

@@ -36,7 +36,7 @@ This project and everyone participating in it is governed by our Code of Conduct
 
 1. **Fork and clone the repository**
    ```bash
-   git clone https://github.com/yourusername/pacific-ocean-ai.git
+   git clone https://github.com/BigCatNotFat/PacificOceanAI.git
    cd pacific-ocean-ai
    ```
 
