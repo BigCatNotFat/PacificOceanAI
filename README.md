@@ -6,7 +6,7 @@
 
 **AI-Powered Writing Assistant for Overleaf LaTeX Editor**
 
-[![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Version](https://img.shields.io/badge/version-2.0.3-blue.svg)](https://github.com/yourusername/pacific-ocean-ai)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18.2-61dafb)](https://reactjs.org/)
@@ -156,7 +156,7 @@ Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md)
 
 ### 📄 License
 
-This project is licensed under the **CC BY-NC-SA 4.0** (Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International) License - see the [LICENSE](LICENSE) file for details. **Commercial use is not permitted.**
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)** - see the [LICENSE](LICENSE) file for details. Any modified version must also be open-sourced under the same license, including when used as a network service.
 
 ### 🙏 Acknowledgments
 
@@ -324,7 +324,7 @@ PacificOceanAI 采用清晰的模块化架构：
 
 ### 📄 许可证
 
-本项目采用 **CC BY-NC-SA 4.0**（署名-非商业性使用-相同方式共享 4.0 国际）许可证 - 详见 [LICENSE](LICENSE) 文件。**不允许商业使用。**
+本项目采用 **GNU Affero 通用公共许可证 v3.0 (AGPL-3.0)** - 详见 [LICENSE](LICENSE) 文件。任何修改版本必须以相同许可证开源，包括作为网络服务使用时。
 
 ### 🙏 致谢
 
