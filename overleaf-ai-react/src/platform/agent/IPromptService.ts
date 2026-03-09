@@ -8,45 +8,16 @@
 import { ChatMessage, ChatMode, ContextItem } from './IChatService';
 import { ModelId } from '../llm/IModelRegistryService';
 
+// 从 ILLMService 统一导入消息类型，避免重复定义
+export type { LLMMessage, LLMMessageRole, ContentPart } from '../llm/ILLMService';
+import type { LLMMessage } from '../llm/ILLMService';
+
 // ==================== 文本操作相关类型 ====================
 
 /**
  * 文本操作类型
  */
 export type TextActionType = 'expand' | 'condense' | 'polish' | 'translate' | 'custom';
-
-// ==================== 类型定义 ====================
-
-/**
- * LLM 消息角色
- */
-export type LLMMessageRole = 'system' | 'user' | 'assistant' | 'tool';
-
-/**
- * LLM 消息（标准格式，用于调用 LLM API）
- */
-export interface LLMMessage {
-  role: LLMMessageRole;
-  content: string;
-  /**
-   * 推理内容（DeepSeek 等推理模型使用）
-   * 对应 OpenAI/DeepSeek 协议中的 reasoning_content 字段
-   */
-  reasoning_content?: string;
-  /** 工具调用信息（assistant 消息可能包含） */
-  tool_calls?: Array<{
-    id: string;
-    type: 'function';
-    function: {
-      name: string;
-      arguments: string;
-    };
-  }>;
-  /** 工具调用 ID（tool 消息需要） */
-  tool_call_id?: string;
-  /** 工具名称（tool 消息需要） */
-  name?: string;
-}
 
 /**
  * 工具定义（用于 Agent 模式）

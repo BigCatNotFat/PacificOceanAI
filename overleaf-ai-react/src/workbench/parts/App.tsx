@@ -22,10 +22,7 @@ import { ModelRegistryService, IModelRegistryServiceId } from '../../services/ll
 import { UIStreamService, IUIStreamServiceId } from '../../services/agent/UIStreamService';
 import { TextActionAIService, ITextActionAIServiceId } from '../../services/agent/TextActionAIService';
 import { useModelListSync } from '../hooks/useModelListSync';
-import { TelemetryService } from '../../services/telemetry/TelemetryService';
-import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService';
 import { diffSuggestionService } from '../../services/editor/DiffSuggestionService';
-import { API_ENDPOINTS } from '../../base/common/apiConfig';
 import { LiteratureService, ILiteratureServiceId } from '../../services/literature/LiteratureService';
 import type { ILiteratureService } from '../../platform/literature/ILiteratureService';
 import { overleafEditor } from '../../services/editor/OverleafEditor';
@@ -50,27 +47,6 @@ const App: React.FC = () => {
         getServiceDependencies(ConfigurationService)
       )
     );
-
-    // 注册统计服务（基础服务，依赖 StorageService）
-    di.registerDescriptor(
-      new ServiceDescriptor(
-        ITelemetryServiceId,
-        TelemetryService,
-        getServiceDependencies(TelemetryService)
-      )
-    );
-
-    // 配置统计服务并记录会话开始
-    const telemetryService = di.getService<TelemetryService>(ITelemetryServiceId);
-    telemetryService.configure({
-      endpoint: API_ENDPOINTS.TELEMETRY,
-      version: '1.0.0', // TODO: 从 manifest 获取版本号
-      uploadInterval: 120000, // 120 秒上报一次
-    });
-    telemetryService.trackSessionStart();
-
-    // 手动注入统计服务到 DiffSuggestionService（单例模式）
-    diffSuggestionService.setTelemetryService(telemetryService);
 
     // 注册模型注册表服务（基础服务，无依赖）
     di.registerDescriptor(

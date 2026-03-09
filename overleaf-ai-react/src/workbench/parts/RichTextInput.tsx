@@ -1,5 +1,7 @@
-import React, { useRef, useImperativeHandle, forwardRef, useCallback } from 'react';
+import React, { useRef, useImperativeHandle, forwardRef, useCallback, useState } from 'react';
 import { overleafEditor } from '../../services/editor/OverleafEditor';
+
+const MAX_IMAGE_SIZE = 4 * 1024 * 1024; // 4MB
 
 // 文件引用数据结构
 export interface FileReference {
@@ -18,6 +20,8 @@ export interface RichTextInputHandle {
   focus: () => void;
   insertText: (text: string) => void;
   insertReference: (ref: FileReference) => void;
+  getImages: () => string[];
+  clearImages: () => void;
 }
 
 interface RichTextInputProps {
@@ -30,6 +34,27 @@ interface RichTextInputProps {
 const RichTextInput = forwardRef<RichTextInputHandle, RichTextInputProps>(
   ({ placeholder, disabled, onKeyDown, className }, ref) => {
     const editorRef = useRef<HTMLDivElement>(null);
+    const [images, setImages] = useState<string[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const addImageFromFile = useCallback((file: File) => {
+      if (!file.type.startsWith('image/')) return;
+      if (file.size > MAX_IMAGE_SIZE) {
+        console.warn('[RichTextInput] 图片过大:', (file.size / 1024 / 1024).toFixed(1), 'MB');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          setImages(prev => [...prev, reader.result as string]);
+        }
+      };
+      reader.readAsDataURL(file);
+    }, []);
+
+    const removeImage = useCallback((index: number) => {
+      setImages(prev => prev.filter((_, i) => i !== index));
+    }, []);
 
     // 创建引用标签元素
     const createReferenceElement = useCallback((fileRef: FileReference): HTMLSpanElement => {
@@ -176,19 +201,35 @@ const RichTextInput = forwardRef<RichTextInputHandle, RichTextInputProps>(
       insertNodeAtCursor(element);
     }, [createReferenceElement, insertNodeAtCursor]);
 
+    const getImages = useCallback(() => images, [images]);
+    const clearImages = useCallback(() => setImages([]), []);
+
     // 暴露方法给父组件
     useImperativeHandle(ref, () => ({
       getValue,
       getValueWithReferences,
       setValue,
-      clear,
+      clear: () => { clear(); clearImages(); },
       focus,
       insertText,
-      insertReference
-    }), [getValue, getValueWithReferences, setValue, clear, focus, insertText, insertReference]);
+      insertReference,
+      getImages,
+      clearImages
+    }), [getValue, getValueWithReferences, setValue, clear, focus, insertText, insertReference, getImages, clearImages]);
 
     // 处理粘贴事件
     const handlePaste = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
+      // 检查是否粘贴了图片
+      const items = e.clipboardData.items;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          e.preventDefault();
+          const file = items[i].getAsFile();
+          if (file) addImageFromFile(file);
+          return;
+        }
+      }
+
       const pastedText = e.clipboardData.getData('text');
       
       // 只处理较长的文本（至少 20 字符），避免短文本误匹配
@@ -261,7 +302,23 @@ const RichTextInput = forwardRef<RichTextInputHandle, RichTextInputProps>(
           insertText(pastedText);
         }
       })();
-    }, [insertText, insertReference]);
+    }, [insertText, insertReference, addImageFromFile]);
+
+    // 处理拖放事件
+    const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+      const files = e.dataTransfer.files;
+      for (let i = 0; i < files.length; i++) {
+        if (files[i].type.startsWith('image/')) {
+          e.preventDefault();
+          addImageFromFile(files[i]);
+          return;
+        }
+      }
+    }, [addImageFromFile]);
+
+    const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+    }, []);
 
     // 处理键盘事件
     const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -290,18 +347,51 @@ const RichTextInput = forwardRef<RichTextInputHandle, RichTextInputProps>(
     }, [onKeyDown]);
 
     return (
-      <div
-        ref={editorRef}
-        className={`ai-rich-input ${className || ''}`}
-        contentEditable={!disabled}
-        suppressContentEditableWarning
-        onPaste={handlePaste}
-        onKeyDown={handleKeyDown}
-        data-placeholder={placeholder}
-        role="textbox"
-        aria-multiline="true"
-        aria-disabled={disabled}
-      />
+      <div className={`ai-rich-input-container ${className || ''}`}>
+        {/* 图片预览区域 */}
+        {images.length > 0 && (
+          <div className="ai-image-previews">
+            {images.map((img, idx) => (
+              <div key={idx} className="ai-image-preview-item">
+                <img src={img} alt={`附件 ${idx + 1}`} />
+                <button
+                  className="ai-image-remove-btn"
+                  onClick={() => removeImage(idx)}
+                  title="移除图片"
+                >
+                  <span className="material-symbols">close</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div
+          ref={editorRef}
+          className="ai-rich-input"
+          contentEditable={!disabled}
+          suppressContentEditableWarning
+          onPaste={handlePaste}
+          onKeyDown={handleKeyDown}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          data-placeholder={placeholder}
+          role="textbox"
+          aria-multiline="true"
+          aria-disabled={disabled}
+        />
+        {/* 隐藏的文件上传 input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) addImageFromFile(file);
+            e.target.value = '';
+          }}
+        />
+      </div>
     );
   }
 );

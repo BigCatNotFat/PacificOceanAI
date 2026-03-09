@@ -71,7 +71,14 @@ Each time you call this tool, you should:
     const startTime = Date.now();
     
     try {
+      console.log('[ReadFileTool] execute 开始', {
+        target_file: args.target_file,
+        start: args.start_line_one_indexed,
+        end: args.end_line_one_indexed_inclusive
+      });
+
       if (!this.validate(args)) {
+        console.error('[ReadFileTool] 参数校验失败', args);
         return {
           success: false,
           error: 'Missing required parameters: target_file, start_line_one_indexed, end_line_one_indexed_inclusive',
@@ -82,8 +89,11 @@ Each time you call this tool, you should:
       this.log(`读取文件: ${args.target_file}`);
 
       // 根据 target_file 查找对应的 docId
+      console.log('[ReadFileTool] 开始查找 docId, targetFile:', args.target_file);
       const docId = await this.getDocIdByPath(args.target_file);
+      console.log('[ReadFileTool] docId 查找结果:', docId);
       if (!docId) {
+        console.error('[ReadFileTool] 未找到 docId', { target_file: args.target_file });
         return {
           success: false,
           error: `无法找到文件 "${args.target_file}" 的文档 ID。请确保文件路径正确，且文件存在于项目中。`,
@@ -96,12 +106,23 @@ Each time you call this tool, you should:
       let result: ReadFileResult;
 
       // 读取指定行范围
+      console.log('[ReadFileTool] 开始 readLineRange', {
+        file: args.target_file,
+        docId,
+        start: args.start_line_one_indexed,
+        end: args.end_line_one_indexed_inclusive
+      });
       result = await this.readLineRange(
         args.target_file,
         docId,
         args.start_line_one_indexed,
         args.end_line_one_indexed_inclusive
       );
+      console.log('[ReadFileTool] readLineRange 完成', {
+        totalLines: result.totalLines,
+        readLines: result.readLines,
+        truncated: result.truncated
+      });
 
       return {
         success: true,
@@ -109,6 +130,7 @@ Each time you call this tool, you should:
         duration: Date.now() - startTime
       };
     } catch (error) {
+      console.error('[ReadFileTool] execute 异常', error);
       return {
         ...this.handleError(error),
         duration: Date.now() - startTime
@@ -126,7 +148,9 @@ Each time you call this tool, you should:
     endLine: number
   ): Promise<ReadFileResult> {
     // 先获取整个文件以得到总行数
+    console.log('[ReadFileTool] getDocContent (full) 开始, docId:', docId);
     const fullContent = await overleafEditor.document.getDocContent(docId);
+    console.log('[ReadFileTool] getDocContent (full) 完成, 内容长度:', fullContent?.length, '前100字符:', fullContent?.substring(0, 100));
     const totalLines = fullContent.split('\n').length;
 
     // 限制单次读取行数
@@ -220,19 +244,29 @@ Each time you call this tool, you should:
     const map = new Map<string, string>();
 
     try {
-      const fileItems = document.querySelectorAll('[data-file-id]');
-
-      fileItems.forEach((item) => {
-        const el = item as HTMLElement;
-        const id = el.getAttribute('data-file-id');
-        if (!id) return;
-
-        const nameSpan = el.querySelector('.item-name-button span') as HTMLElement | null;
-        const name = nameSpan?.textContent?.trim();
+      // 方式 1: 从文件树 treeitem 获取（Overleaf 官网结构）
+      const treeItems = document.querySelectorAll('li[role="treeitem"][aria-label]');
+      treeItems.forEach((item) => {
+        const name = item.getAttribute('aria-label');
         if (!name) return;
-
-        map.set(name, id);
+        const entity = item.querySelector('.entity') as HTMLElement | null;
+        const id = entity?.getAttribute('data-file-id');
+        if (id) map.set(name, id);
       });
+
+      // 方式 2: 直接查 [data-file-id] 元素（自建实例可能用此结构）
+      if (map.size === 0) {
+        const fileItems = document.querySelectorAll('[data-file-id]');
+        fileItems.forEach((item) => {
+          const el = item as HTMLElement;
+          const id = el.getAttribute('data-file-id');
+          if (!id) return;
+          const nameSpan = el.querySelector('.item-name-button span') as HTMLElement | null;
+          const name = nameSpan?.textContent?.trim();
+          if (!name) return;
+          map.set(name, id);
+        });
+      }
     } catch (error) {
       console.error('[ReadFileTool] 获取 DOM 文件 ID 映射失败:', error);
     }
@@ -245,33 +279,50 @@ Each time you call this tool, you should:
    * 优先从文件树 API 获取，fallback 到 DOM
    */
   private async getDocIdByPath(targetFile: string): Promise<string | null> {
-    // 规范化路径
     const normalizedPath = targetFile.startsWith('/') ? targetFile : `/${targetFile}`;
     const baseName = targetFile.split('/').pop() || targetFile;
 
+    console.log('[ReadFileTool] getDocIdByPath', { targetFile, normalizedPath, baseName });
+
+    // 策略 1: 从 DOM 文件树获取（最可靠，官网和自建都有 data-file-id）
+    const domMap = this.getDomFileIdMap();
+    console.log('[ReadFileTool] DOM 文件映射:', Object.fromEntries(domMap));
+    const domId = domMap.get(baseName);
+    if (domId) {
+      console.log('[ReadFileTool] 从 DOM 找到 docId:', domId);
+      return domId;
+    }
+
+    // 策略 2: 从 REST API 文件树获取（自建实例可能返回 ID）
     try {
-      // 优先从文件树 API 获取
       const fileTree = await overleafEditor.project.getFileTree();
       for (const entity of fileTree.entities) {
-        // 完整路径匹配
-        if (entity.path === normalizedPath) {
-          const id = entity.id ?? entity._id;
-          if (id) return id;
-        }
-        // 文件名匹配（fallback）
-        const entityBaseName = entity.path.split('/').pop();
-        if (entityBaseName === baseName) {
-          const id = entity.id ?? entity._id;
-          if (id) return id;
+        const entityAny = entity as any;
+        const id = entity.id ?? entity._id ?? entityAny.doc_id ?? entityAny.docId;
+        if (!id) continue;
+        if (entity.path === normalizedPath || entity.path.split('/').pop() === baseName) {
+          console.log('[ReadFileTool] 从 REST API 找到 docId:', id);
+          return id;
         }
       }
     } catch (error) {
-      this.log(`从文件树获取 docId 失败: ${error}`);
+      console.warn('[ReadFileTool] REST API 文件树获取失败:', error);
     }
 
-    // Fallback: 从 DOM 获取
-    const domMap = this.getDomFileIdMap();
-    return domMap.get(baseName) ?? null;
+    // 策略 3: 从 Overleaf Store 获取当前打开文件的 ID
+    try {
+      const currentFile = await overleafEditor.file.getInfo();
+      console.log('[ReadFileTool] 当前打开文件:', currentFile);
+      if (currentFile && (currentFile as any).fileName === baseName && (currentFile as any).fileId) {
+        console.log('[ReadFileTool] 从当前文件匹配到 docId:', (currentFile as any).fileId);
+        return (currentFile as any).fileId;
+      }
+    } catch (error) {
+      console.warn('[ReadFileTool] 获取当前文件信息失败:', error);
+    }
+
+    console.error('[ReadFileTool] 所有策略均未找到 docId', { targetFile });
+    return null;
   }
 
   private generateSummaryFromResult(result: ReadLinesResult, totalLines: number): string {

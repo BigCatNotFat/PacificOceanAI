@@ -45,7 +45,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
 // 非流式请求：通过一次性消息返回完整 JSON
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.action !== 'codex-fetch-json') return true;
+  if (msg.action !== 'codex-fetch-json') return false;
 
   (async () => {
     try {

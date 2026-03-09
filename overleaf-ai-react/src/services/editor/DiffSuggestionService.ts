@@ -18,8 +18,6 @@ import type {
   CreateSegmentSuggestionInput,
   SuggestionResolvedEvent
 } from '../../platform/editor/IDiffSuggestionService';
-import type { ITelemetryService } from '../../platform/telemetry/ITelemetryService';
-import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService';
 import { logger } from '../../utils/logger';
 
 /**
@@ -42,8 +40,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
   private readonly _onSuggestionResolved = new Emitter<SuggestionResolvedEvent>();
   readonly onSuggestionResolved: Event<SuggestionResolvedEvent> = this._onSuggestionResolved.event;
 
-  /** 统计服务（延迟注入） */
-  private telemetryService: ITelemetryService | null = null;
   
   private constructor() {
     super();
@@ -58,13 +54,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
     return DiffSuggestionService.instance;
   }
 
-  /**
-   * 设置统计服务（手动注入）
-   */
-  setTelemetryService(service: ITelemetryService): void {
-    this.telemetryService = service;
-  }
-  
   /**
    * 生成唯一建议 ID
    */
@@ -106,10 +95,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
   }): void {
     logger.debug(`[DiffSuggestionService] 文本操作 ${data.action} 被${data.accepted ? '接受' : '拒绝'}`);
     
-    // 统计埋点：记录文本操作决策
-    if (this.telemetryService) {
-      this.telemetryService.trackTextActionDecision(data.action, data.accepted);
-    }
   }
   
   /**
@@ -141,11 +126,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
     suggestion.status = data.accepted ? 'accepted' : 'rejected';
     
     logger.debug(`[DiffSuggestionService] 建议 ${data.id} 被${data.accepted ? '接受' : '拒绝'}`);
-    
-    // 统计埋点：记录 Diff 建议决策
-    if (this.telemetryService && suggestion.toolName) {
-      this.telemetryService.trackToolApproval(suggestion.toolName, data.accepted);
-    }
     
     // 触发事件
     this._onSuggestionResolved.fire({

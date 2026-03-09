@@ -2525,6 +2525,201 @@
   transform: translateY(2px);
 }
 
+/* ============================================
+   图片预览与上传
+   ============================================ */
+
+.ai-rich-input-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-image-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 4px;
+}
+
+.ai-image-preview-item {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-color, #e0e0e0);
+}
+
+.ai-image-preview-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ai-image-remove-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.ai-image-preview-item:hover .ai-image-remove-btn {
+  opacity: 1;
+}
+
+.ai-image-remove-btn .material-symbols {
+  font-size: 12px;
+}
+
+.ai-image-upload-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.ai-image-upload-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover, rgba(0,0,0,0.05));
+}
+
+.ai-image-upload-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ai-image-upload-btn .material-symbols {
+  font-size: 20px;
+}
+
+/* 消息中的图片缩略图 */
+.ai-message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.ai-message-image-thumb {
+  width: 120px;
+  height: 80px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-color, #e0e0e0);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+.ai-message-image-thumb:hover {
+  transform: scale(1.02);
+}
+
+.ai-message-image-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 工具结果中的图片预览 */
+.tool-result-read-image .tool-result-image-preview {
+  margin-top: 8px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-color, #e0e0e0);
+}
+
+.tool-result-read-image .tool-result-image-preview img {
+  max-width: 100%;
+  max-height: 200px;
+  display: block;
+}
+
+/* ============================================
+   图片预览弹窗 (Lightbox)
+   ============================================ */
+
+.ai-image-lightbox {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  cursor: pointer;
+  animation: lightbox-fade-in 0.15s ease;
+}
+
+@keyframes lightbox-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ai-image-lightbox-content {
+  position: relative;
+  max-width: 90%;
+  max-height: 90%;
+  cursor: default;
+}
+
+.ai-image-lightbox-content img {
+  max-width: 100%;
+  max-height: 85vh;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  object-fit: contain;
+}
+
+.ai-image-lightbox-close {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.9);
+  color: #333;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: background 0.15s, transform 0.15s;
+}
+
+.ai-image-lightbox-close:hover {
+  background: #fff;
+  transform: scale(1.1);
+}
+
+.ai-image-lightbox-close .material-symbols {
+  font-size: 18px;
+}
+
 /* ==================== 多列布局样式 ==================== */
 
 /* 全局 Header（显示 Logo 和列数控制） */

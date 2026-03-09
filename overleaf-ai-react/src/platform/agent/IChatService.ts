@@ -22,7 +22,7 @@ export type ChatMode = 'agent' | 'chat' | 'normal' | 'plan';
  * 上下文条目类型
  */
 export interface ContextItem {
-  type: 'file' | 'selection' | 'metadata' | 'reference';
+  type: 'file' | 'selection' | 'metadata' | 'reference' | 'image';
   uri?: string;
   content?: string;
   metadata?: Record<string, any>;
@@ -33,6 +33,8 @@ export interface ContextItem {
     endLine: number;
     originalText: string;
   };
+  /** 图片 base64 data URL（仅当 type 为 'image' 时使用） */
+  imageUrl?: string;
 }
 
 /**
@@ -87,6 +89,8 @@ export interface ChatMessage {
   timestamp: number;
   /** 错误信息 */
   error?: string;
+  /** 附带的图片列表（base64 data URL），用于多模态输入 */
+  images?: string[];
 }
 
 /**
@@ -130,9 +134,10 @@ export interface IChatService {
    * 发送消息
    * @param input - 用户输入的自然语言问题
    * @param options - 聊天选项（必须包含 conversationId）
+   * @param images - 可选，用户附带的图片列表（base64 data URL）
    * @returns Promise<void> - 不直接返回回答内容，通过事件推送状态
    */
-  sendMessage(input: string, options: ChatOptions): Promise<void>;
+  sendMessage(input: string, options: ChatOptions, images?: string[]): Promise<void>;
 
   /**
    * 中断指定会话的 LLM 流式生成

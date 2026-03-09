@@ -22,6 +22,7 @@ import type { ModelId, IModelRegistryService } from '../../platform/llm/IModelRe
 import { IModelRegistryServiceId } from '../../platform/llm/IModelRegistryService';
 import type { IToolService } from '../../platform/agent/IToolService';
 import { IToolServiceId } from '../../platform/agent/IToolService';
+import type { ContentPart } from '../../platform/llm/ILLMService';
 import { overleafEditor } from '../editor/OverleafEditor';
 
 /**
@@ -147,8 +148,14 @@ ${await this.getProjectLayout()}
       // 找到最后一条用户消息
       for (let i = llmHistory.length - 1; i >= 0; i--) {
         if (llmHistory[i].role === 'user') {
-          // 将 context 前置到用户消息中
-          llmHistory[i].content = `<context>\n${contextText}\n</context>\n\n${llmHistory[i].content}`;
+          // 将 context 前置到用户消息中（兼容多模态 ContentPart[] 格式）
+          const currentContent = llmHistory[i].content;
+          if (typeof currentContent === 'string') {
+            llmHistory[i].content = `<context>\n${contextText}\n</context>\n\n${currentContent}`;
+          } else if (Array.isArray(currentContent)) {
+            const contextPart: ContentPart = { type: 'text', text: `<context>\n${contextText}\n</context>\n\n` };
+            llmHistory[i].content = [contextPart, ...currentContent];
+          }
           break;
         }
       }
@@ -835,6 +842,9 @@ Keep responses clear and to the point.`;
     const llmMessages: LLMMessage[] = [];
     const useReasoningField = true;
 
+    // 收集从 read_image 工具结果中提取出的图片，稍后注入为多模态 user 消息
+    const pendingImages: Array<{ url: string; fileName: string }> = [];
+
     for (const msg of history) {
       // 跳过 system 消息（已经在最前面添加了）
       if (msg.role === 'system') {
@@ -851,6 +861,22 @@ Keep responses clear and to the point.`;
 
       // 构建内容
       let content = msg.content;
+
+      // 处理 tool 消息中的图片结果：read_image 返回的 base64 图片数据非常大（可能数 MB），
+      // 如果作为纯文本放在 tool 消息的 content 中会导致 token 估算爆炸，
+      // 触发 truncateMessages 将所有非 system 消息截断，最终导致 "消息列表不能为空" 错误。
+      // 解决方案：提取图片 URL，替换 tool content 为简短摘要，稍后将图片注入为多模态 user 消息。
+      let imageExtracted: { url: string; fileName: string } | null = null;
+      if (msg.role === 'tool' && content) {
+        imageExtracted = this.extractImageFromToolResult(content);
+        if (imageExtracted) {
+          content = JSON.stringify({
+            type: 'image',
+            file: imageExtracted.fileName,
+            message: `成功读取图片 ${imageExtracted.fileName}（图片内容已作为多模态输入附加到后续消息中）`
+          });
+        }
+      }
 
       // 如果是用户消息，用 <user_query> 标签包裹
       if (msg.role === 'user') {
@@ -893,17 +919,81 @@ Keep responses clear and to the point.`;
       }
 
       llmMessages.push(llmMsg);
+
+      if (imageExtracted) {
+        pendingImages.push(imageExtracted);
+      }
+    }
+
+    // 将暂存的图片注入：在消息列表末尾追加一条多模态 user 消息，
+    // 这样 LLM 就能在视觉上"看到"工具读取的图片
+    if (pendingImages.length > 0) {
+      const parts: ContentPart[] = [];
+      const fileNames = pendingImages.map(img => img.fileName);
+      parts.push({
+        type: 'text',
+        text: `<user_query>I have read the following image(s) using the tool, please analyze the image content: ${fileNames.join(', ')}</user_query>`
+      });
+      for (const img of pendingImages) {
+        parts.push({
+          type: 'image_url',
+          image_url: { url: img.url, detail: 'auto' }
+        });
+      }
+      llmMessages.push({
+        role: 'user',
+        content: parts
+      });
+      console.log(`[PromptService] 注入 ${pendingImages.length} 张图片作为多模态用户消息`);
     }
 
     return llmMessages;
   }
 
   /**
+   * 从工具结果的 JSON 内容中提取 read_image 返回的图片数据
+   */
+  private extractImageFromToolResult(content: string): { url: string; fileName: string } | null {
+    try {
+      const parsed = JSON.parse(content);
+      if (
+        parsed &&
+        parsed.type === 'image' &&
+        typeof parsed.image_url === 'string' &&
+        parsed.image_url.startsWith('data:image/')
+      ) {
+        return {
+          url: parsed.image_url,
+          fileName: parsed.file || 'unknown'
+        };
+      }
+    } catch {
+      // content 不是 JSON，忽略
+    }
+    return null;
+  }
+
+  /**
    * 截断消息列表（保留最近的消息）
    */
   private truncateMessages(messages: LLMMessage[], maxTokens: number): LLMMessage[] {
-    // 简化实现：假设每个字符约等于 0.25 个 token
-    const estimatedTokens = messages.reduce((sum, msg) => sum + msg.content.length * 0.25, 0);
+    // 估算 token 数量：多模态内容中的图片不按字符数计算（base64 长度与实际 token 消耗不成比例）
+    const estimateTokens = (content: string | ContentPart[]): number => {
+      if (typeof content === 'string') {
+        return content.length * 0.25;
+      }
+      let tokens = 0;
+      for (const part of content) {
+        if (part.type === 'text') {
+          tokens += part.text.length * 0.25;
+        } else if (part.type === 'image_url') {
+          tokens += 200; // 图片固定估算为 ~200 tokens
+        }
+      }
+      return tokens;
+    };
+
+    const estimatedTokens = messages.reduce((sum, msg) => sum + estimateTokens(msg.content), 0);
 
     if (estimatedTokens <= maxTokens) {
       return messages;
@@ -911,14 +1001,14 @@ Keep responses clear and to the point.`;
 
     // 保留 system 消息（第一条）
     const systemMessages = messages.filter(m => m.role === 'system');
-    let otherMessages = messages.filter(m => m.role !== 'system');
+    const otherMessages = messages.filter(m => m.role !== 'system');
 
     // 从后往前保留消息，直到接近 token 限制
-    let currentTokens = systemMessages.reduce((sum, msg) => sum + msg.content.length * 0.25, 0);
+    let currentTokens = systemMessages.reduce((sum, msg) => sum + estimateTokens(msg.content), 0);
     const kept: LLMMessage[] = [];
 
     for (let i = otherMessages.length - 1; i >= 0; i--) {
-      const msgTokens = otherMessages[i].content.length * 0.25;
+      const msgTokens = estimateTokens(otherMessages[i].content);
       if (currentTokens + msgTokens > maxTokens * 0.9) { // 留 10% 余量
         break;
       }

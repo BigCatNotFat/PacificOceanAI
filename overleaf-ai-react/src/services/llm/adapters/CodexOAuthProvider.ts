@@ -7,7 +7,8 @@
  * 所有请求通过 Background Service Worker 代理，避免 CORS 限制。
  */
 
-import type { LLMMessage, LLMConfig, LLMFinalMessage } from '../../../platform/llm/ILLMService';
+import type { LLMMessage, LLMConfig, LLMFinalMessage, ContentPart } from '../../../platform/llm/ILLMService';
+import { getTextContent } from '../../../platform/llm/ILLMService';
 import type { IModelRegistryService } from '../../../platform/llm/IModelRegistryService';
 import { BaseLLMProvider } from './BaseLLMProvider';
 import type { IUIStreamService } from '../../../platform/agent/IUIStreamService';
@@ -277,14 +278,15 @@ export class CodexOAuthProvider extends BaseLLMProvider {
         result.push({
           type: 'function_call_output',
           call_id: (msg as any).tool_call_id || '',
-          output: msg.content || ''
+          output: getTextContent(msg.content) || ''
         });
         continue;
       }
 
       if (msg.role === 'assistant' && (msg as any).tool_calls?.length > 0) {
-        if (msg.content) {
-          result.push({ role: 'assistant', content: msg.content });
+        const textContent = getTextContent(msg.content);
+        if (textContent) {
+          result.push({ role: 'assistant', content: textContent });
         }
         for (const tc of (msg as any).tool_calls) {
           result.push({
@@ -299,7 +301,24 @@ export class CodexOAuthProvider extends BaseLLMProvider {
         continue;
       }
 
-      result.push({ role: msg.role, content: msg.content || '' });
+      // user / assistant — 支持多模态 ContentPart[]
+      if (Array.isArray(msg.content)) {
+        const inputContent: any[] = [];
+        for (const part of msg.content as ContentPart[]) {
+          if (part.type === 'text') {
+            inputContent.push({ type: 'input_text', text: part.text });
+          } else if (part.type === 'image_url') {
+            inputContent.push({
+              type: 'input_image',
+              image_url: part.image_url.url,
+              detail: part.image_url.detail || 'auto'
+            });
+          }
+        }
+        result.push({ role: msg.role, content: inputContent });
+      } else {
+        result.push({ role: msg.role, content: msg.content || '' });
+      }
     }
 
     return result;
@@ -317,9 +336,14 @@ export class CodexOAuthProvider extends BaseLLMProvider {
     // Codex 后端要求 system prompt 放在顶层 instructions 字段
     const systemMessages = filtered.filter(m => m.role === 'system');
     const nonSystemMessages = filtered.filter(m => m.role !== 'system');
-    const instructions = systemMessages.map(m => m.content).join('\n') || 'You are a helpful assistant.';
+    const instructions = systemMessages.map(m => getTextContent(m.content)).join('\n') || 'You are a helpful assistant.';
 
     const input = this.toResponsesInput(nonSystemMessages);
+
+    // 确保 input 不为空，Codex API 要求至少有一条消息
+    if (input.length === 0) {
+      throw new Error('Codex API 请求失败: 消息列表不能为空，至少需要一条用户消息');
+    }
 
     const effort = config.reasoningEffort || 'medium';
 

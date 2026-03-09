@@ -21,20 +21,15 @@ import type {
 import { IToolServiceId } from '../../platform/agent/IToolService';
 import { ToolRegistry } from './tools/ToolRegistry';
 import type { ITool as IToolNew } from './tools/base/ITool';
-import type { ITelemetryService } from '../../platform/telemetry/ITelemetryService';
-import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService';
-
 /**
  * ToolService 实现
  */
-@injectable(ITelemetryServiceId)
+@injectable()
 export class ToolService implements IToolService {
   /** 工具注册中心（新架构） */
   private readonly registry: ToolRegistry;
 
-  constructor(
-    private readonly telemetryService: ITelemetryService
-  ) {
+  constructor() {
     // console.log('[ToolService] 依赖注入成功');
     // 初始化工具注册中心（自动注册所有内置工具）
     this.registry = new ToolRegistry();
@@ -134,9 +129,6 @@ export class ToolService implements IToolService {
         '\n传入参数:', args
       );
     }
-
-    // 统计埋点：记录工具执行
-    this.telemetryService.trackToolExecution(name, result.success);
 
     return result;
   }

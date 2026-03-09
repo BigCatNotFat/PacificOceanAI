@@ -14,9 +14,6 @@ export const API_ENDPOINTS = {
   /** LLM API 基础 URL（用于 OpenAI 兼容接口） */
   LLM_BASE_URL: `${API_BASE_DOMAIN}/v1`,
   
-  /** 遥测数据上报端点 */
-  TELEMETRY: `${API_BASE_DOMAIN}/api/telemetry`,
-  
   /** 论文布尔搜索 API */
   PAPER_BOOLEAN_SEARCH: `${API_BASE_DOMAIN}/api/paper_boolean_search`,
   

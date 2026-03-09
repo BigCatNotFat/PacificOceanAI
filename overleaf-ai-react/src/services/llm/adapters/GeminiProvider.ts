@@ -14,7 +14,8 @@
  * - 流式传输：?alt=sse 返回标准 SSE 格式
  */
 
-import type { LLMMessage, LLMConfig, LLMFinalMessage } from '../../../platform/llm/ILLMService';
+import type { LLMMessage, LLMConfig, LLMFinalMessage, ContentPart } from '../../../platform/llm/ILLMService';
+import { getTextContent } from '../../../platform/llm/ILLMService';
 import type { IModelRegistryService } from '../../../platform/llm/IModelRegistryService';
 import { BaseLLMProvider, type APIConfig } from './BaseLLMProvider';
 import type { IUIStreamService } from '../../../platform/agent/IUIStreamService';
@@ -126,15 +127,16 @@ export class GeminiProvider extends BaseLLMProvider {
     for (const msg of messages) {
       // system → systemInstruction（取最后一个）
       if (msg.role === 'system') {
-        systemInstruction = { parts: [{ text: msg.content || '' }] };
+        systemInstruction = { parts: [{ text: getTextContent(msg.content) || '' }] };
         continue;
       }
 
       // tool result → user 角色 + functionResponse part
       if (msg.role === 'tool') {
+        const textContent = getTextContent(msg.content);
         let responseData: any;
-        try { responseData = JSON.parse(msg.content || '{}'); }
-        catch { responseData = { result: msg.content || '' }; }
+        try { responseData = JSON.parse(textContent || '{}'); }
+        catch { responseData = { result: textContent || '' }; }
 
         const tcId = (msg as any).tool_call_id || '';
         const toolName = this.toolNameCache.get(tcId) || tcId;
@@ -153,8 +155,9 @@ export class GeminiProvider extends BaseLLMProvider {
       // assistant with tool_calls → model 角色 + functionCall parts（含 thought_signature 回传）
       if (msg.role === 'assistant' && (msg as any).tool_calls?.length > 0) {
         const parts: any[] = [];
-        if (msg.content) {
-          parts.push({ text: msg.content });
+        const textContent = getTextContent(msg.content);
+        if (textContent) {
+          parts.push({ text: textContent });
         }
         for (const tc of (msg as any).tool_calls) {
           const tcId = tc.id || '';
@@ -179,12 +182,29 @@ export class GeminiProvider extends BaseLLMProvider {
         continue;
       }
 
-      // user → user, assistant → model
+      // user → user, assistant → model — 支持多模态 ContentPart[]
       const role = msg.role === 'assistant' ? 'model' : 'user';
-      contents.push({
-        role,
-        parts: [{ text: msg.content || '' }]
-      });
+      if (Array.isArray(msg.content)) {
+        const parts: any[] = [];
+        for (const part of msg.content as ContentPart[]) {
+          if (part.type === 'text') {
+            parts.push({ text: part.text });
+          } else if (part.type === 'image_url') {
+            const url = part.image_url.url;
+            if (url.startsWith('data:')) {
+              const match = url.match(/^data:(image\/\w+);base64,(.+)$/);
+              if (match) {
+                parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+              }
+            } else {
+              parts.push({ fileData: { mimeType: 'image/jpeg', fileUri: url } });
+            }
+          }
+        }
+        contents.push({ role, parts });
+      } else {
+        contents.push({ role, parts: [{ text: msg.content || '' }] });
+      }
     }
 
     // Gemini 要求 contents 不能以 model 开头，必须 user 先说

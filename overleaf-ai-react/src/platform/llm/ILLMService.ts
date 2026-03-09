@@ -14,11 +14,37 @@ import { Event } from '../../base/common/event';
 export type LLMMessageRole = 'system' | 'user' | 'assistant' | 'tool';
 
 /**
+ * 多模态内容块（用于 vision 等场景）
+ */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail?: 'low' | 'high' | 'auto' } };
+
+/**
+ * 提取 LLMMessage.content 的纯文本部分
+ */
+export function getTextContent(content: string | ContentPart[]): string {
+  if (typeof content === 'string') return content;
+  return content
+    .filter((p): p is Extract<ContentPart, { type: 'text' }> => p.type === 'text')
+    .map(p => p.text)
+    .join('');
+}
+
+/**
+ * 判断 content 是否包含图片
+ */
+export function hasImageContent(content: string | ContentPart[]): boolean {
+  if (typeof content === 'string') return false;
+  return content.some(p => p.type === 'image_url');
+}
+
+/**
  * LLM 消息（标准格式）
  */
 export interface LLMMessage {
   role: LLMMessageRole;
-  content: string;
+  content: string | ContentPart[];
   /**
    * 推理内容（DeepSeek 等推理模型使用）
    * 对应 OpenAI/DeepSeek 协议中的 reasoning_content 字段

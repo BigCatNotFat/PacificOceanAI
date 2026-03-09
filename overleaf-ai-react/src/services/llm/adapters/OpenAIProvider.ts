@@ -13,7 +13,8 @@
  * - SSE 事件：带 event: 类型前缀
  */
 
-import type { LLMMessage, LLMConfig, LLMFinalMessage } from '../../../platform/llm/ILLMService';
+import type { LLMMessage, LLMConfig, LLMFinalMessage, ContentPart } from '../../../platform/llm/ILLMService';
+import { getTextContent } from '../../../platform/llm/ILLMService';
 import type { IModelRegistryService } from '../../../platform/llm/IModelRegistryService';
 import { BaseLLMProvider, type APIConfig } from './BaseLLMProvider';
 import type { IUIStreamService } from '../../../platform/agent/IUIStreamService';
@@ -86,7 +87,7 @@ export class OpenAIProvider extends BaseLLMProvider {
     for (const msg of messages) {
       // system → developer
       if (msg.role === 'system') {
-        result.push({ role: 'developer', content: msg.content || '' });
+        result.push({ role: 'developer', content: getTextContent(msg.content) || '' });
         continue;
       }
 
@@ -95,15 +96,16 @@ export class OpenAIProvider extends BaseLLMProvider {
         result.push({
           type: 'function_call_output',
           call_id: (msg as any).tool_call_id || '',
-          output: msg.content || ''
+          output: getTextContent(msg.content) || ''
         });
         continue;
       }
 
       // assistant with tool_calls → split
       if (msg.role === 'assistant' && (msg as any).tool_calls?.length > 0) {
-        if (msg.content) {
-          result.push({ role: 'assistant', content: msg.content });
+        const textContent = getTextContent(msg.content);
+        if (textContent) {
+          result.push({ role: 'assistant', content: textContent });
         }
         for (const tc of (msg as any).tool_calls) {
           result.push({
@@ -118,11 +120,20 @@ export class OpenAIProvider extends BaseLLMProvider {
         continue;
       }
 
-      // user / assistant (normal)
-      result.push({
-        role: msg.role,
-        content: msg.content || ''
-      });
+      // user / assistant — 支持多模态 ContentPart[]
+      if (Array.isArray(msg.content)) {
+        const inputContent: any[] = [];
+        for (const part of msg.content as ContentPart[]) {
+          if (part.type === 'text') {
+            inputContent.push({ type: 'input_text', text: part.text });
+          } else if (part.type === 'image_url') {
+            inputContent.push({ type: 'input_image', image_url: part.image_url.url, detail: part.image_url.detail || 'auto' });
+          }
+        }
+        result.push({ role: msg.role, content: inputContent });
+      } else {
+        result.push({ role: msg.role, content: msg.content || '' });
+      }
     }
 
     return result;

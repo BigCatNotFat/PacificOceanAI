@@ -10,8 +10,6 @@ import { useSidebarResize } from '../hooks/useSidebarResize';
 import { useService } from '../hooks/useService';
 import { IConfigurationServiceId } from '../../platform/configuration/configuration';
 import type { IConfigurationService } from '../../platform/configuration/configuration';
-import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService';
-import type { ITelemetryService } from '../../platform/telemetry/ITelemetryService';
 import MultiPaneContainer, { MultiPaneContainerHandle } from './MultiPaneContainer';
 import LiteraturePanel from './LiteraturePanel';
 import 'katex/dist/katex.min.css';
@@ -34,8 +32,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
   const multiPaneRef = useRef<MultiPaneContainerHandle | null>(null);
   const isOpenRef = useRef(isOpen); // 用于在 paneCountGetter 中获取最新的 isOpen 值
   const configService = useService<IConfigurationService>(IConfigurationServiceId);
-  const telemetryService = useService<ITelemetryService>(ITelemetryServiceId);
-  
   const [columnCount, setColumnCount] = useState(1);
   const [selectionTooltipEnabled, setSelectionTooltipEnabled] = useState(true);
   const [citeTooltipEnabled, setCiteTooltipEnabled] = useState(true);
@@ -197,16 +193,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
     console.log('[Sidebar] Cite tooltip toggled:', newState);
   }, [citeTooltipEnabled]);
   
-  // 注册 paneCountGetter，让 telemetry 服务能在上报时获取当前列数
-  // 如果侧边栏未打开，返回 0（用户没有使用对话功能）
-  useEffect(() => {
-    telemetryService.setPaneCountGetter(() => {
-      if (!isOpenRef.current) {
-        return 0; // 侧边栏未打开，统计为 0 列
-      }
-      return multiPaneRef.current?.getColumnCount() ?? 1;
-    });
-  }, [telemetryService]);
   useSidebarResize({ sidebarRef, handleRef, onWidthChange });
 
   // 打开设置页面

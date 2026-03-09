@@ -33,8 +33,6 @@ import type { IConversationService } from '../../platform/agent/IConversationSer
 import { IConversationServiceId } from '../../platform/agent/IConversationService';
 import type { IPromptService } from '../../platform/agent/IPromptService';
 import { IPromptServiceId } from '../../platform/agent/IPromptService';
-import type { ITelemetryService } from '../../platform/telemetry/ITelemetryService';
-import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService';
 import type { ILLMService } from '../../platform/llm/ILLMService';
 import { ILLMServiceId } from '../../platform/llm/ILLMService';
 import type { IModelRegistryService } from '../../platform/llm/IModelRegistryService';
@@ -73,7 +71,7 @@ interface SessionState {
 /**
  * ChatService 实现 - 支持多会话并行
  */
-@injectable(IAgentServiceId, IConversationServiceId, IPromptServiceId, ITelemetryServiceId, ILLMServiceId, IModelRegistryServiceId, IUIStreamServiceId, ILiteratureServiceId)
+@injectable(IAgentServiceId, IConversationServiceId, IPromptServiceId, ILLMServiceId, IModelRegistryServiceId, IUIStreamServiceId, ILiteratureServiceId)
 export class ChatService implements IChatService {
   // ==================== 事件发射器 ====================
   private readonly _onDidMessageUpdate = new Emitter<MessageUpdateEvent>();
@@ -94,7 +92,6 @@ export class ChatService implements IChatService {
     private readonly agentService: IAgentService,
     private readonly conversationService: IConversationService,
     private readonly promptService: IPromptService,
-    private readonly telemetryService: ITelemetryService,
     private readonly llmService: ILLMService,
     private readonly modelRegistry: IModelRegistryService,
     private readonly uiStreamService: IUIStreamService,
@@ -103,8 +100,7 @@ export class ChatService implements IChatService {
     logger.debug('[ChatService] 依赖注入成功', {
       hasAgentService: !!agentService,
       hasConversationService: !!conversationService,
-      hasPromptService: !!promptService,
-      hasTelemetryService: !!telemetryService
+      hasPromptService: !!promptService
     });
 
     // 监听对话切换事件，加载对应对话的消息到 session
@@ -373,7 +369,7 @@ export class ChatService implements IChatService {
   /**
    * 发送消息
    */
-  async sendMessage(input: string, options: ChatOptions): Promise<void> {
+  async sendMessage(input: string, options: ChatOptions, images?: string[]): Promise<void> {
     const { conversationId } = options;
     if (!conversationId) {
       console.error('[ChatService] conversationId 是必填项');
@@ -416,6 +412,9 @@ export class ChatService implements IChatService {
       // ========== 步骤 2：添加用户消息 ==========
       const userMessage = this.createMessage(session, 'user', input);
       userMessage.status = 'completed';
+      if (images && images.length > 0) {
+        userMessage.images = images;
+      }
       session.messages.push(userMessage);
       this._onDidMessageUpdate.fire({
         conversationId,
@@ -444,9 +443,6 @@ export class ChatService implements IChatService {
         userMessageId: userMessage.id,
         assistantPlaceholderId: assistantPlaceholder.id
       });
-
-      // 统计埋点：记录用户发送消息
-      this.telemetryService.trackChat(options.modelId, options.mode);
 
       // ========== Plan 模式：使用 ManagerAgentLoopService ==========
       if (options.mode === 'plan') {
@@ -631,10 +627,6 @@ export class ChatService implements IChatService {
 
     logger.debug(`[ChatService] 会话 ${conversationId} 批准工具调用:`, toolCallId);
     
-    // 统计埋点：记录用户批准工具调用
-    const toolName = session.toolCallIdToNameMap?.get(toolCallId) || 'unknown';
-    this.telemetryService.trackToolApproval(toolName, true);
-    
     try {
       await session.currentLoop.approveToolCall(toolCallId);
     } catch (error) {
@@ -661,10 +653,6 @@ export class ChatService implements IChatService {
     }
 
     logger.debug(`[ChatService] 会话 ${conversationId} 拒绝工具调用:`, toolCallId);
-    
-    // 统计埋点：记录用户拒绝工具调用
-    const toolName = session.toolCallIdToNameMap?.get(toolCallId) || 'unknown';
-    this.telemetryService.trackToolApproval(toolName, false);
     
     await session.currentLoop.rejectToolCall(toolCallId);
     

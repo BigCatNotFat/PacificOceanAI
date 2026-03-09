@@ -17,8 +17,6 @@ import { IChatServiceId } from '../../platform/agent/IChatService';
 import type { IChatService, ContextItem } from '../../platform/agent/IChatService';
 import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
 import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
-import { ITelemetryServiceId } from '../../platform/telemetry/ITelemetryService';
-import type { ITelemetryService } from '../../platform/telemetry/ITelemetryService';
 import { ToolResultRenderer } from './ToolResultRenderer';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import RichTextInput, { RichTextInputHandle } from './RichTextInput';
@@ -190,7 +188,6 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   const configService = useService<IConfigurationService>(IConfigurationServiceId);
   const chatService = useService<IChatService>(IChatServiceId);
   const uiStreamService = useService<IUIStreamService>(IUIStreamServiceId);
-  const telemetryService = useService<ITelemetryService>(ITelemetryServiceId);
   const { streamingBuffers } = useUIStreamUpdates();
   
   const [availableModels, setAvailableModels] = useState<AIModelConfig[]>([]);
@@ -204,6 +201,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [isConversationMenuOpen, setIsConversationMenuOpen] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
   
   const {
     conversations,
@@ -243,12 +241,17 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
     return () => disposable.dispose();
   }, [configService, loadModels]);
 
-  // 检查是否配置了 API Key（至少一个供应商有 key 且有模型）
+  // 检查是否配置了 API Key 或 OAuth（至少一个供应商有认证且有模型）
   useEffect(() => {
     const checkApiKey = async () => {
       try {
         const config = await configService.getAPIConfig();
-        const hasConfiguredModel = !!(config?.models?.some(m => m.enabled && m.apiKey));
+        // 支持两种认证方式：
+        // 1. 传统 API Key (apiKey 字段)
+        // 2. OAuth 认证 (provider 为 'codex-oauth')
+        const hasConfiguredModel = !!(config?.models?.some(m => 
+          m.enabled && (m.apiKey || m.provider === 'codex-oauth')
+        ));
         
         setHasApiKey(hasConfiguredModel);
       } catch (error) {
@@ -339,8 +342,9 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   // 发送消息
   const sendMessage = useCallback(async () => {
     const { text, references } = inputRef.current?.getValueWithReferences() ?? { text: '', references: [] };
+    const attachedImages = inputRef.current?.getImages() ?? [];
     const value = text.trim();
-    if (!value) return;
+    if (!value && attachedImages.length === 0) return;
     
     if (!hasApiKey) {
       console.warn('[ConversationPane] 未配置 API Key，请前往设置页面配置');
@@ -386,13 +390,17 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
 
     setIsGenerating(true);
     try {
-      await chatService.sendMessage(finalMessage, {
-        mode: chatMode,
-        modelId: selectedModel,
-        contextItems,
-        maxIterations: chatMode === 'agent' ? 100 : chatMode === 'plan' ? 200 : 10,
-        conversationId: convId
-      });
+      await chatService.sendMessage(
+        finalMessage,
+        {
+          mode: chatMode,
+          modelId: selectedModel,
+          contextItems,
+          maxIterations: chatMode === 'agent' ? 100 : chatMode === 'plan' ? 200 : 10,
+          conversationId: convId
+        },
+        attachedImages.length > 0 ? attachedImages : undefined
+      );
     } catch (error) {
       console.error('[ConversationPane] 发送消息失败:', error);
       setIsGenerating(false);
@@ -443,9 +451,6 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
       const branchId = await branchConversation(conversationId, upToMessageId);
       console.log('[ConversationPane] 创建分支成功:', branchId);
       
-      // 统计：记录新建分支
-      telemetryService.trackBranchCreated();
-      
       // 如果提供了 onBranchInNewPane 回调，在新列中打开分支
       if (onBranchInNewPane) {
         onBranchInNewPane(branchId);
@@ -456,7 +461,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
     } catch (error) {
       console.error('[ConversationPane] 创建分支失败:', error);
     }
-  }, [conversationId, branchConversation, onBranchInNewPane, onConversationChange, telemetryService]);
+  }, [conversationId, branchConversation, onBranchInNewPane, onConversationChange]);
 
   // 渲染内联代码
   const renderInlineCode = (text: string) => {
@@ -641,7 +646,16 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
       </div>
 
       {/* 聊天历史 */}
-      <div className="ai-chat-history" ref={chatHistoryRef}>
+      <div
+        className="ai-chat-history"
+        ref={chatHistoryRef}
+        onClick={(e) => {
+          const target = e.target as HTMLElement;
+          if (target.tagName === 'IMG' && target.closest('.ai-message-image-thumb, .tool-result-image-preview')) {
+            setPreviewImage((target as HTMLImageElement).src);
+          }
+        }}
+      >
         {/* 欢迎界面 */}
         {messages.length === 0 && (
           <div className="ai-welcome ai-welcome-compact">
@@ -664,6 +678,19 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
               <div key={msg.id} className="ai-message-block">
                 <div className="ai-message ai-user">
                   {renderUserMessageContent(msg.content)}
+                  {extMsg.images && extMsg.images.length > 0 && (
+                    <div className="ai-message-images">
+                      {extMsg.images.map((imgUrl, idx) => (
+                        <div
+                          key={idx}
+                          className="ai-message-image-thumb"
+                          onClick={() => setPreviewImage(imgUrl)}
+                        >
+                          <img src={imgUrl} alt={`附件 ${idx + 1}`} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -1010,6 +1037,17 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
           </div>
           
           <div className="ai-input-toolbar-right">
+            <button
+              className="ai-image-upload-btn"
+              onClick={() => {
+                const fileInput = document.querySelector('.ai-rich-input-container input[type="file"]') as HTMLInputElement;
+                fileInput?.click();
+              }}
+              disabled={isGenerating}
+              title="上传图片"
+            >
+              <span className="material-symbols">image</span>
+            </button>
             <button 
               className="ai-send-btn-new" 
               onClick={isGenerating ? stopGeneration : sendMessage} 
@@ -1029,6 +1067,21 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 图片预览弹窗 */}
+      {previewImage && (
+        <div className="ai-image-lightbox" onClick={() => setPreviewImage(null)}>
+          <div className="ai-image-lightbox-content" onClick={(e) => e.stopPropagation()}>
+            <img src={previewImage} alt="预览" />
+            <button
+              className="ai-image-lightbox-close"
+              onClick={() => setPreviewImage(null)}
+            >
+              <span className="material-symbols">close</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

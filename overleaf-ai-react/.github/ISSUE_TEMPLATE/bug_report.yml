@@ -1,0 +1,148 @@
+name: Bug Report
+description: Report a bug or issue with PacificOceanAI
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this bug! Please fill out the form below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Tell us what went wrong
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+      placeholder: Describe what should have happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened
+      placeholder: Describe what actually happened
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Extension Version
+      description: What version of PacificOceanAI are you using?
+      placeholder: e.g., 2.0.3
+    validations:
+      required: true
+
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      description: Which browser are you using?
+      options:
+        - Chrome
+        - Edge
+        - Brave
+        - Other Chromium-based
+    validations:
+      required: true
+
+  - type: input
+    id: browser-version
+    attributes:
+      label: Browser Version
+      description: What version of the browser?
+      placeholder: e.g., 120.0.6099.109
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      description: What OS are you using?
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ai-provider
+    attributes:
+      label: AI Provider
+      description: Which AI provider were you using when the bug occurred?
+      options:
+        - OpenAI
+        - Anthropic Claude
+        - Google Gemini
+        - OpenAI-compatible
+        - ChatGPT OAuth
+        - Not applicable
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console Logs
+      description: Please paste any relevant console logs (open DevTools with F12)
+      render: shell
+      placeholder: Paste console logs here
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots to help explain your problem
+      placeholder: Drag and drop images here
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here
+      placeholder: Any other relevant information
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      description: Please confirm the following
+      options:
+        - label: I have searched existing issues to avoid duplicates
+          required: true
+        - label: I have provided all the required information
+          required: true
+        - label: I am using the latest version of PacificOceanAI
+          required: false

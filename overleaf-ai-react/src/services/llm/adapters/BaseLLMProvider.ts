@@ -4,7 +4,8 @@
  * 定义所有 LLM 厂商提供者的通用接口
  */
 
-import type { LLMMessage, LLMConfig } from '../../../platform/llm/ILLMService';
+import type { LLMMessage, LLMConfig, ContentPart } from '../../../platform/llm/ILLMService';
+import { getTextContent } from '../../../platform/llm/ILLMService';
 
 /**
  * API 配置
@@ -55,8 +56,12 @@ export abstract class BaseLLMProvider {
    */
   protected formatMessages(messages: LLMMessage[]): any[] {
     return messages.filter(msg => {
-      // 保留有内容的消息
-      if (msg.content && msg.content.trim()) {
+      // 多模态内容（ContentPart[]）：只要有元素就保留
+      if (Array.isArray(msg.content) && msg.content.length > 0) {
+        return true;
+      }
+      // 纯文本内容
+      if (typeof msg.content === 'string' && msg.content.trim()) {
         return true;
       }
       // 保留有工具调用的消息（即使内容为空）

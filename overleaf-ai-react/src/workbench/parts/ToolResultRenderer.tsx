@@ -480,6 +480,32 @@ const LatexCodeBaseSearchResult: React.FC<{ data: any }> = ({ data }) => {
 };
 
 /**
+ * 读取图片结果渲染
+ */
+const ReadImageResult: React.FC<{ data: any }> = ({ data }) => {
+  if (!data) {
+    return <div className="tool-result-empty">无法读取图片</div>;
+  }
+
+  return (
+    <div className="tool-result-read-image">
+      <div className="tool-result-header">
+        <span className="material-symbols">image</span>
+        <span className="tool-result-filename">{data.file}</span>
+      </div>
+      {data.image_url && (
+        <div className="tool-result-image-preview">
+          <img src={data.image_url} alt={data.file || '图片预览'} />
+        </div>
+      )}
+      {data.message && (
+        <div className="tool-result-message">{data.message}</div>
+      )}
+    </div>
+  );
+};
+
+/**
  * 通用/默认结果渲染
  */
 const DefaultResult: React.FC<{ data: any; toolName: string }> = ({ data, toolName }) => {
@@ -553,6 +579,10 @@ export const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({ toolName
     case 'readfile':
     case 'read file':
       return <ReadFileResult data={data} />;
+      
+    case 'readimage':
+    case 'read image':
+      return <ReadImageResult data={data} />;
       
     case 'grepsearch':
     case 'grep search':

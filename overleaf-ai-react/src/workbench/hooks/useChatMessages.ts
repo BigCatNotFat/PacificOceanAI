@@ -103,6 +103,11 @@ function mapServiceMessageToUI(
       isHtml: false,
       type: 'normal'
     };
+
+    // 如果用户消息附带了图片，传递给 UI 层展示缩略图
+    if (message.images && message.images.length > 0) {
+      uiMessage.images = message.images;
+    }
     
     // 如果有已存储的工具调用，传递给 UI 层
     if (message.toolCalls && message.toolCalls.length > 0) {

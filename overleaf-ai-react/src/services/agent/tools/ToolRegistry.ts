@@ -25,6 +25,7 @@ import { DiffHistoryTool } from './implementations/DiffHistoryTool';
 import { LatexCodebaseSearchTool } from './implementations/LatexCodeBaseSearch';
 import { PaperSemanticSearchTool } from './implementations/PaperSemanticSearchTool';
 import { PaperBooleanSearchTool } from './implementations/PaperBooleanSearchTool';
+import { ReadImageTool } from './implementations/ReadImageTool';
 
 /**
  * 工具注册表
@@ -42,6 +43,7 @@ export class ToolRegistry {
   private static readonly BUILTIN_TOOLS: ITool[] = [
     // 读取类工具
     new ReadFileTool(),
+    new ReadImageTool(),
     new ListDirTool(),
     new GrepSearchTool(),
     // new LatexCodebaseSearchTool(),

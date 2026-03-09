@@ -16,7 +16,8 @@
  * - 流式响应格式不同
  */
 
-import type { LLMMessage, LLMConfig, LLMFinalMessage } from '../../../platform/llm/ILLMService';
+import type { LLMMessage, LLMConfig, LLMFinalMessage, ContentPart } from '../../../platform/llm/ILLMService';
+import { getTextContent } from '../../../platform/llm/ILLMService';
 import type { IModelRegistryService } from '../../../platform/llm/IModelRegistryService';
 import { BaseLLMProvider, type APIConfig } from './BaseLLMProvider';
 import type { IUIStreamService } from '../../../platform/agent/IUIStreamService';
@@ -152,9 +153,36 @@ export class AnthropicProvider extends BaseLLMProvider {
     // Anthropic API 格式与 OpenAI 不同
     // 需要将 system 消息提取出来作为单独的参数
     const systemMessage = messages.find(m => m.role === 'system');
-    const conversationMessages = this.formatMessages(
+    const filteredMessages = this.formatMessages(
       messages.filter(m => m.role !== 'system')
     );
+
+    // 转换多模态内容为 Anthropic 格式
+    const conversationMessages = filteredMessages.map((msg: any) => {
+      if (Array.isArray(msg.content)) {
+        const anthropicContent = (msg.content as ContentPart[]).map(part => {
+          if (part.type === 'text') {
+            return { type: 'text', text: part.text };
+          }
+          if (part.type === 'image_url') {
+            const url: string = part.image_url.url;
+            if (url.startsWith('data:')) {
+              const match = url.match(/^data:(image\/\w+);base64,(.+)$/);
+              if (match) {
+                return {
+                  type: 'image',
+                  source: { type: 'base64', media_type: match[1], data: match[2] }
+                };
+              }
+            }
+            return { type: 'image', source: { type: 'url', url } };
+          }
+          return { type: 'text', text: '' };
+        });
+        return { ...msg, content: anthropicContent };
+      }
+      return msg;
+    });
 
     const payload: any = {
       model: config.modelId,
@@ -164,7 +192,7 @@ export class AnthropicProvider extends BaseLLMProvider {
     };
 
     if (systemMessage) {
-      payload.system = systemMessage.content;
+      payload.system = getTextContent(systemMessage.content);
     }
 
     if (typeof config.temperature === 'number') {

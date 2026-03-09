@@ -26,5 +26,7 @@ export type ChatMessage = {
   };
   /** 工具调用列表（从存储恢复时使用） */
   toolCalls?: StoredToolCall[];
+  /** 附带的图片列表（base64 data URL），用于多模态输入 */
+  images?: string[];
 };
 
