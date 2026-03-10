@@ -164,6 +164,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       type: 'DIFF_CREATE_SUGGESTION',
       data: {
         id,
+        targetFile: input.targetFile,
         startLine: input.startLine,
         endLine: input.endLine,
         oldContent: input.oldContent,
@@ -171,7 +172,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       }
     }, '*');
     
-    logger.debug(`[DiffSuggestionService] 创建行级建议 ${id}: 行 ${input.startLine}-${input.endLine}`);
+    logger.debug(`[DiffSuggestionService] 创建行级建议 ${id}: 行 ${input.startLine}-${input.endLine} 文件: ${input.targetFile}`);
     
     return id;
   }
@@ -183,6 +184,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
     const ids: string[] = [];
     const batchData: Array<{
       id: string;
+      targetFile: string;
       startLine: number;
       endLine: number;
       oldContent: string;
@@ -196,7 +198,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       const suggestion: DiffSuggestion = {
         id,
         toolCallId: input.toolCallId,
-        toolName: input.toolName, // 保存工具名，用于统计
+        toolName: input.toolName,
         targetFile: input.targetFile,
         type: 'line',
         startLine: input.startLine,
@@ -211,6 +213,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       
       batchData.push({
         id,
+        targetFile: input.targetFile,
         startLine: input.startLine,
         endLine: input.endLine,
         oldContent: input.oldContent,
@@ -260,6 +263,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       type: 'DIFF_CREATE_SEGMENT_SUGGESTION',
       data: {
         id,
+        targetFile: input.targetFile,
         startOffset: input.startOffset,
         endOffset: input.endOffset,
         oldContent: input.oldContent,
@@ -267,7 +271,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       }
     }, '*');
     
-    logger.debug(`[DiffSuggestionService] 创建片段级建议 ${id}: 偏移 ${input.startOffset}-${input.endOffset}`);
+    logger.debug(`[DiffSuggestionService] 创建片段级建议 ${id}: 偏移 ${input.startOffset}-${input.endOffset} 文件: ${input.targetFile}`);
     
     return id;
   }
@@ -279,6 +283,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
     const ids: string[] = [];
     const batchData: Array<{
       id: string;
+      targetFile: string;
       startOffset: number;
       endOffset: number;
       oldContent: string;
@@ -295,7 +300,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
         toolName: input.toolName,
         targetFile: input.targetFile,
         type: 'segment',
-        startLine: 0, // segment 类型不使用行号
+        startLine: 0,
         endLine: 0,
         startOffset: input.startOffset,
         endOffset: input.endOffset,
@@ -309,6 +314,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       
       batchData.push({
         id,
+        targetFile: input.targetFile,
         startOffset: input.startOffset,
         endOffset: input.endOffset,
         oldContent: input.oldContent,

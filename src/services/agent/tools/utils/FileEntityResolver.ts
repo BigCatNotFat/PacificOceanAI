@@ -9,6 +9,7 @@
  */
 
 import { overleafEditor } from '../../../editor/OverleafEditor';
+import { recentlyCreatedFiles } from './RecentlyCreatedFilesRegistry';
 
 export interface ResolvedEntity {
   type: 'doc' | 'file' | 'folder';
@@ -117,6 +118,13 @@ export async function findEntityByPath(targetPath: string): Promise<ResolvedEnti
     console.log('[FileEntityResolver] Not found via Bridge either');
   } catch (error) {
     console.warn('[FileEntityResolver] Bridge listFiles failed:', error);
+  }
+
+  // 策略 3: recently-created-files registry (for files just created in this session)
+  const recentEntry = recentlyCreatedFiles.findByPath(targetPath);
+  if (recentEntry) {
+    console.log('[FileEntityResolver] Found via recently-created registry:', recentEntry);
+    return recentEntry;
   }
 
   console.error('[FileEntityResolver] Entity not found by any strategy:', targetPath);

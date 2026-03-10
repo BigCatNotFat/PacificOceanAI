@@ -199,14 +199,20 @@ Good examples:
       // 1. 检查并切换到目标文件
       const currentFileName = await this.getCurrentFileName();
       const targetBaseName = args.target_file.split('/').pop() || args.target_file;
-      const isCurrentFile = currentFileName === targetBaseName ||
+      const isCurrentFile = currentFileName !== null && (
+        currentFileName === targetBaseName ||
         currentFileName === args.target_file ||
-        args.target_file.endsWith(currentFileName || '');
+        args.target_file.endsWith(currentFileName)
+      );
 
       logger.debug('[SearchReplaceTool] Current file:', currentFileName, 'Target:', targetBaseName, 'Is current:', isCurrentFile);
 
       if (!isCurrentFile) {
         logger.debug(`[SearchReplaceTool] Switching to file "${targetBaseName}"...`);
+
+        let preSwitchContent: string | null = null;
+        try { preSwitchContent = await overleafEditor.document.getText(); } catch { /* ignore */ }
+
         const switchResult = await overleafEditor.file.switchFile(targetBaseName);
 
         if (!switchResult.success) {
@@ -217,8 +223,7 @@ Good examples:
           };
         }
 
-        // 等待文件切换完成
-        const switchSuccess = await this.waitForFileSwitch(targetBaseName);
+        const switchSuccess = await this.waitForFileSwitch(targetBaseName, 5000, preSwitchContent);
         if (!switchSuccess) {
           return {
             success: false,
@@ -284,52 +289,95 @@ Good examples:
         };
       }
 
-      // 6. 准备创建片段级 diff 建议
-      // 如果不是 replace_all，只处理第一个匹配
+      // 6. 准备替换
       const matchesToProcess = replaceAll ? matches : [matches[0]];
-      
-      const suggestionInputs: CreateSegmentSuggestionInput[] = [];
+
       const previewLines: string[] = [];
-
       for (const match of matchesToProcess) {
-        suggestionInputs.push({
-          toolCallId,
-          toolName: 'search_replace', // 添加工具名，用于统计
-          targetFile: targetBaseName,
-          startOffset: match.index,
-          endOffset: match.index + match.oldContent.length,
-          oldContent: match.oldContent,
-          newContent: newString
-        });
-
         const truncatedOld = this.truncatePreview(oldString);
         const truncatedNew = this.truncatePreview(newString);
         previewLines.push(`第 ${match.startLine} 行: "${truncatedOld}" → "${truncatedNew}"`);
       }
 
-      // 7. 批量创建片段级 diff 建议
-      logger.debug('[SearchReplaceTool] Creating segment diff suggestions...');
-      const suggestionIds = await diffSuggestionService.createBatchSegmentSuggestions(suggestionInputs);
-
-      logger.debug(`[SearchReplaceTool] Created ${suggestionIds.length} segment diff suggestions:`, suggestionIds);
-
-      // 8. 生成预览
       const lineNumbers = matchesToProcess.map(m => m.startLine);
-      let preview: string;
-      if (replaceAll && matchesToProcess.length > 1) {
-        const shownLines = lineNumbers.slice(0, 5).join(', ');
-        const moreLines = matchesToProcess.length > 5 ? ` ... 等 ${matchesToProcess.length} 处` : '';
-        preview = `📝 已应用 ${matchesToProcess.length} 处修改 (第 ${shownLines}${moreLines} 行)\n` + previewLines.slice(0, 5).join('\n');
-        if (previewLines.length > 5) {
-          preview += `\n... 还有 ${previewLines.length - 5} 处`;
-        }
-      } else {
-        preview = `📝 修改已应用:\n${previewLines[0]}`;
-      }
 
-      return {
-        success: true,
-        data: {
+      // 7. Apply changes using the appropriate strategy.
+      // When we had to switch files, the DiffAPI may not have caught up
+      // (it tracks CodeMirror instances independently). Using postMessage-
+      // based diff suggestions would apply them to the WRONG file. So we
+      // use setDocContent (bridge) which operates on the correct editor.view.
+      let resultData: Record<string, any>;
+
+      if (!isCurrentFile) {
+        logger.debug('[SearchReplaceTool] File was switched – using direct setDocContent');
+
+        // Apply all replacements from back to front by offset
+        let newContent = originalContent;
+        const sortedMatches = [...matchesToProcess].sort((a, b) => b.index - a.index);
+        for (const match of sortedMatches) {
+          newContent =
+            newContent.slice(0, match.index) +
+            newString +
+            newContent.slice(match.index + match.oldContent.length);
+        }
+
+        const setResult = await overleafEditor.editor.setDocContent(newContent);
+        if (!setResult.success) {
+          return {
+            success: false,
+            error: '无法将修改应用到编辑器（setDocContent 失败）',
+            duration: Date.now() - startTime
+          };
+        }
+
+        let preview: string;
+        if (replaceAll && matchesToProcess.length > 1) {
+          const shownLines = lineNumbers.slice(0, 5).join(', ');
+          const moreLines = matchesToProcess.length > 5 ? ` ... 等 ${matchesToProcess.length} 处` : '';
+          preview = `📝 已直接应用 ${matchesToProcess.length} 处修改 (第 ${shownLines}${moreLines} 行)\n` + previewLines.slice(0, 5).join('\n');
+          if (previewLines.length > 5) preview += `\n... 还有 ${previewLines.length - 5} 处`;
+        } else {
+          preview = `📝 修改已直接应用:\n${previewLines[0]}`;
+        }
+
+        resultData = {
+          file: args.target_file,
+          applied: true,
+          message: `SUCCESS: ${matchesToProcess.length} modification(s) applied to the document. The changes are now live and compilable. You may proceed with next steps.`,
+          replacedCount: matchesToProcess.length,
+          lineNumbers,
+          preview
+        };
+      } else {
+        // File is already open – use DiffSuggestionService for diff UI
+        const suggestionInputs: CreateSegmentSuggestionInput[] = [];
+        for (const match of matchesToProcess) {
+          suggestionInputs.push({
+            toolCallId,
+            toolName: 'search_replace',
+            targetFile: targetBaseName,
+            startOffset: match.index,
+            endOffset: match.index + match.oldContent.length,
+            oldContent: match.oldContent,
+            newContent: newString
+          });
+        }
+
+        logger.debug('[SearchReplaceTool] Creating segment diff suggestions...');
+        const suggestionIds = await diffSuggestionService.createBatchSegmentSuggestions(suggestionInputs);
+        logger.debug(`[SearchReplaceTool] Created ${suggestionIds.length} segment diff suggestions:`, suggestionIds);
+
+        let preview: string;
+        if (replaceAll && matchesToProcess.length > 1) {
+          const shownLines = lineNumbers.slice(0, 5).join(', ');
+          const moreLines = matchesToProcess.length > 5 ? ` ... 等 ${matchesToProcess.length} 处` : '';
+          preview = `📝 已应用 ${matchesToProcess.length} 处修改 (第 ${shownLines}${moreLines} 行)\n` + previewLines.slice(0, 5).join('\n');
+          if (previewLines.length > 5) preview += `\n... 还有 ${previewLines.length - 5} 处`;
+        } else {
+          preview = `📝 修改已应用:\n${previewLines[0]}`;
+        }
+
+        resultData = {
           file: args.target_file,
           applied: true,
           message: `SUCCESS: ${suggestionIds.length} modification(s) applied to the document. The changes are now live and compilable. User can undo individual changes if needed. You may proceed with next steps (e.g. compile to verify).`,
@@ -337,7 +385,12 @@ Good examples:
           replacedCount: matchesToProcess.length,
           lineNumbers,
           preview
-        },
+        };
+      }
+
+      return {
+        success: true,
+        data: resultData,
         duration: Date.now() - startTime
       };
     } catch (error) {
@@ -375,17 +428,41 @@ Good examples:
   }
 
   /**
-   * 等待文件切换完成
+   * Wait for file switch to fully complete (bridge + CodeMirror + DiffAPI).
+   * See ReplaceLinesTool.waitForFileSwitch for detailed rationale.
    */
-  private async waitForFileSwitch(targetFileName: string, timeoutMs = 3000): Promise<boolean> {
+  private async waitForFileSwitch(
+    targetFileName: string,
+    timeoutMs = 5000,
+    preSwitchContent: string | null = null
+  ): Promise<boolean> {
     const start = Date.now();
+
     while (Date.now() - start < timeoutMs) {
       const current = await this.getCurrentFileName();
       if (current === targetFileName || (current && targetFileName.endsWith(current))) {
-        return true;
+        break;
       }
       await new Promise(resolve => setTimeout(resolve, 200));
     }
-    return false;
+
+    if (preSwitchContent !== null && preSwitchContent.trim().length > 0) {
+      const contentDeadline = Date.now() + 3000;
+      while (Date.now() < contentDeadline) {
+        try {
+          const currentContent = await overleafEditor.document.getText();
+          if (currentContent !== preSwitchContent) {
+            break;
+          }
+        } catch { /* ignore */ }
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    const finalName = await this.getCurrentFileName();
+    return finalName === targetFileName ||
+      (finalName !== null && targetFileName.endsWith(finalName));
   }
 }

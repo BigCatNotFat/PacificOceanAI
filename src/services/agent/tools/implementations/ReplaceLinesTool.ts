@@ -236,14 +236,21 @@ Examples:
       // 1. 检查并切换到目标文件
       const currentFileName = await this.getCurrentFileName();
       const targetBaseName = args.target_file.split('/').pop() || args.target_file;
-      const isCurrentFile = currentFileName === targetBaseName ||
+      const isCurrentFile = currentFileName !== null && (
+        currentFileName === targetBaseName ||
         currentFileName === args.target_file ||
-        args.target_file.endsWith(currentFileName || '');
+        args.target_file.endsWith(currentFileName)
+      );
 
       logger.debug('[ReplaceLinesTool] Current file:', currentFileName, 'Target:', targetBaseName, 'Is current:', isCurrentFile);
 
       if (!isCurrentFile) {
         logger.debug(`[ReplaceLinesTool] Switching to file "${targetBaseName}"...`);
+
+        // Capture pre-switch content so we can detect when the editor has truly loaded the new file
+        let preSwitchContent: string | null = null;
+        try { preSwitchContent = await overleafEditor.document.getText(); } catch { /* ignore */ }
+
         const switchResult = await overleafEditor.file.switchFile(targetBaseName);
 
         if (!switchResult.success) {
@@ -254,8 +261,8 @@ Examples:
           };
         }
 
-        // 等待文件切换完成
-        const switchSuccess = await this.waitForFileSwitch(targetBaseName);
+        // Wait for file switch to fully complete (including CodeMirror + DiffAPI)
+        const switchSuccess = await this.waitForFileSwitch(targetBaseName, 5000, preSwitchContent);
         if (!switchSuccess) {
           return {
             success: false,
@@ -282,25 +289,26 @@ Examples:
         }
       }
 
-      // 4. 准备创建 diff 建议
-      const suggestionInputs: CreateSuggestionInput[] = [];
+      // 4. 准备替换内容并生成预览
       const previewBlocks: string[] = [];
+      const processedReplacements: Array<{
+        start_line: number;
+        end_line: number;
+        processedContent: string;
+        originalSegment: string[];
+      }> = [];
 
       for (const replacement of args.replacements) {
         const { start_line, end_line, new_content } = replacement;
         
-        // 预处理 LaTeX 转义
         const processedContent = this.preprocessLatex(new_content);
         
-        // 获取原始内容
-        const startIdx = start_line - 1; // 转为 0-indexed
-        const endIdx = end_line; // slice 的 end 是 exclusive
+        const startIdx = start_line - 1;
+        const endIdx = end_line;
         const originalSegment = lines.slice(startIdx, endIdx);
-        const oldContent = originalSegment.join('\n');
         
         const newContentLines = processedContent ? processedContent.split('\n') : [];
         
-        // 生成预览块（用于日志）
         const previewBlock = this.generateDiffPreview(
             targetBaseName,
             start_line,
@@ -310,32 +318,82 @@ Examples:
         );
         previewBlocks.push(previewBlock);
 
-        // 准备建议输入
-        suggestionInputs.push({
-          toolCallId,
-          toolName: 'replace_lines', // 添加工具名，用于统计
-          targetFile: targetBaseName,
-          startLine: start_line,
-          endLine: end_line,
-          oldContent,
-          newContent: processedContent
+        processedReplacements.push({
+          start_line,
+          end_line,
+          processedContent,
+          originalSegment
         });
 
-        logger.debug(`[ReplaceLinesTool] Prepared suggestion for lines ${start_line}-${end_line}`);
+        logger.debug(`[ReplaceLinesTool] Prepared replacement for lines ${start_line}-${end_line}`);
       }
 
-      // 5. 批量创建 diff 建议
-      logger.debug('[ReplaceLinesTool] Creating diff suggestions...');
-      const suggestionIds = await diffSuggestionService.createBatchSuggestions(suggestionInputs);
+      // 5. Apply changes using the appropriate strategy.
+      //
+      // When we had to switch files, the DiffAPI (injected script) may not
+      // have caught up with the file switch yet – it tracks CodeMirror
+      // instances independently and is slower than the bridge. Sending a diff
+      // suggestion via postMessage would cause it to be applied to the WRONG
+      // file. So we bypass the DiffSuggestionService and use setDocContent
+      // (which goes through the bridge and operates on the correct editor.view).
+      //
+      // When the file was already open, the DiffAPI is in sync, so we can
+      // use the nicer diff suggestion UI.
 
-      logger.debug(`[ReplaceLinesTool] Created ${suggestionIds.length} diff suggestions:`, suggestionIds);
+      let resultData: Record<string, any>;
 
-      // 6. 组合预览（用于返回给 AI）
-      const finalPreview = "📝 修改已应用（用户可撤销）:\n" + previewBlocks.join('\n\n');
+      if (!isCurrentFile) {
+        // Direct write via bridge – avoids DiffAPI race condition
+        logger.debug('[ReplaceLinesTool] File was switched – using direct setDocContent to avoid DiffAPI race');
 
-      return {
-        success: true,
-        data: {
+        const newLines = [...lines];
+        const sorted = [...processedReplacements].sort((a, b) => b.start_line - a.start_line);
+        for (const r of sorted) {
+          const newContentLines = r.processedContent ? r.processedContent.split('\n') : [];
+          newLines.splice(r.start_line - 1, r.end_line - r.start_line + 1, ...newContentLines);
+        }
+
+        const newFullContent = newLines.join('\n');
+        const setResult = await overleafEditor.editor.setDocContent(newFullContent);
+
+        if (!setResult.success) {
+          return {
+            success: false,
+            error: '无法将修改应用到编辑器（setDocContent 失败）',
+            duration: Date.now() - startTime
+          };
+        }
+
+        const finalPreview = "📝 修改已直接应用:\n" + previewBlocks.join('\n\n');
+        resultData = {
+          file: args.target_file,
+          applied: true,
+          status: 'SUCCESS_APPLIED',
+          message: `SUCCESS: ${args.replacements.length} modification(s) applied to the document. The changes are now live and compilable. You may proceed with next steps.`,
+          replacementsCount: args.replacements.length,
+          preview: finalPreview
+        };
+      } else {
+        // File is already open – use DiffSuggestionService for diff UI
+        const suggestionInputs: CreateSuggestionInput[] = [];
+        for (const r of processedReplacements) {
+          suggestionInputs.push({
+            toolCallId,
+            toolName: 'replace_lines',
+            targetFile: targetBaseName,
+            startLine: r.start_line,
+            endLine: r.end_line,
+            oldContent: r.originalSegment.join('\n'),
+            newContent: r.processedContent
+          });
+        }
+
+        logger.debug('[ReplaceLinesTool] Creating diff suggestions...');
+        const suggestionIds = await diffSuggestionService.createBatchSuggestions(suggestionInputs);
+        logger.debug(`[ReplaceLinesTool] Created ${suggestionIds.length} diff suggestions:`, suggestionIds);
+
+        const finalPreview = "📝 修改已应用（用户可撤销）:\n" + previewBlocks.join('\n\n');
+        resultData = {
           file: args.target_file,
           applied: true,
           status: 'SUCCESS_APPLIED',
@@ -343,7 +401,12 @@ Examples:
           suggestionIds,
           replacementsCount: args.replacements.length,
           preview: finalPreview
-        },
+        };
+      }
+
+      return {
+        success: true,
+        data: resultData,
         duration: Date.now() - startTime
       };
     } catch (error) {
@@ -381,17 +444,54 @@ Examples:
   }
 
   /**
-   * 等待文件切换完成
+   * Wait for the file switch to fully complete.
+   *
+   * The bridge reports the file name change quickly, but the CodeMirror editor
+   * (and thus the DiffAPI) may not have transitioned yet. We use a two-phase
+   * approach:
+   *   Phase 1 – wait for the bridge to report the correct file name
+   *   Phase 2 – wait for the document content to change from the pre-switch
+   *             snapshot, indicating that the CodeMirror editor has loaded the
+   *             new file. Then add a small stabilisation delay so the DiffAPI
+   *             can catch up.
    */
-  private async waitForFileSwitch(targetFileName: string, timeoutMs = 3000): Promise<boolean> {
+  private async waitForFileSwitch(
+    targetFileName: string,
+    timeoutMs = 5000,
+    preSwitchContent: string | null = null
+  ): Promise<boolean> {
     const start = Date.now();
+
+    // Phase 1: wait for the bridge to report the correct file name
     while (Date.now() - start < timeoutMs) {
       const current = await this.getCurrentFileName();
       if (current === targetFileName || (current && targetFileName.endsWith(current))) {
-        return true;
+        break;
       }
       await new Promise(resolve => setTimeout(resolve, 200));
     }
-    return false;
+
+    // Phase 2: wait for the editor content to differ from the pre-switch content.
+    // This ensures the CodeMirror view has actually loaded the new document.
+    if (preSwitchContent !== null && preSwitchContent.trim().length > 0) {
+      const contentDeadline = Date.now() + 3000;
+      while (Date.now() < contentDeadline) {
+        try {
+          const currentContent = await overleafEditor.document.getText();
+          if (currentContent !== preSwitchContent) {
+            break;
+          }
+        } catch { /* ignore */ }
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+
+    // Stabilisation delay: give the DiffAPI time to detect the file switch
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    // Final verification
+    const finalName = await this.getCurrentFileName();
+    return finalName === targetFileName ||
+      (finalName !== null && targetFileName.endsWith(finalName));
   }
 }
