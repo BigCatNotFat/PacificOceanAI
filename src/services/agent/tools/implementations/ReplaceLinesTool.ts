@@ -22,6 +22,7 @@ import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import { diffSuggestionService } from '../../../editor/DiffSuggestionService';
 import type { CreateSuggestionInput } from '../../../../platform/editor/IDiffSuggestionService';
+import { recentlyCreatedFiles } from '../utils/RecentlyCreatedFilesRegistry';
 import { logger } from '../../../../utils/logger';
 
 /**
@@ -328,23 +329,26 @@ Examples:
         logger.debug(`[ReplaceLinesTool] Prepared replacement for lines ${start_line}-${end_line}`);
       }
 
-      // 5. Apply changes using the appropriate strategy.
+      // 5. Choose write strategy.
       //
-      // When we had to switch files, the DiffAPI (injected script) may not
-      // have caught up with the file switch yet – it tracks CodeMirror
-      // instances independently and is slower than the bridge. Sending a diff
-      // suggestion via postMessage would cause it to be applied to the WRONG
-      // file. So we bypass the DiffSuggestionService and use setDocContent
-      // (which goes through the bridge and operates on the correct editor.view).
+      // Use setDocContent (bridge) when:
+      //   a) We had to switch files – the DiffAPI may still track the old
+      //      CodeMirror instance and would apply suggestions to the wrong file.
+      //   b) The file was recently created – CreateFileTool auto-switched to
+      //      it, but the DiffAPI may not have finished initialising yet, so
+      //      diff suggestions would be silently lost.
       //
-      // When the file was already open, the DiffAPI is in sync, so we can
-      // use the nicer diff suggestion UI.
+      // Use DiffSuggestionService only when the file was already open AND
+      // is not a recently-created file, so the DiffAPI is guaranteed to be
+      // in sync and the user gets the nice diff UI.
+
+      const isRecentlyCreated = recentlyCreatedFiles.findByPath(args.target_file) !== null;
+      const useDirectWrite = !isCurrentFile || isRecentlyCreated;
 
       let resultData: Record<string, any>;
 
-      if (!isCurrentFile) {
-        // Direct write via bridge – avoids DiffAPI race condition
-        logger.debug('[ReplaceLinesTool] File was switched – using direct setDocContent to avoid DiffAPI race');
+      if (useDirectWrite) {
+        logger.debug(`[ReplaceLinesTool] Using direct setDocContent (switched=${!isCurrentFile}, recentlyCreated=${isRecentlyCreated})`);
 
         const newLines = [...lines];
         const sorted = [...processedReplacements].sort((a, b) => b.start_line - a.start_line);

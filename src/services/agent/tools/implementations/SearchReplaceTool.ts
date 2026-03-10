@@ -22,6 +22,7 @@ import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import { diffSuggestionService } from '../../../editor/DiffSuggestionService';
 import type { CreateSegmentSuggestionInput } from '../../../../platform/editor/IDiffSuggestionService';
+import { recentlyCreatedFiles } from '../utils/RecentlyCreatedFilesRegistry';
 import { logger } from '../../../../utils/logger';
 
 /**
@@ -301,15 +302,14 @@ Good examples:
 
       const lineNumbers = matchesToProcess.map(m => m.startLine);
 
-      // 7. Apply changes using the appropriate strategy.
-      // When we had to switch files, the DiffAPI may not have caught up
-      // (it tracks CodeMirror instances independently). Using postMessage-
-      // based diff suggestions would apply them to the WRONG file. So we
-      // use setDocContent (bridge) which operates on the correct editor.view.
+      // 7. Choose write strategy (same logic as ReplaceLinesTool).
+      const isRecentlyCreated = recentlyCreatedFiles.findByPath(args.target_file) !== null;
+      const useDirectWrite = !isCurrentFile || isRecentlyCreated;
+
       let resultData: Record<string, any>;
 
-      if (!isCurrentFile) {
-        logger.debug('[SearchReplaceTool] File was switched – using direct setDocContent');
+      if (useDirectWrite) {
+        logger.debug(`[SearchReplaceTool] Using direct setDocContent (switched=${!isCurrentFile}, recentlyCreated=${isRecentlyCreated})`);
 
         // Apply all replacements from back to front by offset
         let newContent = originalContent;
