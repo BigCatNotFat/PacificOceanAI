@@ -97,23 +97,26 @@ old_string = "regularization is a crucial technique..."
       logger.debug('[EditFileTool] Step 1: Checking if target file is current file');
       const currentFileName = await this.getCurrentFileName();
       const targetBaseName = args.target_file.split('/').pop() || args.target_file;
-      const isCurrentFile = currentFileName === targetBaseName || 
-                           currentFileName === args.target_file ||
-                           args.target_file.endsWith(currentFileName || '');
+      const isCurrentFile = currentFileName !== null && (
+        currentFileName === targetBaseName || 
+        currentFileName === args.target_file ||
+        args.target_file.endsWith(currentFileName)
+      );
       
       logger.debug('[EditFileTool] Current file:', currentFileName, 'Target:', targetBaseName, 'Is current:', isCurrentFile);
 
       // 2. 如果不是当前文件，尝试切换
       if (!isCurrentFile) {
         logger.debug(`[EditFileTool] Target file "${targetBaseName}" is not active (current: "${currentFileName}"). Attempting to switch...`);
+
+        let preSwitchContent: string | null = null;
+        try { preSwitchContent = await overleafEditor.document.getText(); } catch { /* ignore */ }
         
-        // 尝试切换文件
         const switchResult = await overleafEditor.file.switchFile(targetBaseName);
         
         if (!switchResult.success) {
           console.error('[EditFileTool] Switch failed:', switchResult.error);
           
-          // 如果切换失败，尝试回退到旧逻辑（检查是否在项目中但未打开）
           const docId = await this.getDocIdByPath(args.target_file);
           if (!docId) {
             return {
@@ -132,8 +135,7 @@ old_string = "regularization is a crucial technique..."
 
         logger.debug('[EditFileTool] Switch command sent. Waiting for editor to update...');
         
-        // 等待文件切换完成
-        const switchSuccess = await this.waitForFileSwitch(targetBaseName);
+        const switchSuccess = await this.waitForFileSwitch(targetBaseName, 5000, preSwitchContent);
         
         if (!switchSuccess) {
           return {
@@ -345,19 +347,42 @@ old_string = "regularization is a crucial technique..."
   }
 
   /**
-   * 等待文件切换完成
-   * 轮询检查当前文件名是否与目标匹配
+   * Wait for file switch to fully complete (bridge + CodeMirror + DiffAPI).
+   * See ReplaceLinesTool.waitForFileSwitch for detailed rationale.
    */
-  private async waitForFileSwitch(targetFileName: string, timeoutMs = 3000): Promise<boolean> {
+  private async waitForFileSwitch(
+    targetFileName: string,
+    timeoutMs = 5000,
+    preSwitchContent: string | null = null
+  ): Promise<boolean> {
     const start = Date.now();
+
     while (Date.now() - start < timeoutMs) {
       const current = await this.getCurrentFileName();
       if (current === targetFileName || (current && targetFileName.endsWith(current))) {
-        return true;
+        break;
       }
       await new Promise(resolve => setTimeout(resolve, 200));
     }
-    return false;
+
+    if (preSwitchContent !== null && preSwitchContent.trim().length > 0) {
+      const contentDeadline = Date.now() + 3000;
+      while (Date.now() < contentDeadline) {
+        try {
+          const currentContent = await overleafEditor.document.getText();
+          if (currentContent !== preSwitchContent) {
+            break;
+          }
+        } catch { /* ignore */ }
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 600));
+
+    const finalName = await this.getCurrentFileName();
+    return finalName === targetFileName ||
+      (finalName !== null && targetFileName.endsWith(finalName));
   }
 
   /**

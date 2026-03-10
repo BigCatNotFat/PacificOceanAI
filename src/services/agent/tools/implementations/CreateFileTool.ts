@@ -9,6 +9,7 @@ import { BaseTool } from '../base/BaseTool';
 import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import { getAllEntities } from '../utils/FileEntityResolver';
+import { recentlyCreatedFiles } from '../utils/RecentlyCreatedFilesRegistry';
 
 export class CreateFileTool extends BaseTool {
   protected metadata: ToolMetadata = {
@@ -101,6 +102,14 @@ The file will be created in the project root by default. To create inside a subf
         console.log('[CreateFileTool] Calling newFolder:', name, parentFolderId);
         const result = await overleafEditor.fileOps.newFolder(name, parentFolderId);
         console.log('[CreateFileTool] newFolder result:', result);
+
+        recentlyCreatedFiles.register({
+          name,
+          path: filePath,
+          id: result._id,
+          type: 'folder'
+        });
+
         return {
           success: true,
           data: {
@@ -116,6 +125,19 @@ The file will be created in the project root by default. To create inside a subf
         console.log('[CreateFileTool] Calling newDoc:', name, parentFolderId);
         const result = await overleafEditor.fileOps.newDoc(name, parentFolderId);
         console.log('[CreateFileTool] newDoc result:', result);
+
+        recentlyCreatedFiles.register({
+          name,
+          path: filePath,
+          id: result._id,
+          type: 'doc'
+        });
+
+        // Wait for the file to appear in Overleaf's state, then open it so
+        // subsequent tools (replace_lines, search_replace) can work immediately.
+        await this.waitForFileInTree(name, 5000);
+        await this.switchToNewFile(name);
+
         return {
           success: true,
           data: {
@@ -123,7 +145,7 @@ The file will be created in the project root by default. To create inside a subf
             name,
             path: filePath,
             id: result._id,
-            message: `Successfully created file "${filePath}". Use search_replace or replace_lines to write content into it.`
+            message: `Successfully created file "${filePath}". The file is now open in the editor. Use search_replace or replace_lines to write content into it.`
           },
           duration: Date.now() - startTime
         };
@@ -143,6 +165,75 @@ The file will be created in the project root by default. To create inside a subf
 
   private normalizePath(p: string): string {
     return p.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+  }
+
+  /**
+   * Poll the bridge's listFiles until the new file appears (or timeout).
+   */
+  private async waitForFileInTree(fileName: string, timeoutMs = 5000): Promise<boolean> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const files = await overleafEditor.fileOps.listFiles();
+        if (files.some(f => f.name === fileName)) {
+          console.log('[CreateFileTool] File appeared in tree:', fileName);
+          return true;
+        }
+      } catch { /* ignore */ }
+      await new Promise(r => setTimeout(r, 500));
+    }
+    console.warn('[CreateFileTool] Timed out waiting for file in tree:', fileName);
+    return false;
+  }
+
+  /**
+   * Switch the editor to the newly created file so subsequent tools can
+   * read/write it immediately.
+   *
+   * Waits for both the bridge file name report AND the CodeMirror/DiffAPI to
+   * fully transition, matching the logic used by the write tools.
+   */
+  private async switchToNewFile(fileName: string): Promise<void> {
+    try {
+      // Capture pre-switch content
+      let preSwitchContent: string | null = null;
+      try { preSwitchContent = await overleafEditor.document.getText(); } catch { /* ignore */ }
+
+      const switchResult = await overleafEditor.file.switchFile(fileName);
+      if (!switchResult.success) {
+        console.warn('[CreateFileTool] Could not auto-switch to new file:', switchResult.error);
+        return;
+      }
+
+      // Phase 1: wait for bridge to report the correct file name
+      const start = Date.now();
+      while (Date.now() - start < 5000) {
+        try {
+          const info = await overleafEditor.file.getInfo();
+          if (info.fileName === fileName) break;
+        } catch { /* ignore */ }
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      // Phase 2: wait for editor content to change (new file should be empty)
+      if (preSwitchContent !== null && preSwitchContent.trim().length > 0) {
+        const contentDeadline = Date.now() + 3000;
+        while (Date.now() < contentDeadline) {
+          try {
+            const currentContent = await overleafEditor.document.getText();
+            if (currentContent !== preSwitchContent) break;
+          } catch { /* ignore */ }
+          await new Promise(r => setTimeout(r, 200));
+        }
+      }
+
+      // Phase 3: stabilisation delay for DiffAPI
+      await new Promise(r => setTimeout(r, 600));
+
+      console.log('[CreateFileTool] Switched to new file:', fileName);
+    } catch (err) {
+      console.warn('[CreateFileTool] switchToNewFile error:', err);
+    }
   }
 
   /**

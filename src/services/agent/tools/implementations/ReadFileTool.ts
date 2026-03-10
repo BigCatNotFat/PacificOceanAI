@@ -11,6 +11,7 @@ import { BaseTool } from '../base/BaseTool';
 import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import type { ReadLinesResult } from '../../../editor/bridge';
+import { recentlyCreatedFiles } from '../utils/RecentlyCreatedFilesRegistry';
 
 /**
  * 读取文件工具
@@ -276,7 +277,8 @@ Each time you call this tool, you should:
 
   /**
    * 根据文件路径查找对应的 docId
-   * 优先从文件树 API 获取，fallback 到 DOM
+   * 优先从文件树 API 获取，fallback 到 DOM，再 fallback 到 recently-created registry。
+   * 如果文件刚刚创建，会重试几次以等待 Overleaf 同步。
    */
   private async getDocIdByPath(targetFile: string): Promise<string | null> {
     const normalizedPath = targetFile.startsWith('/') ? targetFile : `/${targetFile}`;
@@ -319,6 +321,40 @@ Each time you call this tool, you should:
       }
     } catch (error) {
       console.warn('[ReadFileTool] 获取当前文件信息失败:', error);
+    }
+
+    // 策略 4: 从 recently-created-files registry 获取
+    const recentEntry = recentlyCreatedFiles.findByPath(targetFile);
+    if (recentEntry) {
+      console.log('[ReadFileTool] 从 recently-created registry 找到 docId:', recentEntry.id);
+      return recentEntry.id;
+    }
+
+    // 策略 5: 如果上面都没找到，可能是文件刚创建但还没同步。
+    // 等待一段时间后重试 DOM + REST API。
+    console.log('[ReadFileTool] 未立即找到 docId，等待后重试...');
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await new Promise(r => setTimeout(r, 1000));
+
+      const retryDomMap = this.getDomFileIdMap();
+      const retryId = retryDomMap.get(baseName);
+      if (retryId) {
+        console.log(`[ReadFileTool] 重试 ${attempt + 1}: 从 DOM 找到 docId:`, retryId);
+        return retryId;
+      }
+
+      try {
+        const fileTree = await overleafEditor.project.getFileTree();
+        for (const entity of fileTree.entities) {
+          const entityAny = entity as any;
+          const id = entity.id ?? entity._id ?? entityAny.doc_id ?? entityAny.docId;
+          if (!id) continue;
+          if (entity.path === normalizedPath || entity.path.split('/').pop() === baseName) {
+            console.log(`[ReadFileTool] 重试 ${attempt + 1}: 从 REST API 找到 docId:`, id);
+            return id;
+          }
+        }
+      } catch { /* ignore */ }
     }
 
     console.error('[ReadFileTool] 所有策略均未找到 docId', { targetFile });

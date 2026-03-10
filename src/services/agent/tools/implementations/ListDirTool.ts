@@ -10,6 +10,7 @@ import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import type { FileTreeEntity } from '../../../editor/modules/ProjectModule';
 import type { FileEntity } from '../../../editor/modules/FileOpsModule';
+import { recentlyCreatedFiles } from '../utils/RecentlyCreatedFilesRegistry';
 
 /** 文件项信息（带可选统计） */
 interface FileItem {
@@ -79,8 +80,10 @@ export class ListDirTool extends BaseTool {
       // 过滤出指定目录下的文件
       const result = this.filterByDirectory(fileTree.entities, normalizedPath);
 
-      // REST API 不返回空文件夹，通过 Bridge listFiles 补全
-      await this.mergeEmptyFolders(result.items, normalizedPath);
+      // Bridge listFiles reads from React Fiber state which updates faster
+      // than the REST API. Merge ALL entity types (not just folders) so that
+      // recently created files are also visible.
+      await this.mergeBridgeEntities(result.items, normalizedPath);
 
       // 默认获取文件统计信息
       await this.enrichWithStats(result.items, fileTree.project_id);
@@ -235,63 +238,91 @@ export class ListDirTool extends BaseTool {
   }
 
   /**
-   * REST API `/project/{id}/entities` 只返回 doc/file 叶节点，不包含空文件夹。
-   * 通过 Bridge `listFiles`（读取 React Fiber 内部状态）补全缺失的文件夹。
+   * Merge entities from Bridge `listFiles` (React Fiber state) into the result.
    *
-   * Bridge listFiles 的路径格式: "rootFolderName/subfolder/file.tex"
-   * 其中第一段是根文件夹名称（不应显示给用户）。
+   * The REST API `/project/{id}/entities` may lag behind after file creation.
+   * The bridge reads from React Fiber state which updates much faster.
+   * We merge ALL entity types (folders AND docs/files) so that recently
+   * created files are visible immediately.
+   *
+   * Bridge listFiles path format: "rootFolderName/subfolder/file.tex"
+   * The first segment is the root folder name and should be stripped.
    */
-  private async mergeEmptyFolders(items: FileItem[], dirPath: string): Promise<void> {
+  private async mergeBridgeEntities(items: FileItem[], dirPath: string): Promise<void> {
     try {
       const bridgeFiles = await overleafEditor.fileOps.listFiles();
-      const folders = bridgeFiles.filter(f => f.type === 'folder');
-      if (folders.length === 0) return;
+      if (bridgeFiles.length === 0) return;
 
-      // 根文件夹：path 中不含 "/" 的文件夹就是 root
-      const rootFolder = folders.find(f => !f.path.includes('/'));
+      const rootFolder = bridgeFiles.find(f => f.type === 'folder' && !f.path.includes('/'));
       const rootPrefix = rootFolder ? rootFolder.path + '/' : '';
 
+      const existingIds = new Set(items.filter(i => i.id).map(i => i.id));
       const existingNames = new Set(items.map(i => i.name));
       const normalizedDir = dirPath === '/' ? '' : dirPath.replace(/^\/+/, '');
 
-      for (const f of folders) {
+      for (const f of bridgeFiles) {
         if (f === rootFolder) continue;
 
-        // 将 bridge 路径转为相对于项目根的路径（去掉根文件夹前缀）
         let relativePath = f.path;
         if (rootPrefix && relativePath.startsWith(rootPrefix)) {
           relativePath = relativePath.slice(rootPrefix.length);
         }
 
-        // 判断此文件夹是否是 dirPath 的直接子文件夹
-        if (normalizedDir === '') {
-          // 列出根目录：直接子文件夹 = 路径中不含 "/"
-          if (!relativePath.includes('/') && !existingNames.has(f.name)) {
-            existingNames.add(f.name);
-            items.push({
-              name: f.name,
-              type: 'directory',
-              path: `/${f.name}`,
-              id: f.id
-            });
-          }
-        } else {
-          // 列出子目录：路径应该是 "normalizedDir/folderName" 且没有更深层级
-          const expected = normalizedDir + '/' + f.name;
-          if (relativePath === expected && !existingNames.has(f.name)) {
-            existingNames.add(f.name);
-            items.push({
-              name: f.name,
-              type: 'directory',
-              path: `/${relativePath}`,
-              id: f.id
-            });
-          }
-        }
+        if (existingIds.has(f.id)) continue;
+
+        const isDirectChild = this.isDirectChildOf(relativePath, normalizedDir);
+        if (!isDirectChild) continue;
+
+        if (existingNames.has(f.name)) continue;
+
+        existingNames.add(f.name);
+        existingIds.add(f.id);
+
+        const itemType = f.type === 'folder' ? 'directory' : (f.type === 'doc' ? 'doc' : 'file');
+        items.push({
+          name: f.name,
+          type: itemType,
+          path: relativePath.startsWith('/') ? relativePath : `/${relativePath}`,
+          id: f.id
+        });
+      }
+
+      // Also merge from the recently-created-files registry as a final fallback
+      for (const entry of recentlyCreatedFiles.getAll()) {
+        const entryPath = entry.path.replace(/^\/+/, '');
+        if (existingNames.has(entry.name)) continue;
+
+        const isDirectChild = this.isDirectChildOf(entryPath, normalizedDir);
+        if (!isDirectChild) continue;
+
+        existingNames.add(entry.name);
+        items.push({
+          name: entry.name,
+          type: entry.type === 'folder' ? 'directory' : 'doc',
+          path: entryPath.startsWith('/') ? entryPath : `/${entryPath}`,
+          id: entry.id
+        });
       }
     } catch (error) {
-      console.warn('[ListDirTool] mergeEmptyFolders failed (non-critical):', error);
+      console.warn('[ListDirTool] mergeBridgeEntities failed (non-critical):', error);
     }
+  }
+
+  /**
+   * Check if `relativePath` is a direct child of `parentDir`.
+   * E.g. isDirectChildOf("sections/intro.tex", "sections") -> true
+   *      isDirectChildOf("intro.tex", "") -> true (root child)
+   *      isDirectChildOf("sections/sub/x.tex", "sections") -> false
+   */
+  private isDirectChildOf(relativePath: string, parentDir: string): boolean {
+    if (parentDir === '') {
+      return !relativePath.includes('/');
+    }
+    if (!relativePath.startsWith(parentDir + '/')) {
+      return false;
+    }
+    const rest = relativePath.slice(parentDir.length + 1);
+    return !rest.includes('/');
   }
 
   private getDomFileIdMap(): Map<string, string> {
