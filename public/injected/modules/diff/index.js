@@ -133,6 +133,8 @@ function restoreSuggestionsForCurrentFile() {
 function onFileChanged(oldFileName, newFileName) {
   setTimeout(() => {
     restoreSuggestionsForCurrentFile();
+    // Notify content script that DiffAPI is ready for the new file
+    window.postMessage({ type: 'DIFF_READY', data: { file: newFileName } }, '*');
   }, 300);
 }
 

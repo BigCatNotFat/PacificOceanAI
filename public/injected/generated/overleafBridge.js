@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-03-09T18:30:56.152Z
+ * 构建时间: 2026-03-10T10:28:29.583Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */
@@ -2980,6 +2980,7 @@
       }
     };
     debug("[DiffAPI] Diff API \u51C6\u5907\u5C31\u7EEA!");
+    window.postMessage({ type: "DIFF_READY", data: { file: diffCurrentFileName } }, "*");
   }
   function initDiffMessageListeners() {
     window.addEventListener("message", function(event) {
@@ -3032,6 +3033,10 @@
         if (window.diffAPI) window.diffAPI.rejectAll();
       } else if (data.type === "DIFF_CLEAR_ALL") {
         if (window.diffAPI) window.diffAPI.clearAll();
+      } else if (data.type === "DIFF_PING") {
+        if (window.diffAPI) {
+          window.postMessage({ type: "DIFF_PONG", data: { file: diffCurrentFileName } }, "*");
+        }
       }
     });
   }
@@ -3131,6 +3136,7 @@
   function onFileChanged(oldFileName, newFileName) {
     setTimeout(() => {
       restoreSuggestionsForCurrentFile();
+      window.postMessage({ type: "DIFF_READY", data: { file: newFileName } }, "*");
     }, 300);
   }
   function checkFileChange() {

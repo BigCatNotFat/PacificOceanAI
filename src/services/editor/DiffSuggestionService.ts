@@ -40,6 +40,9 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
   private readonly _onSuggestionResolved = new Emitter<SuggestionResolvedEvent>();
   readonly onSuggestionResolved: Event<SuggestionResolvedEvent> = this._onSuggestionResolved.event;
 
+  /** DiffAPI readiness tracking */
+  private readyFile: string | null = null;
+  private readyResolvers: Array<(file: string) => void> = [];
   
   private constructor() {
     super();
@@ -71,14 +74,16 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       const data = event.data;
       if (!data) return;
       
-      // 处理建议决策消息（工具调用的 diff 建议）
       if (data.type === 'DIFF_SUGGESTION_RESOLVED') {
         this.handleSuggestionResolved(data.data);
       }
       
-      // 处理文本操作决策消息（expand, translate 等的 diff 建议）
       if (data.type === 'OVERLEAF_TEXT_ACTION_DECISION') {
         this.handleTextActionDecision(data.data);
+      }
+      
+      if (data.type === 'DIFF_READY' || data.type === 'DIFF_PONG') {
+        this.handleDiffReady(data.data?.file ?? null);
       }
     };
     
@@ -420,6 +425,63 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
     return this.suggestions.get(id);
   }
   
+  /**
+   * Handle DiffAPI readiness signal (DIFF_READY / DIFF_PONG).
+   */
+  private handleDiffReady(file: string | null): void {
+    this.readyFile = file;
+    logger.debug(`[DiffSuggestionService] DiffAPI ready for file: ${file}`);
+    const resolvers = this.readyResolvers;
+    this.readyResolvers = [];
+    for (const resolve of resolvers) {
+      resolve(file ?? '');
+    }
+  }
+
+  /**
+   * Wait until the DiffAPI is ready for the given file.
+   * Sends DIFF_PING and listens for DIFF_READY/DIFF_PONG.
+   * Resolves `true` when ready, `false` on timeout.
+   */
+  async waitForReady(targetFile: string, timeoutMs = 8000): Promise<boolean> {
+    // Already ready for this file
+    if (this.readyFile === targetFile) {
+      return true;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+
+      const onReady = (file: string) => {
+        if (settled) return;
+        settled = true;
+        resolve(true);
+      };
+
+      this.readyResolvers.push(onReady);
+
+      // Send a ping to trigger an immediate response if DiffAPI is already ready
+      window.postMessage({ type: 'DIFF_PING' }, '*');
+
+      // Also retry pings periodically in case the first one was too early
+      const pingInterval = setInterval(() => {
+        if (settled) { clearInterval(pingInterval); return; }
+        window.postMessage({ type: 'DIFF_PING' }, '*');
+      }, 500);
+
+      setTimeout(() => {
+        clearInterval(pingInterval);
+        if (!settled) {
+          settled = true;
+          // Remove our resolver
+          this.readyResolvers = this.readyResolvers.filter(r => r !== onReady);
+          logger.debug(`[DiffSuggestionService] waitForReady timed out for: ${targetFile}`);
+          resolve(false);
+        }
+      }, timeoutMs);
+    });
+  }
+
   /**
    * 清除所有建议
    */

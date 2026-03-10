@@ -22,7 +22,6 @@ import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import { diffSuggestionService } from '../../../editor/DiffSuggestionService';
 import type { CreateSuggestionInput } from '../../../../platform/editor/IDiffSuggestionService';
-import { recentlyCreatedFiles } from '../utils/RecentlyCreatedFilesRegistry';
 import { logger } from '../../../../utils/logger';
 
 /**
@@ -331,24 +330,27 @@ Examples:
 
       // 5. Choose write strategy.
       //
-      // Use setDocContent (bridge) when:
-      //   a) We had to switch files – the DiffAPI may still track the old
-      //      CodeMirror instance and would apply suggestions to the wrong file.
-      //   b) The file was recently created – CreateFileTool auto-switched to
-      //      it, but the DiffAPI may not have finished initialising yet, so
-      //      diff suggestions would be silently lost.
+      // Always try to use DiffSuggestionService for the diff UI. But first
+      // wait for the DiffAPI to be ready (it sends DIFF_READY / DIFF_PONG).
+      // If it's not ready within the timeout, fall back to setDocContent.
       //
-      // Use DiffSuggestionService only when the file was already open AND
-      // is not a recently-created file, so the DiffAPI is guaranteed to be
-      // in sync and the user gets the nice diff UI.
+      // When we had to switch files we skip the wait entirely (the DiffAPI
+      // is definitely not tracking the right file yet).
 
-      const isRecentlyCreated = recentlyCreatedFiles.findByPath(args.target_file) !== null;
-      const useDirectWrite = !isCurrentFile || isRecentlyCreated;
+      let useDiffService = isCurrentFile;
+
+      if (useDiffService) {
+        const ready = await diffSuggestionService.waitForReady(targetBaseName, 8000);
+        if (!ready) {
+          logger.debug('[ReplaceLinesTool] DiffAPI not ready in time – falling back to setDocContent');
+          useDiffService = false;
+        }
+      }
 
       let resultData: Record<string, any>;
 
-      if (useDirectWrite) {
-        logger.debug(`[ReplaceLinesTool] Using direct setDocContent (switched=${!isCurrentFile}, recentlyCreated=${isRecentlyCreated})`);
+      if (!useDiffService) {
+        logger.debug(`[ReplaceLinesTool] Using direct setDocContent (switched=${!isCurrentFile})`);
 
         const newLines = [...lines];
         const sorted = [...processedReplacements].sort((a, b) => b.start_line - a.start_line);

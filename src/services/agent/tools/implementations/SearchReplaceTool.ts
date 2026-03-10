@@ -22,7 +22,6 @@ import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import { diffSuggestionService } from '../../../editor/DiffSuggestionService';
 import type { CreateSegmentSuggestionInput } from '../../../../platform/editor/IDiffSuggestionService';
-import { recentlyCreatedFiles } from '../utils/RecentlyCreatedFilesRegistry';
 import { logger } from '../../../../utils/logger';
 
 /**
@@ -303,13 +302,20 @@ Good examples:
       const lineNumbers = matchesToProcess.map(m => m.startLine);
 
       // 7. Choose write strategy (same logic as ReplaceLinesTool).
-      const isRecentlyCreated = recentlyCreatedFiles.findByPath(args.target_file) !== null;
-      const useDirectWrite = !isCurrentFile || isRecentlyCreated;
+      let useDiffService = isCurrentFile;
+
+      if (useDiffService) {
+        const ready = await diffSuggestionService.waitForReady(targetBaseName, 8000);
+        if (!ready) {
+          logger.debug('[SearchReplaceTool] DiffAPI not ready in time – falling back to setDocContent');
+          useDiffService = false;
+        }
+      }
 
       let resultData: Record<string, any>;
 
-      if (useDirectWrite) {
-        logger.debug(`[SearchReplaceTool] Using direct setDocContent (switched=${!isCurrentFile}, recentlyCreated=${isRecentlyCreated})`);
+      if (!useDiffService) {
+        logger.debug(`[SearchReplaceTool] Using direct setDocContent (switched=${!isCurrentFile})`);
 
         // Apply all replacements from back to front by offset
         let newContent = originalContent;

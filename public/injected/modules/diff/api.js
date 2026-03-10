@@ -606,6 +606,9 @@ export function setupDiffAPI() {
   };
   
   debug('[DiffAPI] Diff API 准备就绪!');
+
+  // Notify content script that DiffAPI is ready for the current file
+  window.postMessage({ type: 'DIFF_READY', data: { file: diffCurrentFileName } }, '*');
 }
 
 /**
@@ -673,6 +676,11 @@ export function initDiffMessageListeners() {
     }
     else if (data.type === 'DIFF_CLEAR_ALL') {
       if (window.diffAPI) window.diffAPI.clearAll();
+    }
+    else if (data.type === 'DIFF_PING') {
+      if (window.diffAPI) {
+        window.postMessage({ type: 'DIFF_PONG', data: { file: diffCurrentFileName } }, '*');
+      }
     }
   });
 }
