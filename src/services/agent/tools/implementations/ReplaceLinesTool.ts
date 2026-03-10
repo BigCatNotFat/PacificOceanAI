@@ -36,50 +36,72 @@ interface Replacement {
 /**
  * 行号替换工具
  * 
- * 通过指定起始行号和结束行号来替换内容，支持批量替换多个区域
+ * 通过指定起始行号和结束行号来替换内容，支持批量替换多个文件的多个区域
  * 修改直接写入文档（可编译），同时以 diff 视觉效果展示，用户可撤销
  */
 export class ReplaceLinesTool extends BaseTool {
   protected metadata: ToolMetadata = {
     name: 'replace_lines',
-    description: `Replace content in a file by specifying line numbers. Supports batch replacement of multiple non-contiguous regions in a single call.
+    description: `Replace content in one or more files by specifying line numbers. Supports batch replacement across multiple files in a single call.
+
+**Batch multi-file mode (recommended):** Provide an \`operations\` array, each item contains: target_file and its replacements array.
+**Single file mode (backward compatible):** Provide target_file and replacements directly.
 
 Usage:
 1. Use the line numbers from \`read_file\` output (1-indexed).
-2. Provide a \`replacements\` array, each item contains: start_line, end_line, new_content.
+2. Each replacement contains: start_line, end_line, new_content.
 3. To replace a single line, set start_line and end_line to the same value.
-4. Multiple replacements will be applied automatically from bottom to top to avoid line number shifts.！！注意不用考虑行号的改变，因为该工具在实现时是从后往前替换的，所以你只需要考虑替换的内容。！！
+4. Multiple replacements will be applied automatically from bottom to top to avoid line number shifts. You do NOT need to worry about shifting line numbers.
 5. Changes are applied immediately to the document and are compilable right away. Users can undo individual changes if needed, but this does not block you.
+
 Examples:
-- Single replacement: replacements=[{start_line:207, end_line:218, new_content:"..."}]
-- Multiple replacements: replacements=[{start_line:10, end_line:15, new_content:"..."}, {start_line:50, end_line:55, new_content:"..."}]
+- Single file: target_file="main.tex", replacements=[{start_line:207, end_line:218, new_content:"..."}]
+- Multi-file batch: operations=[{target_file:"main.tex", replacements:[{start_line:10, end_line:15, new_content:"..."}]}, {target_file:"intro.tex", replacements:[{start_line:1, end_line:5, new_content:"..."}]}]
 - Delete lines: replacements=[{start_line:50, end_line:60, new_content:""}]`,
 
     parameters: {
       type: 'object',
       properties: {
-        target_file: {
-          type: 'string',
-          description: 'The target file to modify.'
-        },
-        replacements: {
+        operations: {
           type: 'array',
-          description: 'Array of replacement operations. Each item has start_line, end_line, and new_content.',
+          description: 'Array of per-file operations. Each item has target_file and its replacements. Use this for multi-file batch editing.',
           items: {
             type: 'object',
             properties: {
-              start_line: {
-                type: 'number',
-                description: 'Start line number (1-indexed, inclusive).'
-              },
-              end_line: {
-                type: 'number',
-                description: 'End line number (1-indexed, inclusive).'
-              },
-              new_content: {
+              target_file: {
                 type: 'string',
-                description: 'The new content to replace the specified lines. Can be multiple lines. Use empty string to delete lines.'
+                description: 'The target file to modify.'
+              },
+              replacements: {
+                type: 'array',
+                description: 'Array of replacement operations for this file.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    start_line: { type: 'number', description: 'Start line number (1-indexed, inclusive).' },
+                    end_line: { type: 'number', description: 'End line number (1-indexed, inclusive).' },
+                    new_content: { type: 'string', description: 'The new content to replace the specified lines.' }
+                  },
+                  required: ['start_line', 'end_line', 'new_content']
+                }
               }
+            },
+            required: ['target_file', 'replacements']
+          }
+        },
+        target_file: {
+          type: 'string',
+          description: '(Single file mode) The target file to modify.'
+        },
+        replacements: {
+          type: 'array',
+          description: '(Single file mode) Array of replacement operations.',
+          items: {
+            type: 'object',
+            properties: {
+              start_line: { type: 'number', description: 'Start line number (1-indexed, inclusive).' },
+              end_line: { type: 'number', description: 'End line number (1-indexed, inclusive).' },
+              new_content: { type: 'string', description: 'The new content to replace the specified lines.' }
             },
             required: ['start_line', 'end_line', 'new_content']
           }
@@ -89,9 +111,9 @@ Examples:
           description: 'Brief one-sentence summary of the changes.'
         }
       },
-      required: ['target_file', 'replacements', 'explanation']
+      required: ['explanation']
     },
-    needApproval: false, // 使用新的 diff 建议机制，不使用旧的审批流程
+    needApproval: false,
     modes: ['agent']
   };
 
@@ -177,242 +199,248 @@ Examples:
   }
 
   /**
-   * 执行行号替换（支持批量）
-   * 
-   * 创建 diff 建议而不是直接修改，用户可以选择接受或拒绝
+   * 单个文件操作定义
    */
-  async execute(args: {
-    target_file: string;
-    replacements: Replacement[];
-    explanation: string;
-  }): Promise<ToolExecutionResult> {
-    const startTime = Date.now();
-    // 生成一个工具调用 ID
-    const toolCallId = `replace_lines_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  private normalizeToOperations(args: any): Array<{ target_file: string; replacements: Replacement[] }> {
+    if (Array.isArray(args.operations) && args.operations.length > 0) {
+      return args.operations;
+    }
+    if (args.target_file && Array.isArray(args.replacements)) {
+      return [{ target_file: args.target_file, replacements: args.replacements }];
+    }
+    return [];
+  }
 
-    try {
-      logger.debug('[ReplaceLinesTool] execute called with:', {
-        target_file: args.target_file,
-        replacements_count: args.replacements?.length,
-        explanation: args.explanation
-      });
+  /**
+   * 对单个文件执行行号替换
+   */
+  private async executeForFile(
+    targetFile: string,
+    replacements: Replacement[],
+    toolCallId: string
+  ): Promise<{ success: boolean; data?: Record<string, any>; error?: string }> {
+    // 验证每个替换操作的行号
+    for (let i = 0; i < replacements.length; i++) {
+      const r = replacements[i];
+      if (r.start_line < 1) {
+        return { success: false, error: `[${targetFile}] Replacement ${i + 1}: start_line must be >= 1` };
+      }
+      if (r.end_line < r.start_line) {
+        return { success: false, error: `[${targetFile}] Replacement ${i + 1}: end_line must be >= start_line` };
+      }
+    }
 
-      // 参数验证
-      if (!args.target_file || !args.replacements || !args.explanation) {
-        return {
-          success: false,
-          error: 'Missing required parameters: target_file, replacements, or explanation',
-          duration: Date.now() - startTime
-        };
+    // 1. 检查并切换到目标文件
+    const currentFileName = await this.getCurrentFileName();
+    const targetBaseName = targetFile.split('/').pop() || targetFile;
+    const isCurrentFile = currentFileName !== null && (
+      currentFileName === targetBaseName ||
+      currentFileName === targetFile ||
+      targetFile.endsWith(currentFileName)
+    );
+
+    if (!isCurrentFile) {
+      logger.debug(`[ReplaceLinesTool] Switching to file "${targetBaseName}"...`);
+
+      let preSwitchContent: string | null = null;
+      try { preSwitchContent = await overleafEditor.document.getText(); } catch { /* ignore */ }
+
+      const switchResult = await overleafEditor.file.switchFile(targetBaseName);
+      if (!switchResult.success) {
+        return { success: false, error: `[${targetFile}] 无法切换到文件: ${switchResult.error}` };
       }
 
-      if (!Array.isArray(args.replacements) || args.replacements.length === 0) {
-        return {
-          success: false,
-          error: 'replacements must be a non-empty array',
-          duration: Date.now() - startTime
-        };
+      const switchSuccess = await this.waitForFileSwitch(targetBaseName, 5000, preSwitchContent);
+      if (!switchSuccess) {
+        return { success: false, error: `[${targetFile}] 文件切换超时` };
       }
+    }
 
-      // 验证每个替换操作的行号
-      for (let i = 0; i < args.replacements.length; i++) {
-        const r = args.replacements[i];
-        if (r.start_line < 1) {
-          return {
-            success: false,
-            error: `Replacement ${i + 1}: start_line must be >= 1`,
-            duration: Date.now() - startTime
-          };
-        }
-        if (r.end_line < r.start_line) {
-          return {
-            success: false,
-            error: `Replacement ${i + 1}: end_line must be >= start_line`,
-            duration: Date.now() - startTime
-          };
-        }
+    // 2. 获取当前文件内容
+    const originalContent = await overleafEditor.document.getText();
+    const lines = originalContent.split('\n');
+    const totalLines = lines.length;
+
+    // 3. 验证所有行号范围
+    for (let i = 0; i < replacements.length; i++) {
+      const r = replacements[i];
+      if (r.end_line > totalLines) {
+        return { success: false, error: `[${targetFile}] Replacement ${i + 1}: Invalid line range ${r.start_line}-${r.end_line}. File has only ${totalLines} lines.` };
       }
+    }
 
-      // 1. 检查并切换到目标文件
-      const currentFileName = await this.getCurrentFileName();
-      const targetBaseName = args.target_file.split('/').pop() || args.target_file;
-      const isCurrentFile = currentFileName !== null && (
-        currentFileName === targetBaseName ||
-        currentFileName === args.target_file ||
-        args.target_file.endsWith(currentFileName)
+    // 4. 准备替换内容并生成预览
+    const previewBlocks: string[] = [];
+    const processedReplacements: Array<{
+      start_line: number;
+      end_line: number;
+      processedContent: string;
+      originalSegment: string[];
+    }> = [];
+
+    for (const replacement of replacements) {
+      const { start_line, end_line, new_content } = replacement;
+      const processedContent = this.preprocessLatex(new_content);
+      const startIdx = start_line - 1;
+      const endIdx = end_line;
+      const originalSegment = lines.slice(startIdx, endIdx);
+      const newContentLines = processedContent ? processedContent.split('\n') : [];
+
+      const previewBlock = this.generateDiffPreview(
+        targetBaseName, start_line, end_line, originalSegment, newContentLines
       );
+      previewBlocks.push(previewBlock);
+      processedReplacements.push({ start_line, end_line, processedContent, originalSegment });
+    }
 
-      logger.debug('[ReplaceLinesTool] Current file:', currentFileName, 'Target:', targetBaseName, 'Is current:', isCurrentFile);
+    // 5. Choose write strategy
+    let useDiffService = true;
+    {
+      const ready = await diffSuggestionService.waitForReady(targetBaseName, 8000);
+      if (!ready) {
+        logger.debug('[ReplaceLinesTool] DiffAPI not ready – falling back to setDocContent');
+        useDiffService = false;
+      }
+    }
 
-      if (!isCurrentFile) {
-        logger.debug(`[ReplaceLinesTool] Switching to file "${targetBaseName}"...`);
-
-        // Capture pre-switch content so we can detect when the editor has truly loaded the new file
-        let preSwitchContent: string | null = null;
-        try { preSwitchContent = await overleafEditor.document.getText(); } catch { /* ignore */ }
-
-        const switchResult = await overleafEditor.file.switchFile(targetBaseName);
-
-        if (!switchResult.success) {
-          return {
-            success: false,
-            error: `无法切换到文件 "${args.target_file}": ${switchResult.error}`,
-            duration: Date.now() - startTime
-          };
-        }
-
-        // Wait for file switch to fully complete (including CodeMirror + DiffAPI)
-        const switchSuccess = await this.waitForFileSwitch(targetBaseName, 5000, preSwitchContent);
-        if (!switchSuccess) {
-          return {
-            success: false,
-            error: `文件 "${args.target_file}" 切换超时`,
-            duration: Date.now() - startTime
-          };
-        }
+    if (!useDiffService) {
+      const newLines = [...lines];
+      const sorted = [...processedReplacements].sort((a, b) => b.start_line - a.start_line);
+      for (const r of sorted) {
+        const newContentLines = r.processedContent ? r.processedContent.split('\n') : [];
+        newLines.splice(r.start_line - 1, r.end_line - r.start_line + 1, ...newContentLines);
       }
 
-      // 2. 获取当前文件内容
-      const originalContent = await overleafEditor.document.getText();
-      const lines = originalContent.split('\n');
-      const totalLines = lines.length;
-
-      // 3. 验证所有行号范围
-      for (let i = 0; i < args.replacements.length; i++) {
-        const r = args.replacements[i];
-        if (r.end_line > totalLines) {
-          return {
-            success: false,
-            error: `Replacement ${i + 1}: Invalid line range ${r.start_line}-${r.end_line}. File has only ${totalLines} lines.`,
-            duration: Date.now() - startTime
-          };
-        }
-      }
-
-      // 4. 准备替换内容并生成预览
-      const previewBlocks: string[] = [];
-      const processedReplacements: Array<{
-        start_line: number;
-        end_line: number;
-        processedContent: string;
-        originalSegment: string[];
-      }> = [];
-
-      for (const replacement of args.replacements) {
-        const { start_line, end_line, new_content } = replacement;
-        
-        const processedContent = this.preprocessLatex(new_content);
-        
-        const startIdx = start_line - 1;
-        const endIdx = end_line;
-        const originalSegment = lines.slice(startIdx, endIdx);
-        
-        const newContentLines = processedContent ? processedContent.split('\n') : [];
-        
-        const previewBlock = this.generateDiffPreview(
-            targetBaseName,
-            start_line,
-            end_line,
-            originalSegment,
-            newContentLines
-        );
-        previewBlocks.push(previewBlock);
-
-        processedReplacements.push({
-          start_line,
-          end_line,
-          processedContent,
-          originalSegment
-        });
-
-        logger.debug(`[ReplaceLinesTool] Prepared replacement for lines ${start_line}-${end_line}`);
-      }
-
-      // 5. Choose write strategy.
-      //
-      // Always try to use DiffSuggestionService for the diff UI. But first
-      // wait for the DiffAPI to be ready (it sends DIFF_READY / DIFF_PONG).
-      // If it's not ready within the timeout, fall back to setDocContent.
-      //
-      // When we had to switch files we skip the wait entirely (the DiffAPI
-      // is definitely not tracking the right file yet).
-
-      let useDiffService = isCurrentFile;
-
-      if (useDiffService) {
-        const ready = await diffSuggestionService.waitForReady(targetBaseName, 8000);
-        if (!ready) {
-          logger.debug('[ReplaceLinesTool] DiffAPI not ready in time – falling back to setDocContent');
-          useDiffService = false;
-        }
-      }
-
-      let resultData: Record<string, any>;
-
-      if (!useDiffService) {
-        logger.debug(`[ReplaceLinesTool] Using direct setDocContent (switched=${!isCurrentFile})`);
-
-        const newLines = [...lines];
-        const sorted = [...processedReplacements].sort((a, b) => b.start_line - a.start_line);
-        for (const r of sorted) {
-          const newContentLines = r.processedContent ? r.processedContent.split('\n') : [];
-          newLines.splice(r.start_line - 1, r.end_line - r.start_line + 1, ...newContentLines);
-        }
-
-        const newFullContent = newLines.join('\n');
-        const setResult = await overleafEditor.editor.setDocContent(newFullContent);
-
-        if (!setResult.success) {
-          return {
-            success: false,
-            error: '无法将修改应用到编辑器（setDocContent 失败）',
-            duration: Date.now() - startTime
-          };
-        }
-
-        const finalPreview = "📝 修改已直接应用:\n" + previewBlocks.join('\n\n');
-        resultData = {
-          file: args.target_file,
-          applied: true,
-          status: 'SUCCESS_APPLIED',
-          message: `SUCCESS: ${args.replacements.length} modification(s) applied to the document. The changes are now live and compilable. You may proceed with next steps.`,
-          replacementsCount: args.replacements.length,
-          preview: finalPreview
-        };
-      } else {
-        // File is already open – use DiffSuggestionService for diff UI
-        const suggestionInputs: CreateSuggestionInput[] = [];
-        for (const r of processedReplacements) {
-          suggestionInputs.push({
-            toolCallId,
-            toolName: 'replace_lines',
-            targetFile: targetBaseName,
-            startLine: r.start_line,
-            endLine: r.end_line,
-            oldContent: r.originalSegment.join('\n'),
-            newContent: r.processedContent
-          });
-        }
-
-        logger.debug('[ReplaceLinesTool] Creating diff suggestions...');
-        const suggestionIds = await diffSuggestionService.createBatchSuggestions(suggestionInputs);
-        logger.debug(`[ReplaceLinesTool] Created ${suggestionIds.length} diff suggestions:`, suggestionIds);
-
-        const finalPreview = "📝 修改已应用（用户可撤销）:\n" + previewBlocks.join('\n\n');
-        resultData = {
-          file: args.target_file,
-          applied: true,
-          status: 'SUCCESS_APPLIED',
-          message: `SUCCESS: ${suggestionIds.length} modification(s) applied to the document. The changes are now live and compilable. User can undo individual changes if needed. You may proceed with next steps (e.g. compile to verify).`,
-          suggestionIds,
-          replacementsCount: args.replacements.length,
-          preview: finalPreview
-        };
+      const newFullContent = newLines.join('\n');
+      const setResult = await overleafEditor.editor.setDocContent(newFullContent);
+      if (!setResult.success) {
+        return { success: false, error: `[${targetFile}] setDocContent 失败` };
       }
 
       return {
         success: true,
-        data: resultData,
+        data: {
+          file: targetFile,
+          applied: true,
+          status: 'SUCCESS_APPLIED',
+          replacementsCount: replacements.length,
+          message: `SUCCESS: ${replacements.length} modification(s) applied to ${targetFile}.`,
+          preview: previewBlocks.join('\n\n')
+        }
+      };
+    } else {
+      const suggestionInputs: CreateSuggestionInput[] = [];
+      for (const r of processedReplacements) {
+        suggestionInputs.push({
+          toolCallId,
+          toolName: 'replace_lines',
+          targetFile: targetBaseName,
+          startLine: r.start_line,
+          endLine: r.end_line,
+          oldContent: r.originalSegment.join('\n'),
+          newContent: r.processedContent
+        });
+      }
+
+      const suggestionIds = await diffSuggestionService.createBatchSuggestions(suggestionInputs);
+
+      return {
+        success: true,
+        data: {
+          file: targetFile,
+          applied: true,
+          status: 'SUCCESS_APPLIED',
+          suggestionIds,
+          replacementsCount: replacements.length,
+          message: `SUCCESS: ${suggestionIds.length} modification(s) applied to ${targetFile}.`,
+          preview: previewBlocks.join('\n\n')
+        }
+      };
+    }
+  }
+
+  /**
+   * 执行行号替换（支持多文件批量）
+   */
+  async execute(args: {
+    operations?: Array<{ target_file: string; replacements: Replacement[] }>;
+    target_file?: string;
+    replacements?: Replacement[];
+    explanation: string;
+  }): Promise<ToolExecutionResult> {
+    const startTime = Date.now();
+    const toolCallId = `replace_lines_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    try {
+      const operations = this.normalizeToOperations(args);
+
+      if (operations.length === 0) {
+        return {
+          success: false,
+          error: 'Missing required parameters: provide either "operations" array or "target_file" with "replacements".',
+          duration: Date.now() - startTime
+        };
+      }
+
+      // 验证所有操作
+      for (let i = 0; i < operations.length; i++) {
+        const op = operations[i];
+        if (!op.target_file || !Array.isArray(op.replacements) || op.replacements.length === 0) {
+          return {
+            success: false,
+            error: `Operation ${i + 1}: target_file and non-empty replacements array are required.`,
+            duration: Date.now() - startTime
+          };
+        }
+      }
+
+      logger.debug('[ReplaceLinesTool] execute called:', {
+        operationsCount: operations.length,
+        explanation: args.explanation
+      });
+
+      // 依次执行每个文件的操作
+      const fileResults: Array<{ success: boolean; data?: any; error?: string }> = [];
+
+      for (let i = 0; i < operations.length; i++) {
+        const op = operations[i];
+        logger.debug(`[ReplaceLinesTool] Processing operation ${i + 1}/${operations.length}: ${op.target_file} (${op.replacements.length} replacements)`);
+        const result = await this.executeForFile(op.target_file, op.replacements, toolCallId);
+        fileResults.push(result);
+      }
+
+      const successResults = fileResults.filter(r => r.success);
+      const errorResults = fileResults.filter(r => !r.success);
+
+      // 单文件时保持原有返回格式
+      if (operations.length === 1) {
+        const r = fileResults[0];
+        return {
+          success: r.success,
+          data: r.data,
+          error: r.error,
+          duration: Date.now() - startTime
+        };
+      }
+
+      // 多文件：汇总结果
+      const totalReplacements = successResults.reduce((sum, r) => sum + (r.data?.replacementsCount || 0), 0);
+      const allPreviews = successResults.map(r => r.data?.preview).filter(Boolean).join('\n\n');
+
+      return {
+        success: successResults.length > 0,
+        data: {
+          batchMode: true,
+          totalOperations: operations.length,
+          successCount: successResults.length,
+          errorCount: errorResults.length,
+          totalReplacements,
+          status: errorResults.length === 0 ? 'SUCCESS_ALL' : 'PARTIAL_SUCCESS',
+          message: `${successResults.length}/${operations.length} file(s) modified successfully (${totalReplacements} total replacements).${errorResults.length > 0 ? ` ${errorResults.length} file(s) failed.` : ''}`,
+          fileResults: fileResults.map(r => r.data || { error: r.error }),
+          errors: errorResults.length > 0 ? errorResults.map(r => r.error) : undefined,
+          preview: allPreviews
+        },
         duration: Date.now() - startTime
       };
     } catch (error) {
@@ -427,13 +455,17 @@ Examples:
   /**
    * 生成摘要
    */
-  getSummary(args: {
-    target_file: string;
-    replacements: Replacement[];
-    explanation: string;
-  }): string {
-    const count = args.replacements?.length || 0;
-    return `替换 ${args.target_file} 中的 ${count} 处内容: ${args.explanation}`;
+  getSummary(args: any): string {
+    const operations = this.normalizeToOperations(args);
+    if (operations.length === 0) return '替换文件内容';
+    if (operations.length === 1) {
+      const op = operations[0];
+      const count = op.replacements?.length || 0;
+      return `替换 ${op.target_file} 中的 ${count} 处内容: ${args.explanation || ''}`;
+    }
+    const files = operations.map(o => o.target_file);
+    const totalCount = operations.reduce((sum, o) => sum + (o.replacements?.length || 0), 0);
+    return `批量替换 ${files.length} 个文件共 ${totalCount} 处内容: ${args.explanation || ''}`;
   }
 
   /**

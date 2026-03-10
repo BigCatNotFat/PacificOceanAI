@@ -14,142 +14,187 @@ import { recentlyCreatedFiles } from '../utils/RecentlyCreatedFilesRegistry';
 export class CreateFileTool extends BaseTool {
   protected metadata: ToolMetadata = {
     name: 'create_file',
-    description: `Create a new file or folder in the Overleaf project.
+    description: `Create one or more new files or folders in the Overleaf project. Supports batch creation in a single call.
+
+**Batch mode (recommended):** Provide a \`files\` array to create multiple files/folders at once.
+**Single mode (backward compatible):** Provide file_path directly.
 
 Use this tool when you need to:
-- Create a new .tex chapter/section file
-- Create a new .bib bibliography file
-- Create a new folder to organise files
-- Create any new text document in the project
+- Create new .tex chapter/section files
+- Create new .bib bibliography files
+- Create new folders to organise files
+- Create any new text documents in the project
 
 The file will be created in the project root by default. To create inside a subfolder, provide the full path (e.g. "sections/chapter1.tex") — the tool will resolve the parent folder automatically.
 
 **Notes:**
 - Only text documents (.tex, .bib, .bbl, .sty, .cls, .txt, etc.) can be created as docs.
 - To write content into the new file after creation, use the \`search_replace\` or \`replace_lines\` tool on the newly created file.
-- To create a folder, set \`is_folder\` to true.`,
+- To create a folder, set \`is_folder\` to true.
+
+Examples:
+- Single: file_path="sections/intro.tex"
+- Batch: files=[{file_path:"sections/intro.tex"}, {file_path:"sections/method.tex"}, {file_path:"images", is_folder:true}]`,
 
     parameters: {
       type: 'object',
       properties: {
+        files: {
+          type: 'array',
+          description: 'Array of files/folders to create. Use this for batch creation.',
+          items: {
+            type: 'object',
+            properties: {
+              file_path: {
+                type: 'string',
+                description: 'The path of the file/folder to create, relative to the project root.'
+              },
+              is_folder: {
+                type: 'boolean',
+                description: 'If true, create a folder instead of a document. Defaults to false.'
+              }
+            },
+            required: ['file_path']
+          }
+        },
         file_path: {
           type: 'string',
-          description: 'The path of the file/folder to create, relative to the project root. E.g. "sections/intro.tex" or "images" (for a folder).'
+          description: '(Single mode) The path of the file/folder to create.'
         },
         is_folder: {
           type: 'boolean',
-          description: 'If true, create a folder instead of a document. Defaults to false.'
+          description: '(Single mode) If true, create a folder instead of a document.'
         },
         explanation: {
           type: 'string',
-          description: 'One sentence explanation as to why this file is being created.'
+          description: 'One sentence explanation as to why these files are being created.'
         }
       },
-      required: ['file_path']
+      required: ['explanation']
     },
     needApproval: false,
     modes: ['agent']
   };
 
+  private normalizeToFiles(args: any): Array<{ file_path: string; is_folder?: boolean }> {
+    if (Array.isArray(args.files) && args.files.length > 0) {
+      return args.files;
+    }
+    if (args.file_path) {
+      return [{ file_path: args.file_path, is_folder: args.is_folder }];
+    }
+    return [];
+  }
+
+  private async createSingleFile(
+    fileOp: { file_path: string; is_folder?: boolean }
+  ): Promise<{ success: boolean; data?: any; error?: string }> {
+    const filePath = fileOp.file_path.replace(/\\/g, '/').replace(/^\/+/, '');
+    const isFolder = fileOp.is_folder ?? false;
+
+    const parts = filePath.split('/');
+    const name = parts.pop()!;
+    const parentPath = parts.join('/');
+
+    console.log('[CreateFileTool] Creating:', { filePath, name, parentPath, isFolder });
+
+    if (!name) {
+      return { success: false, error: `[${fileOp.file_path}] Invalid file path: name cannot be empty` };
+    }
+
+    let parentFolderId: string | undefined;
+
+    if (parentPath) {
+      parentFolderId = await this.resolveOrCreateParentFolders(parentPath);
+      if (!parentFolderId) {
+        return { success: false, error: `[${fileOp.file_path}] Failed to resolve parent folder: "${parentPath}"` };
+      }
+    }
+
+    if (isFolder) {
+      const result = await overleafEditor.fileOps.newFolder(name, parentFolderId);
+      recentlyCreatedFiles.register({ name, path: filePath, id: result._id, type: 'folder' });
+      return {
+        success: true,
+        data: { type: 'folder', name, path: filePath, id: result._id, message: `Created folder "${filePath}"` }
+      };
+    } else {
+      const result = await overleafEditor.fileOps.newDoc(name, parentFolderId);
+      recentlyCreatedFiles.register({ name, path: filePath, id: result._id, type: 'doc' });
+      await this.waitForFileInTree(name, 5000);
+      await this.switchToNewFile(name);
+      return {
+        success: true,
+        data: { type: 'doc', name, path: filePath, id: result._id, message: `Created file "${filePath}"` }
+      };
+    }
+  }
+
   async execute(args: {
-    file_path: string;
+    files?: Array<{ file_path: string; is_folder?: boolean }>;
+    file_path?: string;
     is_folder?: boolean;
     explanation?: string;
   }): Promise<ToolExecutionResult> {
     const startTime = Date.now();
 
     try {
-      if (!this.validate(args)) {
+      const files = this.normalizeToFiles(args);
+
+      if (files.length === 0) {
         return {
           success: false,
-          error: 'Missing required parameter: file_path',
+          error: 'Missing required parameters: provide either "files" array or "file_path".',
           duration: Date.now() - startTime
         };
       }
 
-      const filePath = args.file_path.replace(/\\/g, '/').replace(/^\/+/, '');
-      const isFolder = args.is_folder ?? false;
-
-      const parts = filePath.split('/');
-      const name = parts.pop()!;
-      const parentPath = parts.join('/');
-
-      console.log('[CreateFileTool] Creating:', { filePath, name, parentPath, isFolder });
-
-      if (!name) {
-        return {
-          success: false,
-          error: 'Invalid file path: name cannot be empty',
-          duration: Date.now() - startTime
-        };
-      }
-
-      let parentFolderId: string | undefined;
-
-      if (parentPath) {
-        parentFolderId = await this.resolveOrCreateParentFolders(parentPath);
-        if (!parentFolderId) {
+      for (let i = 0; i < files.length; i++) {
+        if (!files[i].file_path) {
           return {
             success: false,
-            error: `Failed to resolve parent folder path: "${parentPath}"`,
+            error: `File operation ${i + 1}: file_path is required.`,
             duration: Date.now() - startTime
           };
         }
-        console.log('[CreateFileTool] Resolved parent folder ID:', parentFolderId);
       }
 
-      if (isFolder) {
-        console.log('[CreateFileTool] Calling newFolder:', name, parentFolderId);
-        const result = await overleafEditor.fileOps.newFolder(name, parentFolderId);
-        console.log('[CreateFileTool] newFolder result:', result);
+      const results: Array<{ success: boolean; data?: any; error?: string }> = [];
 
-        recentlyCreatedFiles.register({
-          name,
-          path: filePath,
-          id: result._id,
-          type: 'folder'
-        });
-
-        return {
-          success: true,
-          data: {
-            type: 'folder',
-            name,
-            path: filePath,
-            id: result._id,
-            message: `Successfully created folder "${filePath}"`
-          },
-          duration: Date.now() - startTime
-        };
-      } else {
-        console.log('[CreateFileTool] Calling newDoc:', name, parentFolderId);
-        const result = await overleafEditor.fileOps.newDoc(name, parentFolderId);
-        console.log('[CreateFileTool] newDoc result:', result);
-
-        recentlyCreatedFiles.register({
-          name,
-          path: filePath,
-          id: result._id,
-          type: 'doc'
-        });
-
-        // Wait for the file to appear in Overleaf's state, then open it so
-        // subsequent tools (replace_lines, search_replace) can work immediately.
-        await this.waitForFileInTree(name, 5000);
-        await this.switchToNewFile(name);
-
-        return {
-          success: true,
-          data: {
-            type: 'doc',
-            name,
-            path: filePath,
-            id: result._id,
-            message: `Successfully created file "${filePath}". The file is now open in the editor. Use search_replace or replace_lines to write content into it.`
-          },
-          duration: Date.now() - startTime
-        };
+      for (let i = 0; i < files.length; i++) {
+        console.log(`[CreateFileTool] Processing ${i + 1}/${files.length}: ${files[i].file_path}`);
+        try {
+          const result = await this.createSingleFile(files[i]);
+          results.push(result);
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          results.push({ success: false, error: `[${files[i].file_path}] ${msg}` });
+        }
       }
+
+      // Single file: keep original return format
+      if (files.length === 1) {
+        const r = results[0];
+        return { success: r.success, data: r.data, error: r.error, duration: Date.now() - startTime };
+      }
+
+      // Batch: aggregate
+      const successResults = results.filter(r => r.success);
+      const errorResults = results.filter(r => !r.success);
+
+      return {
+        success: successResults.length > 0,
+        data: {
+          batchMode: true,
+          totalOperations: files.length,
+          successCount: successResults.length,
+          errorCount: errorResults.length,
+          message: `${successResults.length}/${files.length} file(s) created successfully.${errorResults.length > 0 ? ` ${errorResults.length} failed.` : ''}`,
+          fileResults: results.map(r => r.data || { error: r.error }),
+          errors: errorResults.length > 0 ? errorResults.map(r => r.error) : undefined
+        },
+        duration: Date.now() - startTime
+      };
     } catch (error) {
       return {
         ...this.handleError(error),
@@ -158,9 +203,14 @@ The file will be created in the project root by default. To create inside a subf
     }
   }
 
-  getSummary(args: { file_path: string; is_folder?: boolean }): string {
-    const type = args.is_folder ? '文件夹' : '文件';
-    return `新建${type}: ${args.file_path}`;
+  getSummary(args: any): string {
+    const files = this.normalizeToFiles(args);
+    if (files.length === 0) return '新建文件';
+    if (files.length === 1) {
+      const type = files[0].is_folder ? '文件夹' : '文件';
+      return `新建${type}: ${files[0].file_path}`;
+    }
+    return `批量新建 ${files.length} 个文件/文件夹`;
   }
 
   private normalizePath(p: string): string {

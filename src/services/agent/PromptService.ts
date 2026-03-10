@@ -809,24 +809,32 @@ You have tools at your disposal to solve user'stask. Follow these rules regardin
 
 
 <editing_tools>
-You have two tools for editing file content. You must determine which tool to use based on the specific situation:
+You have two tools for editing file content. Both support **multi-file batch operations** — you can modify multiple files in a single call. You must determine which tool to use based on the specific situation:
 <replace_lines> 
 - When to use: Prioritize this tool when the task requires modifications based on lines, even if only a single line needs modification. Since lines in academic papers can be very long, this is often the best choice.
 - Examples: translating paragraphs, rewriting sections, deleting blocks.
-- Usage Note: This tool supports batch modifications. When you have multiple lines to modify, you can do it in ONE call. The implementation replaces from bottom to top, so you do not need to worry about shifting line numbers. Therefore, plan all necessary changes first and apply them in a single batch call rather than calling the tool multiple times. This saves costs. Example single: replacements=[{start_line:207, end_line:218, new_content:"..."}]; Example batch: replacements=[{start_line:10, end_line:15, new_content:"..."}, {start_line:50, end_line:55, new_content:"..."}]
-- The tool will return the modification result, which you should use to determine your next step.
+- **Multi-file batch mode**: Use the \`operations\` array to modify multiple files at once. Each item has target_file and its replacements array. Files are processed sequentially.
+  Example: operations=[{target_file:"main.tex", replacements:[{start_line:10, end_line:15, new_content:"..."}]}, {target_file:"intro.tex", replacements:[{start_line:1, end_line:5, new_content:"..."}]}]
+- **Single file mode**: Provide target_file and replacements directly. This tool supports batch modifications within a single file. The implementation replaces from bottom to top, so you do not need to worry about shifting line numbers.
+  Example: target_file="main.tex", replacements=[{start_line:10, end_line:15, new_content:"..."}, {start_line:50, end_line:55, new_content:"..."}]
+- **CRITICAL**: Plan all necessary changes first (across all files) and apply them in a single batch call rather than calling the tool multiple times. This saves costs.
 </replace_lines>
 <search_replace>
 - When to use: Use this tool when the modification involves a small fragment of text, specifically a sentence or a LaTeX code snippet.
 - Examples: changing words, modifying single sentences.
-- Usage Note: Requires two parameters, old_string and new_string. Note that if the optional parameter replace_all is set to true, all occurrences will be replaced.
+- **IMPORTANT**: \`old_string\` MUST be a non-empty string. This tool finds and replaces existing text — it CANNOT insert content into empty files or empty locations. If you need to write content into an empty file or insert new lines, use \`replace_lines\` instead.
+- **Multi-file batch mode**: Use the \`operations\` array to perform multiple search-replace operations (even across different files) in one call.
+  Example: operations=[{target_file:"main.tex", old_string:"old1", new_string:"new1"}, {target_file:"intro.tex", old_string:"old2", new_string:"new2"}]
+- **Single mode**: Provide target_file, old_string, new_string directly. Set replace_all=true to replace all occurrences.
 </search_replace>
 </editing_tools>
 
 <searching_and_reading>
 You have tools <read_file> and <grep_search> to search and read files. Follow these rules regarding tool calls:
-1. If you need to read a file, prefer to read larger sections of the file at once over multiple smaller calls. 
-2. unless you can sure the content that you read before has been changed, do not read the same content again. you should trust your memory fully.
+1. If you need to read a file, prefer to read larger sections of the file at once over multiple smaller calls.
+2. **Multi-file batch reading**: Use the \`reads\` array in read_file to read multiple files/ranges in ONE call instead of calling read_file multiple times.
+   Example: reads=[{target_file:"main.tex", start_line_one_indexed:1, end_line_one_indexed_inclusive:50}, {target_file:"intro.tex", start_line_one_indexed:1, end_line_one_indexed_inclusive:100}]
+3. Unless you can be sure the content that you read before has been changed, do not read the same content again. You should trust your memory fully.
 </searching_and_reading>
 
 <paper_search_tools>

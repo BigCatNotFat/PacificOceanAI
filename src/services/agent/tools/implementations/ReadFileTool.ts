@@ -16,17 +16,25 @@ import { recentlyCreatedFiles } from '../utils/RecentlyCreatedFilesRegistry';
 /**
  * 读取文件工具
  * 
- * 支持读取 Overleaf 项目中的任意文档文件
- * 通过 target_file 参数指定要读取的文件路径
+ * 支持一次性读取多个文件的多段内容
+ * 通过 reads 数组参数批量指定要读取的文件和行范围
  */
 export class ReadFileTool extends BaseTool {
   protected metadata: ToolMetadata = {
     name: 'read_file',
-    description: `Read the contents of a file in the Overleaf project. The output will be the 1-indexed file contents from start_line_one_indexed to end_line_one_indexed_inclusive, together with a summary of the lines outside that range.
-Note that this call can view at most 300 lines at a time for performance reasons.
+    description: `Read the contents of one or more files in the Overleaf project. Supports batch reading of multiple files and multiple line ranges in a single call.
+Note that each read segment can view at most 300 lines at a time for performance reasons.
+
+**Batch mode (recommended):** Provide a \`reads\` array to read multiple files/ranges in one call. Each item specifies a target_file and line range.
+**Single mode (backward compatible):** Provide target_file, start_line_one_indexed, end_line_one_indexed_inclusive directly.
+
 Each time you call this tool, you should:
-1) if you do not sure which lines to read, read the entire file at once.
+1) If you do not sure which lines to read, read the entire file at once.
 2) Trust the content that you read before fully. Unless you can sure the content that you read before has been changed, do not read the same content again.
+3) When you need to read multiple files or multiple ranges, use the \`reads\` array to batch them in ONE call.
+
+Example (batch): reads=[{target_file:"main.tex", start_line_one_indexed:1, end_line_one_indexed_inclusive:50}, {target_file:"intro.tex", start_line_one_indexed:1, end_line_one_indexed_inclusive:100}]
+Example (single): target_file="main.tex", start_line_one_indexed=1, end_line_one_indexed_inclusive=50
 `,
 
     parameters: {
@@ -36,20 +44,42 @@ Each time you call this tool, you should:
           type: 'string',
           description: 'One sentence explanation as to why this tool is being used, and how it contributes to the goal.'
         },
+        reads: {
+          type: 'array',
+          description: 'Array of read operations. Each item specifies a file and line range to read. Use this for batch reading.',
+          items: {
+            type: 'object',
+            properties: {
+              target_file: {
+                type: 'string',
+                description: 'The path of the file to read.'
+              },
+              start_line_one_indexed: {
+                type: 'integer',
+                description: 'The one-indexed line number to start reading from (inclusive).'
+              },
+              end_line_one_indexed_inclusive: {
+                type: 'integer',
+                description: 'The one-indexed line number to end reading at (inclusive).'
+              }
+            },
+            required: ['target_file', 'start_line_one_indexed', 'end_line_one_indexed_inclusive']
+          }
+        },
         target_file: {
           type: 'string',
-          description: 'The path of the file to read. Currently reads the active file in Overleaf editor.'
+          description: '(Single mode) The path of the file to read.'
         },
         start_line_one_indexed: {
           type: 'integer',
-          description: 'The one-indexed line number to start reading from (inclusive).'
+          description: '(Single mode) The one-indexed line number to start reading from (inclusive).'
         },
         end_line_one_indexed_inclusive: {
           type: 'integer',
-          description: 'The one-indexed line number to end reading at (inclusive).'
+          description: '(Single mode) The one-indexed line number to end reading at (inclusive).'
         }
       },
-      required: ['target_file', 'start_line_one_indexed', 'end_line_one_indexed_inclusive']
+      required: ['explanation']
     },
     needApproval: false,
     modes: ['agent', 'chat']
@@ -61,73 +91,141 @@ Each time you call this tool, you should:
   private readonly MAX_CHARACTERS = 50000;
 
   /**
-   * 执行读取文件
+   * 将参数标准化为 reads 数组（兼容单文件和批量模式）
    */
-  async execute(args: {
+  private normalizeToReads(args: any): Array<{
     target_file: string;
     start_line_one_indexed: number;
     end_line_one_indexed_inclusive: number;
+  }> {
+    if (Array.isArray(args.reads) && args.reads.length > 0) {
+      return args.reads;
+    }
+    if (args.target_file) {
+      return [{
+        target_file: args.target_file,
+        start_line_one_indexed: args.start_line_one_indexed,
+        end_line_one_indexed_inclusive: args.end_line_one_indexed_inclusive
+      }];
+    }
+    return [];
+  }
+
+  /**
+   * 执行读取文件（支持批量）
+   */
+  async execute(args: {
+    reads?: Array<{
+      target_file: string;
+      start_line_one_indexed: number;
+      end_line_one_indexed_inclusive: number;
+    }>;
+    target_file?: string;
+    start_line_one_indexed?: number;
+    end_line_one_indexed_inclusive?: number;
     explanation?: string;
   }): Promise<ToolExecutionResult> {
     const startTime = Date.now();
     
     try {
-      console.log('[ReadFileTool] execute 开始', {
-        target_file: args.target_file,
-        start: args.start_line_one_indexed,
-        end: args.end_line_one_indexed_inclusive
-      });
+      const reads = this.normalizeToReads(args);
 
-      if (!this.validate(args)) {
-        console.error('[ReadFileTool] 参数校验失败', args);
+      if (reads.length === 0) {
         return {
           success: false,
-          error: 'Missing required parameters: target_file, start_line_one_indexed, end_line_one_indexed_inclusive',
+          error: 'Missing required parameters: provide either "reads" array or "target_file" with line range.',
           duration: Date.now() - startTime
         };
       }
 
-      this.log(`读取文件: ${args.target_file}`);
+      // 验证每个读取操作的参数
+      for (let i = 0; i < reads.length; i++) {
+        const r = reads[i];
+        if (!r.target_file || r.start_line_one_indexed == null || r.end_line_one_indexed_inclusive == null) {
+          return {
+            success: false,
+            error: `Read operation ${i + 1}: missing target_file, start_line_one_indexed, or end_line_one_indexed_inclusive.`,
+            duration: Date.now() - startTime
+          };
+        }
+      }
 
-      // 根据 target_file 查找对应的 docId
-      console.log('[ReadFileTool] 开始查找 docId, targetFile:', args.target_file);
-      const docId = await this.getDocIdByPath(args.target_file);
-      console.log('[ReadFileTool] docId 查找结果:', docId);
-      if (!docId) {
-        console.error('[ReadFileTool] 未找到 docId', { target_file: args.target_file });
+      console.log('[ReadFileTool] execute 开始, 共', reads.length, '个读取操作');
+
+      const results: ReadFileResult[] = [];
+      const errors: string[] = [];
+
+      for (let i = 0; i < reads.length; i++) {
+        const readOp = reads[i];
+        try {
+          console.log(`[ReadFileTool] 读取操作 ${i + 1}/${reads.length}:`, {
+            target_file: readOp.target_file,
+            start: readOp.start_line_one_indexed,
+            end: readOp.end_line_one_indexed_inclusive
+          });
+
+          const docId = await this.getDocIdByPath(readOp.target_file);
+          if (!docId) {
+            errors.push(`[${readOp.target_file}] 无法找到文件的文档 ID`);
+            continue;
+          }
+
+          const result = await this.readLineRange(
+            readOp.target_file,
+            docId,
+            readOp.start_line_one_indexed,
+            readOp.end_line_one_indexed_inclusive
+          );
+          results.push(result);
+
+          console.log(`[ReadFileTool] 读取操作 ${i + 1} 完成:`, {
+            totalLines: result.totalLines,
+            readLines: result.readLines,
+            truncated: result.truncated
+          });
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          errors.push(`[${readOp.target_file}] ${msg}`);
+          console.error(`[ReadFileTool] 读取操作 ${i + 1} 失败:`, error);
+        }
+      }
+
+      if (results.length === 0 && errors.length > 0) {
         return {
           success: false,
-          error: `无法找到文件 "${args.target_file}" 的文档 ID。请确保文件路径正确，且文件存在于项目中。`,
+          error: `All read operations failed:\n${errors.join('\n')}`,
           duration: Date.now() - startTime
         };
       }
 
-      this.log(`找到文档 ID: ${docId}`);
+      // 单个操作时保持原有返回格式
+      if (reads.length === 1 && results.length === 1) {
+        return {
+          success: true,
+          data: results[0],
+          duration: Date.now() - startTime
+        };
+      }
 
-      let result: ReadFileResult;
-
-      // 读取指定行范围
-      console.log('[ReadFileTool] 开始 readLineRange', {
-        file: args.target_file,
-        docId,
-        start: args.start_line_one_indexed,
-        end: args.end_line_one_indexed_inclusive
-      });
-      result = await this.readLineRange(
-        args.target_file,
-        docId,
-        args.start_line_one_indexed,
-        args.end_line_one_indexed_inclusive
-      );
-      console.log('[ReadFileTool] readLineRange 完成', {
-        totalLines: result.totalLines,
-        readLines: result.readLines,
-        truncated: result.truncated
-      });
+      // 批量操作：合并所有结果的 content
+      const combinedContent = results.map(r => r.content).join('\n\n');
+      const totalReadLines = results.reduce((sum, r) => sum + (r.readLines || 0), 0);
+      const totalReadChars = results.reduce((sum, r) => sum + (r.readCharacters || 0), 0);
 
       return {
         success: true,
-        data: result,
+        data: {
+          batchMode: true,
+          totalOperations: reads.length,
+          successCount: results.length,
+          errorCount: errors.length,
+          totalReadLines,
+          totalReadCharacters: totalReadChars,
+          content: combinedContent,
+          results,
+          errors: errors.length > 0 ? errors : undefined,
+          message: `Successfully read ${results.length}/${reads.length} file segments (${totalReadLines} lines, ${totalReadChars} characters)${errors.length > 0 ? `. ${errors.length} failed.` : ''}`
+        },
         duration: Date.now() - startTime
       };
     } catch (error) {
@@ -387,12 +485,15 @@ Each time you call this tool, you should:
   /**
    * 生成摘要
    */
-  getSummary(args: {
-    target_file: string;
-    start_line_one_indexed: number;
-    end_line_one_indexed_inclusive: number;
-  }): string {
-    return `读取文件 ${args.target_file} 的第 ${args.start_line_one_indexed} - ${args.end_line_one_indexed_inclusive} 行`;
+  getSummary(args: any): string {
+    const reads = this.normalizeToReads(args);
+    if (reads.length === 0) return '读取文件';
+    if (reads.length === 1) {
+      const r = reads[0];
+      return `读取文件 ${r.target_file} 的第 ${r.start_line_one_indexed} - ${r.end_line_one_indexed_inclusive} 行`;
+    }
+    const files = [...new Set(reads.map(r => r.target_file))];
+    return `批量读取 ${reads.length} 个片段 (${files.length} 个文件: ${files.join(', ')})`;
   }
 }
 

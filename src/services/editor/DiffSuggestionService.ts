@@ -42,7 +42,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
 
   /** DiffAPI readiness tracking */
   private readyFile: string | null = null;
-  private readyResolvers: Array<(file: string) => void> = [];
+  private readyResolvers: Array<{ resolve: (file: string) => void; targetFile: string }> = [];
   
   private constructor() {
     super();
@@ -427,38 +427,66 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
   
   /**
    * Handle DiffAPI readiness signal (DIFF_READY / DIFF_PONG).
+   *
+   * Only resolves waiters whose target file matches the reported file.
+   * This prevents a stale PONG (from a previous file) from prematurely
+   * resolving a waiter that is waiting for a different file.
    */
   private handleDiffReady(file: string | null): void {
     this.readyFile = file;
     logger.debug(`[DiffSuggestionService] DiffAPI ready for file: ${file}`);
-    const resolvers = this.readyResolvers;
-    this.readyResolvers = [];
-    for (const resolve of resolvers) {
-      resolve(file ?? '');
+
+    const remaining: Array<{ resolve: (file: string) => void; targetFile: string }> = [];
+    for (const waiter of this.readyResolvers) {
+      if (this.fileNamesMatch(waiter.targetFile, file)) {
+        waiter.resolve(file ?? '');
+      } else {
+        remaining.push(waiter);
+      }
     }
+    this.readyResolvers = remaining;
+  }
+
+  /**
+   * Check whether two file identifiers refer to the same file.
+   * Handles cases like "main.tex" vs "sections/main.tex", or null.
+   */
+  private fileNamesMatch(a: string | null, b: string | null): boolean {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const baseA = a.split('/').pop() || a;
+    const baseB = b.split('/').pop() || b;
+    return baseA === baseB;
   }
 
   /**
    * Wait until the DiffAPI is ready for the given file.
    * Sends DIFF_PING and listens for DIFF_READY/DIFF_PONG.
    * Resolves `true` when ready, `false` on timeout.
+   *
+   * The resolver now checks that the reported file actually matches
+   * `targetFile`, so stale PONGs from a previous file won't cause
+   * a premature resolve.
    */
   async waitForReady(targetFile: string, timeoutMs = 8000): Promise<boolean> {
     // Already ready for this file
-    if (this.readyFile === targetFile) {
+    if (this.fileNamesMatch(this.readyFile, targetFile)) {
       return true;
     }
 
     return new Promise<boolean>((resolve) => {
       let settled = false;
 
-      const onReady = (file: string) => {
-        if (settled) return;
-        settled = true;
-        resolve(true);
+      const waiter = {
+        targetFile,
+        resolve: (_file: string) => {
+          if (settled) return;
+          settled = true;
+          resolve(true);
+        }
       };
 
-      this.readyResolvers.push(onReady);
+      this.readyResolvers.push(waiter);
 
       // Send a ping to trigger an immediate response if DiffAPI is already ready
       window.postMessage({ type: 'DIFF_PING' }, '*');
@@ -473,8 +501,7 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
         clearInterval(pingInterval);
         if (!settled) {
           settled = true;
-          // Remove our resolver
-          this.readyResolvers = this.readyResolvers.filter(r => r !== onReady);
+          this.readyResolvers = this.readyResolvers.filter(w => w !== waiter);
           logger.debug(`[DiffSuggestionService] waitForReady timed out for: ${targetFile}`);
           resolve(false);
         }

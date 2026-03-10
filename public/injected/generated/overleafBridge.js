@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-03-10T10:28:29.583Z
+ * 构建时间: 2026-03-10T12:04:59.735Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */
@@ -2640,9 +2640,13 @@
             lineFrom: newLine.from,
             lineTo: newLineEnd.to,
             widgetPos: newLine.from,
-            onAccept: (view, suggestionId) => {
+            onAccept: function(view, suggestionId) {
               if (diffEffects) {
-                view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) });
+                try {
+                  view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) });
+                } catch (e) {
+                  warn("[DiffAPI] \u79FB\u9664\u5355\u884C\u88C5\u9970\u5931\u8D25:", e);
+                }
               }
               const fileSuggestions = diffSuggestionsByFile.get(fileName);
               const suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
@@ -2657,17 +2661,59 @@
               debug("[DiffAPI] \u5DF2\u4FDD\u7559\u4FEE\u6539:", suggestionId);
               if (callbacks.onAccept) callbacks.onAccept(oldContent, newContent);
             },
-            onReject: (view, suggestionId) => {
+            onReject: function(view, suggestionId) {
               const fileSuggestions = diffSuggestionsByFile.get(fileName);
               const suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
+              if (!suggestion) {
+                warn("[DiffAPI] \u627E\u4E0D\u5230\u5355\u884C\u5EFA\u8BAE\uFF0C\u8DF3\u8FC7\u56DE\u6EDA:", suggestionId);
+                return;
+              }
               const latest = getLatestSuggestionPosition(suggestionId);
-              const from = latest ? latest.lineFrom : suggestion ? suggestion.lineFrom : 0;
-              const to = latest ? latest.lineTo : suggestion ? suggestion.lineTo : 0;
-              if (suggestion && diffEffects) {
-                view.dispatch({
-                  changes: { from, to, insert: suggestion.oldContent },
-                  effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId)
-                });
+              let from = latest ? latest.lineFrom : suggestion.lineFrom;
+              let to = latest ? latest.lineTo : suggestion.lineTo;
+              const docLen = view.state.doc.length;
+              if (from < 0 || to > docLen || from > to) {
+                const docText = view.state.doc.toString();
+                const idx = docText.indexOf(suggestion.newContent);
+                if (idx !== -1) {
+                  from = idx;
+                  to = idx + suggestion.newContent.length;
+                } else {
+                  warn(
+                    "[DiffAPI] \u5355\u884C\u56DE\u6EDA\u8303\u56F4\u8D8A\u754C\u4E14\u65E0\u6CD5\u5B9A\u4F4D\u65B0\u5185\u5BB9\uFF0C\u8DF3\u8FC7:",
+                    suggestionId,
+                    "range",
+                    from,
+                    "-",
+                    to,
+                    "docLen",
+                    docLen
+                  );
+                  if (diffEffects) {
+                    try {
+                      view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) });
+                    } catch (e) {
+                    }
+                  }
+                  window.postMessage({ type: "DIFF_SUGGESTION_RESOLVED", data: { id: suggestionId, accepted: false } }, "*");
+                  if (fileSuggestions) fileSuggestions.delete(suggestionId);
+                  updateDiffControlBar();
+                  return;
+                }
+              }
+              if (diffEffects) {
+                try {
+                  view.dispatch({
+                    changes: { from, to, insert: suggestion.oldContent },
+                    effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId)
+                  });
+                } catch (e) {
+                  warn("[DiffAPI] \u5355\u884C\u56DE\u6EDA dispatch \u5931\u8D25:", e);
+                  try {
+                    view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) });
+                  } catch (e2) {
+                  }
+                }
               }
               window.postMessage({
                 type: "DIFF_SUGGESTION_RESOLVED",
@@ -2721,9 +2767,13 @@
             lineFrom: newLineStart.from,
             lineTo: newLineEnd.to,
             widgetPos: newLineStart.from,
-            onAccept: (view, suggestionId) => {
+            onAccept: function(view, suggestionId) {
               if (diffEffects) {
-                view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) });
+                try {
+                  view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) });
+                } catch (e) {
+                  warn("[DiffAPI] \u79FB\u9664\u884C\u7EA7\u88C5\u9970\u5931\u8D25:", e);
+                }
               }
               const fileSuggestions = diffSuggestionsByFile.get(fileName);
               const suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
@@ -2738,17 +2788,59 @@
               debug("[DiffAPI] \u5DF2\u4FDD\u7559\u4FEE\u6539:", suggestionId);
               if (callbacks.onAccept) callbacks.onAccept();
             },
-            onReject: (view, suggestionId) => {
+            onReject: function(view, suggestionId) {
               const fileSuggestions = diffSuggestionsByFile.get(fileName);
               const suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
+              if (!suggestion) {
+                warn("[DiffAPI] \u627E\u4E0D\u5230\u884C\u7EA7\u5EFA\u8BAE\uFF0C\u8DF3\u8FC7\u56DE\u6EDA:", suggestionId);
+                return;
+              }
               const latest = getLatestSuggestionPosition(suggestionId);
-              const from = latest ? latest.lineFrom : suggestion ? suggestion.lineFrom : 0;
-              const to = latest ? latest.lineTo : suggestion ? suggestion.lineTo : 0;
-              if (suggestion && diffEffects) {
-                view.dispatch({
-                  changes: { from, to, insert: suggestion.oldContent },
-                  effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId)
-                });
+              let from = latest ? latest.lineFrom : suggestion.lineFrom;
+              let to = latest ? latest.lineTo : suggestion.lineTo;
+              const docLen = view.state.doc.length;
+              if (from < 0 || to > docLen || from > to) {
+                const docText = view.state.doc.toString();
+                const idx = docText.indexOf(suggestion.newContent);
+                if (idx !== -1) {
+                  from = idx;
+                  to = idx + suggestion.newContent.length;
+                } else {
+                  warn(
+                    "[DiffAPI] \u884C\u7EA7\u56DE\u6EDA\u8303\u56F4\u8D8A\u754C\u4E14\u65E0\u6CD5\u5B9A\u4F4D\u65B0\u5185\u5BB9\uFF0C\u8DF3\u8FC7:",
+                    suggestionId,
+                    "range",
+                    from,
+                    "-",
+                    to,
+                    "docLen",
+                    docLen
+                  );
+                  if (diffEffects) {
+                    try {
+                      view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) });
+                    } catch (e) {
+                    }
+                  }
+                  window.postMessage({ type: "DIFF_SUGGESTION_RESOLVED", data: { id: suggestionId, accepted: false } }, "*");
+                  if (fileSuggestions) fileSuggestions.delete(suggestionId);
+                  updateDiffControlBar();
+                  return;
+                }
+              }
+              if (diffEffects) {
+                try {
+                  view.dispatch({
+                    changes: { from, to, insert: suggestion.oldContent },
+                    effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId)
+                  });
+                } catch (e) {
+                  warn("[DiffAPI] \u884C\u7EA7\u56DE\u6EDA dispatch \u5931\u8D25:", e);
+                  try {
+                    view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) });
+                  } catch (e2) {
+                  }
+                }
               }
               window.postMessage({
                 type: "DIFF_SUGGESTION_RESOLVED",
@@ -2791,9 +2883,13 @@
             widgetPos: newEndOffset,
             oldContent,
             newContent,
-            onAccept: (view, suggestionId) => {
+            onAccept: function(view, suggestionId) {
               if (diffEffects) {
-                view.dispatch({ effects: diffEffects.removeSegmentSuggestionEffect.of(suggestionId) });
+                try {
+                  view.dispatch({ effects: diffEffects.removeSegmentSuggestionEffect.of(suggestionId) });
+                } catch (e) {
+                  warn("[DiffAPI] \u79FB\u9664\u7247\u6BB5\u88C5\u9970\u5931\u8D25:", e);
+                }
               }
               const fileSuggestions = diffSuggestionsByFile.get(fileName);
               const suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
@@ -2808,17 +2904,59 @@
               debug("[DiffAPI] \u5DF2\u4FDD\u7559\u7247\u6BB5\u4FEE\u6539:", suggestionId);
               if (callbacks.onAccept) callbacks.onAccept();
             },
-            onReject: (view, suggestionId) => {
+            onReject: function(view, suggestionId) {
               const fileSuggestions = diffSuggestionsByFile.get(fileName);
               const suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
+              if (!suggestion) {
+                warn("[DiffAPI] \u627E\u4E0D\u5230\u7247\u6BB5\u5EFA\u8BAE\uFF0C\u8DF3\u8FC7\u56DE\u6EDA:", suggestionId);
+                return;
+              }
               const latest = getLatestSegmentPosition(suggestionId);
-              const from = latest ? latest.startOffset : suggestion ? suggestion.startOffset : 0;
-              const to = latest ? latest.endOffset : suggestion ? suggestion.endOffset : 0;
-              if (suggestion && diffEffects) {
-                view.dispatch({
-                  changes: { from, to, insert: suggestion.oldContent },
-                  effects: diffEffects.removeSegmentSuggestionEffect.of(suggestionId)
-                });
+              let from = latest ? latest.startOffset : suggestion.startOffset;
+              let to = latest ? latest.endOffset : suggestion.endOffset;
+              const docLen = view.state.doc.length;
+              if (from < 0 || to > docLen || from > to) {
+                const docText = view.state.doc.toString();
+                const idx = docText.indexOf(suggestion.newContent);
+                if (idx !== -1) {
+                  from = idx;
+                  to = idx + suggestion.newContent.length;
+                } else {
+                  warn(
+                    "[DiffAPI] \u7247\u6BB5\u56DE\u6EDA\u8303\u56F4\u8D8A\u754C\u4E14\u65E0\u6CD5\u5B9A\u4F4D\u65B0\u5185\u5BB9\uFF0C\u8DF3\u8FC7:",
+                    suggestionId,
+                    "range",
+                    from,
+                    "-",
+                    to,
+                    "docLen",
+                    docLen
+                  );
+                  if (diffEffects) {
+                    try {
+                      view.dispatch({ effects: diffEffects.removeSegmentSuggestionEffect.of(suggestionId) });
+                    } catch (e) {
+                    }
+                  }
+                  window.postMessage({ type: "DIFF_SUGGESTION_RESOLVED", data: { id: suggestionId, accepted: false } }, "*");
+                  if (fileSuggestions) fileSuggestions.delete(suggestionId);
+                  updateDiffControlBar();
+                  return;
+                }
+              }
+              if (diffEffects) {
+                try {
+                  view.dispatch({
+                    changes: { from, to, insert: suggestion.oldContent },
+                    effects: diffEffects.removeSegmentSuggestionEffect.of(suggestionId)
+                  });
+                } catch (e) {
+                  warn("[DiffAPI] \u7247\u6BB5\u56DE\u6EDA dispatch \u5931\u8D25:", e);
+                  try {
+                    view.dispatch({ effects: diffEffects.removeSegmentSuggestionEffect.of(suggestionId) });
+                  } catch (e2) {
+                  }
+                }
               }
               window.postMessage({
                 type: "DIFF_SUGGESTION_RESOLVED",
@@ -2889,8 +3027,8 @@
         const sortedIds = ids.slice().sort(function(a, b) {
           const configA = fileSuggestions.get(a);
           const configB = fileSuggestions.get(b);
-          const posA = configA ? configA.lineFrom : 0;
-          const posB = configB ? configB.lineFrom : 0;
+          const posA = configA ? configA.lineFrom || configA.startOffset || 0 : 0;
+          const posB = configB ? configB.lineFrom || configB.startOffset || 0 : 0;
           return posB - posA;
         });
         for (let j = 0; j < sortedIds.length; j++) {
@@ -3043,6 +3181,7 @@
 
   // public/injected/modules/diff/index.js
   var diffCodeMirror = null;
+  var extensionGeneration = 0;
   function restoreSuggestionsForCurrentFile() {
     if (!diffCurrentView || !diffCurrentFileName) {
       updateDiffControlBar();
@@ -3050,9 +3189,18 @@
     }
     const suggestions = getCurrentFileSuggestions();
     const inlineStatus = getCurrentFileInlineStatus();
-    if (!diffEffects) {
+    if (!diffEffects || !diffEffects.addDiffSuggestionEffect) {
       updateDiffControlBar();
       return;
+    }
+    if (diffSuggestionField) {
+      try {
+        diffCurrentView.state.field(diffSuggestionField);
+      } catch (e) {
+        debug("[DiffAPI] StateField \u672A\u88C5\u8F7D\uFF0C\u8DF3\u8FC7\u6B64\u6B21\u6062\u590D\uFF08\u7B49\u5F85\u6269\u5C55\u91CD\u5EFA\uFF09");
+        updateDiffControlBar();
+        return;
+      }
     }
     try {
       diffCurrentView.dispatch({
@@ -3077,23 +3225,42 @@
       try {
         if (config.type === "segment") {
           const docContent = diffCurrentView.state.doc.toString();
-          const foundIndex = docContent.indexOf(config.oldContent);
+          const searchText = config.newContent;
+          const foundIndex = docContent.indexOf(searchText);
           if (foundIndex !== -1) {
             config.startOffset = foundIndex;
-            config.endOffset = foundIndex + config.oldContent.length;
+            config.endOffset = foundIndex + searchText.length;
             config.widgetPos = config.endOffset;
             diffCurrentView.dispatch({ effects: diffEffects.addSegmentSuggestionEffect.of(config) });
           } else {
-            warn("[DiffAPI] \u6062\u590D\u7247\u6BB5\u5EFA\u8BAE\u5931\u8D25\uFF0C\u627E\u4E0D\u5230\u539F\u59CB\u5185\u5BB9:", id);
+            warn("[DiffAPI] \u6062\u590D\u7247\u6BB5\u5EFA\u8BAE\u5931\u8D25\uFF0C\u627E\u4E0D\u5230\u65B0\u5185\u5BB9:", id);
             toRemove.push(id);
           }
         } else {
-          const lineStart = diffCurrentView.state.doc.line(config.startLine);
-          const lineEnd = diffCurrentView.state.doc.line(config.endLine);
-          config.lineFrom = lineStart.from;
-          config.lineTo = lineEnd.to;
-          config.widgetPos = lineEnd.to;
-          diffCurrentView.dispatch({ effects: diffEffects.addDiffSuggestionEffect.of(config) });
+          const docContent = diffCurrentView.state.doc.toString();
+          const foundIndex = docContent.indexOf(config.newContent);
+          if (foundIndex !== -1) {
+            const lineStart = diffCurrentView.state.doc.lineAt(foundIndex);
+            const lineEnd = diffCurrentView.state.doc.lineAt(foundIndex + config.newContent.length - 1);
+            config.startLine = lineStart.number;
+            config.endLine = lineEnd.number;
+            config.lineFrom = lineStart.from;
+            config.lineTo = lineEnd.to;
+            config.widgetPos = lineStart.from;
+            diffCurrentView.dispatch({ effects: diffEffects.addDiffSuggestionEffect.of(config) });
+          } else {
+            try {
+              const lineStart = diffCurrentView.state.doc.line(config.startLine);
+              const lineEnd = diffCurrentView.state.doc.line(config.endLine);
+              config.lineFrom = lineStart.from;
+              config.lineTo = lineEnd.to;
+              config.widgetPos = lineStart.from;
+              diffCurrentView.dispatch({ effects: diffEffects.addDiffSuggestionEffect.of(config) });
+            } catch (lineErr) {
+              warn("[DiffAPI] \u6062\u590D\u884C\u7EA7\u5EFA\u8BAE\u5931\u8D25\uFF0C\u884C\u53F7\u8D8A\u754C:", id, lineErr);
+              toRemove.push(id);
+            }
+          }
         }
       } catch (e) {
         warn("[DiffAPI] \u6062\u590D\u5EFA\u8BAE\u5931\u8D25:", id, e);
@@ -3134,10 +3301,19 @@
     updateDiffControlBar();
   }
   function onFileChanged(oldFileName, newFileName) {
+    const genAtSwitch = extensionGeneration;
     setTimeout(() => {
+      refreshEditorView();
       restoreSuggestionsForCurrentFile();
       window.postMessage({ type: "DIFF_READY", data: { file: newFileName } }, "*");
     }, 300);
+    setTimeout(() => {
+      if (extensionGeneration !== genAtSwitch) {
+        debug("[DiffAPI] \u6269\u5C55\u5728\u5207\u6362\u540E\u91CD\u5EFA\uFF0C\u91CD\u65B0\u6062\u590D\u5EFA\u8BAE:", newFileName);
+        refreshEditorView();
+        restoreSuggestionsForCurrentFile();
+      }
+    }, 800);
   }
   function checkFileChange() {
     try {
@@ -3162,6 +3338,13 @@
     }
     const interval = setInterval(checkFileChange, 500);
     setDiffFileCheckInterval(interval);
+  }
+  function refreshEditorView() {
+    const view = tryGetEditorView();
+    if (view && view !== diffCurrentView) {
+      debug("[DiffAPI] \u7F16\u8F91\u5668\u89C6\u56FE\u5DF2\u66F4\u65B0\uFF08\u6587\u4EF6\u5207\u6362\u540E\uFF09");
+      setDiffCurrentView(view);
+    }
   }
   function tryGetEditorView() {
     try {
@@ -3199,10 +3382,44 @@
       const CM = detail.CodeMirror;
       const extensions = detail.extensions;
       diffCodeMirror = CM;
-      debug("[DiffAPI] \u6355\u83B7\u5230 CodeMirror \u5B9E\u4F8B");
       const diffSuggestionExtension = createDiffSuggestionExtension(CM);
       extensions.push(diffSuggestionExtension);
+      extensionGeneration++;
+      debug("[DiffAPI] \u6355\u83B7\u5230 CodeMirror \u5B9E\u4F8B (generation=" + extensionGeneration + ")");
       debug("[DiffAPI] Diff \u5EFA\u8BAE\u6269\u5C55\u5DF2\u6CE8\u518C");
+      if (extensionGeneration > 1) {
+        const gen = extensionGeneration;
+        let restoreAttempts = 0;
+        const tryRestore = () => {
+          restoreAttempts++;
+          if (extensionGeneration !== gen) return;
+          refreshEditorView();
+          let fieldMounted = false;
+          try {
+            if (diffCurrentView && diffSuggestionField) {
+              diffCurrentView.state.field(diffSuggestionField);
+              fieldMounted = true;
+            }
+          } catch (e) {
+          }
+          if (fieldMounted) {
+            restoreSuggestionsForCurrentFile();
+            debug("[DiffAPI] \u6269\u5C55\u91CD\u5EFA\u540E\u6062\u590D\u5EFA\u8BAE\u5B8C\u6210 (generation=" + gen + ", attempt=" + restoreAttempts + ")");
+          } else if (restoreAttempts < 20) {
+            setTimeout(tryRestore, 100);
+          } else {
+            warn("[DiffAPI] \u6269\u5C55\u91CD\u5EFA\u540E\u6062\u590D\u8D85\u65F6\uFF0Cfield \u672A\u88C5\u8F7D");
+          }
+        };
+        setTimeout(tryRestore, 50);
+      }
+      if (!window.diffAPI) {
+        const view = tryGetEditorView();
+        if (view) {
+          debug("[DiffAPI] \u521D\u59CB\u5316\u8D85\u65F6\u540E\u901A\u8FC7\u6269\u5C55\u4E8B\u4EF6\u8865\u6551\uFF0C\u6267\u884C completeDiffSetup");
+          completeDiffSetup(view);
+        }
+      }
     });
     let attempts = 0;
     const MAX_ATTEMPTS = 60;

@@ -214,10 +214,11 @@ export function setupDiffAPI() {
           lineFrom: newLine.from,
           lineTo: newLineEnd.to,
           widgetPos: newLine.from,
-          onAccept: (view, suggestionId) => {
-            // Accept: 内容已在文档中，只需移除装饰
+          onAccept: function(view, suggestionId) {
             if (diffEffects) {
-              view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) });
+              try {
+                view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) });
+              } catch (e) { warn('[DiffAPI] 移除单行装饰失败:', e); }
             }
             const fileSuggestions = diffSuggestionsByFile.get(fileName);
             const suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
@@ -232,19 +233,48 @@ export function setupDiffAPI() {
             debug('[DiffAPI] 已保留修改:', suggestionId);
             if (callbacks.onAccept) callbacks.onAccept(oldContent, newContent);
           },
-          onReject: (view, suggestionId) => {
-            // Reject: 回滚文档到旧内容
+          onReject: function(view, suggestionId) {
             const fileSuggestions = diffSuggestionsByFile.get(fileName);
             const suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
+            if (!suggestion) {
+              warn('[DiffAPI] 找不到单行建议，跳过回滚:', suggestionId);
+              return;
+            }
+
             const latest = getLatestSuggestionPosition(suggestionId);
-            const from = latest ? latest.lineFrom : (suggestion ? suggestion.lineFrom : 0);
-            const to = latest ? latest.lineTo : (suggestion ? suggestion.lineTo : 0);
-            
-            if (suggestion && diffEffects) {
-              view.dispatch({
-                changes: { from: from, to: to, insert: suggestion.oldContent },
-                effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId)
-              });
+            let from = latest ? latest.lineFrom : suggestion.lineFrom;
+            let to = latest ? latest.lineTo : suggestion.lineTo;
+
+            const docLen = view.state.doc.length;
+            if (from < 0 || to > docLen || from > to) {
+              const docText = view.state.doc.toString();
+              const idx = docText.indexOf(suggestion.newContent);
+              if (idx !== -1) {
+                from = idx;
+                to = idx + suggestion.newContent.length;
+              } else {
+                warn('[DiffAPI] 单行回滚范围越界且无法定位新内容，跳过:', suggestionId,
+                     'range', from, '-', to, 'docLen', docLen);
+                if (diffEffects) {
+                  try { view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) }); } catch (e) {}
+                }
+                window.postMessage({ type: 'DIFF_SUGGESTION_RESOLVED', data: { id: suggestionId, accepted: false } }, '*');
+                if (fileSuggestions) fileSuggestions.delete(suggestionId);
+                updateDiffControlBar();
+                return;
+              }
+            }
+
+            if (diffEffects) {
+              try {
+                view.dispatch({
+                  changes: { from: from, to: to, insert: suggestion.oldContent },
+                  effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId)
+                });
+              } catch (e) {
+                warn('[DiffAPI] 单行回滚 dispatch 失败:', e);
+                try { view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) }); } catch (e2) {}
+              }
             }
             window.postMessage({
               type: 'DIFF_SUGGESTION_RESOLVED',
@@ -307,10 +337,11 @@ export function setupDiffAPI() {
             lineFrom: newLineStart.from,
             lineTo: newLineEnd.to,
             widgetPos: newLineStart.from,
-            onAccept: (view, suggestionId) => {
-              // Accept: 内容已在文档中，只需移除装饰
+            onAccept: function(view, suggestionId) {
               if (diffEffects) {
-                view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) });
+                try {
+                  view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) });
+                } catch (e) { warn('[DiffAPI] 移除行级装饰失败:', e); }
               }
               const fileSuggestions = diffSuggestionsByFile.get(fileName);
               const suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
@@ -325,19 +356,50 @@ export function setupDiffAPI() {
               debug('[DiffAPI] 已保留修改:', suggestionId);
               if (callbacks.onAccept) callbacks.onAccept();
             },
-            onReject: (view, suggestionId) => {
-              // Reject: 回滚文档到旧内容
+            onReject: function(view, suggestionId) {
               const fileSuggestions = diffSuggestionsByFile.get(fileName);
               const suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
+              if (!suggestion) {
+                warn('[DiffAPI] 找不到行级建议，跳过回滚:', suggestionId);
+                return;
+              }
+
+              // Determine rollback range: prefer StateField, then store
               const latest = getLatestSuggestionPosition(suggestionId);
-              const from = latest ? latest.lineFrom : (suggestion ? suggestion.lineFrom : 0);
-              const to = latest ? latest.lineTo : (suggestion ? suggestion.lineTo : 0);
-              
-              if (suggestion && diffEffects) {
-                view.dispatch({
-                  changes: { from: from, to: to, insert: suggestion.oldContent },
-                  effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId)
-                });
+              let from = latest ? latest.lineFrom : suggestion.lineFrom;
+              let to = latest ? latest.lineTo : suggestion.lineTo;
+
+              // Safety: locate newContent in the document to get accurate range
+              const docLen = view.state.doc.length;
+              if (from < 0 || to > docLen || from > to) {
+                const docText = view.state.doc.toString();
+                const idx = docText.indexOf(suggestion.newContent);
+                if (idx !== -1) {
+                  from = idx;
+                  to = idx + suggestion.newContent.length;
+                } else {
+                  warn('[DiffAPI] 行级回滚范围越界且无法定位新内容，跳过:', suggestionId,
+                       'range', from, '-', to, 'docLen', docLen);
+                  if (diffEffects) {
+                    try { view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) }); } catch (e) {}
+                  }
+                  window.postMessage({ type: 'DIFF_SUGGESTION_RESOLVED', data: { id: suggestionId, accepted: false } }, '*');
+                  if (fileSuggestions) fileSuggestions.delete(suggestionId);
+                  updateDiffControlBar();
+                  return;
+                }
+              }
+
+              if (diffEffects) {
+                try {
+                  view.dispatch({
+                    changes: { from: from, to: to, insert: suggestion.oldContent },
+                    effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId)
+                  });
+                } catch (e) {
+                  warn('[DiffAPI] 行级回滚 dispatch 失败:', e);
+                  try { view.dispatch({ effects: diffEffects.removeDiffSuggestionEffect.of(suggestionId) }); } catch (e2) {}
+                }
               }
               window.postMessage({
                 type: 'DIFF_SUGGESTION_RESOLVED',
@@ -387,10 +449,11 @@ export function setupDiffAPI() {
             widgetPos: newEndOffset,
             oldContent: oldContent,
             newContent: newContent,
-            onAccept: (view, suggestionId) => {
-              // Accept: 内容已在文档中，只需移除装饰
+            onAccept: function(view, suggestionId) {
               if (diffEffects) {
-                view.dispatch({ effects: diffEffects.removeSegmentSuggestionEffect.of(suggestionId) });
+                try {
+                  view.dispatch({ effects: diffEffects.removeSegmentSuggestionEffect.of(suggestionId) });
+                } catch (e) { warn('[DiffAPI] 移除片段装饰失败:', e); }
               }
               const fileSuggestions = diffSuggestionsByFile.get(fileName);
               const suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
@@ -405,19 +468,50 @@ export function setupDiffAPI() {
               debug('[DiffAPI] 已保留片段修改:', suggestionId);
               if (callbacks.onAccept) callbacks.onAccept();
             },
-            onReject: (view, suggestionId) => {
-              // Reject: 回滚文档到旧内容
+            onReject: function(view, suggestionId) {
               const fileSuggestions = diffSuggestionsByFile.get(fileName);
               const suggestion = fileSuggestions ? fileSuggestions.get(suggestionId) : null;
+              if (!suggestion) {
+                warn('[DiffAPI] 找不到片段建议，跳过回滚:', suggestionId);
+                return;
+              }
+
+              // Determine rollback range: prefer StateField, then store
               const latest = getLatestSegmentPosition(suggestionId);
-              const from = latest ? latest.startOffset : (suggestion ? suggestion.startOffset : 0);
-              const to = latest ? latest.endOffset : (suggestion ? suggestion.endOffset : 0);
-              
-              if (suggestion && diffEffects) {
-                view.dispatch({
-                  changes: { from: from, to: to, insert: suggestion.oldContent },
-                  effects: diffEffects.removeSegmentSuggestionEffect.of(suggestionId)
-                });
+              let from = latest ? latest.startOffset : suggestion.startOffset;
+              let to = latest ? latest.endOffset : suggestion.endOffset;
+
+              // Safety: locate newContent in the document to get accurate range
+              const docLen = view.state.doc.length;
+              if (from < 0 || to > docLen || from > to) {
+                const docText = view.state.doc.toString();
+                const idx = docText.indexOf(suggestion.newContent);
+                if (idx !== -1) {
+                  from = idx;
+                  to = idx + suggestion.newContent.length;
+                } else {
+                  warn('[DiffAPI] 片段回滚范围越界且无法定位新内容，跳过:', suggestionId,
+                       'range', from, '-', to, 'docLen', docLen);
+                  if (diffEffects) {
+                    try { view.dispatch({ effects: diffEffects.removeSegmentSuggestionEffect.of(suggestionId) }); } catch (e) {}
+                  }
+                  window.postMessage({ type: 'DIFF_SUGGESTION_RESOLVED', data: { id: suggestionId, accepted: false } }, '*');
+                  if (fileSuggestions) fileSuggestions.delete(suggestionId);
+                  updateDiffControlBar();
+                  return;
+                }
+              }
+
+              if (diffEffects) {
+                try {
+                  view.dispatch({
+                    changes: { from: from, to: to, insert: suggestion.oldContent },
+                    effects: diffEffects.removeSegmentSuggestionEffect.of(suggestionId)
+                  });
+                } catch (e) {
+                  warn('[DiffAPI] 片段回滚 dispatch 失败:', e);
+                  try { view.dispatch({ effects: diffEffects.removeSegmentSuggestionEffect.of(suggestionId) }); } catch (e2) {}
+                }
               }
               window.postMessage({
                 type: 'DIFF_SUGGESTION_RESOLVED',
@@ -497,12 +591,12 @@ export function setupDiffAPI() {
       const fileSuggestions = getCurrentFileSuggestions();
       const ids = Array.from(fileSuggestions.keys());
       
-      // 按照位置从后往前排序，避免回滚时行号偏移
+      // 按照位置从后往前排序，避免回滚时偏移
       const sortedIds = ids.slice().sort(function(a, b) {
         const configA = fileSuggestions.get(a);
         const configB = fileSuggestions.get(b);
-        const posA = configA ? configA.lineFrom : 0;
-        const posB = configB ? configB.lineFrom : 0;
+        const posA = configA ? (configA.lineFrom || configA.startOffset || 0) : 0;
+        const posB = configB ? (configB.lineFrom || configB.startOffset || 0) : 0;
         return posB - posA;
       });
       
