@@ -101,6 +101,15 @@ The file will be created in the project root by default. To create inside a subf
         console.log('[CreateFileTool] Calling newFolder:', name, parentFolderId);
         const result = await overleafEditor.fileOps.newFolder(name, parentFolderId);
         console.log('[CreateFileTool] newFolder result:', result);
+
+        // Solution A: Refresh file tree cache after creation so subsequent list_dir/read_file can find the new file
+        try {
+          await overleafEditor.project.getFileTree();
+          console.log('[CreateFileTool] File tree cache refreshed');
+        } catch (e) {
+          console.warn('[CreateFileTool] Failed to refresh file tree cache:', e);
+        }
+
         return {
           success: true,
           data: {
@@ -116,6 +125,15 @@ The file will be created in the project root by default. To create inside a subf
         console.log('[CreateFileTool] Calling newDoc:', name, parentFolderId);
         const result = await overleafEditor.fileOps.newDoc(name, parentFolderId);
         console.log('[CreateFileTool] newDoc result:', result);
+
+        // Solution A: Refresh file tree cache after creation so subsequent list_dir/read_file can find the new file
+        try {
+          await overleafEditor.project.getFileTree();
+          console.log('[CreateFileTool] File tree cache refreshed');
+        } catch (e) {
+          console.warn('[CreateFileTool] Failed to refresh file tree cache:', e);
+        }
+
         return {
           success: true,
           data: {
