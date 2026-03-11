@@ -1038,9 +1038,17 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
           <div className="ai-input-toolbar-right">
             <button
               className="ai-image-upload-btn"
-              onClick={() => {
-                const fileInput = document.querySelector('.ai-rich-input-container input[type="file"]') as HTMLInputElement;
-                fileInput?.click();
+              onClick={(e) => {
+                const target = e.currentTarget as HTMLElement;
+                const pane = target.closest('.conversation-pane');
+                if (pane) {
+                  const fileInput = pane.querySelector('.ai-rich-input-container input[type="file"]') as HTMLInputElement;
+                  fileInput?.click();
+                } else {
+                  // Fallback
+                  const fileInput = document.querySelector('.ai-rich-input-container input[type="file"]') as HTMLInputElement;
+                  fileInput?.click();
+                }
               }}
               disabled={isGenerating}
               title="上传图片"
