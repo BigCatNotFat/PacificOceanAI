@@ -1081,9 +1081,26 @@ Keep responses clear and to the point.`;
         content = `<thinking>\n${msg.thinking}\n</thinking>\n\n${content}`;
       }
 
+      // 如果是用户消息且附带了图片，构建多模态 ContentPart[] 格式
+      // 这样 LLM 能够同时"看到"文本和图片
+      let llmContent: string | ContentPart[] = content;
+      if (msg.role === 'user' && msg.images && msg.images.length > 0) {
+        const parts: ContentPart[] = [
+          { type: 'text', text: content }
+        ];
+        for (const imageUrl of msg.images) {
+          parts.push({
+            type: 'image_url',
+            image_url: { url: imageUrl, detail: 'auto' }
+          });
+        }
+        llmContent = parts;
+        console.log(`[PromptService] 用户消息附带 ${msg.images.length} 张图片，使用多模态格式`);
+      }
+
       const llmMsg: LLMMessage = {
         role: msg.role as LLMMessageRole,
-        content
+        content: llmContent
       };
 
       // 对 assistant 消息添加工具调用信息（OpenAI: 只有 assistant 可以带 tool_calls）
