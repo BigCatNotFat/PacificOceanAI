@@ -19,6 +19,6 @@ export class FileModule extends BaseModule {
    * @param targetFilename 目标文件名
    */
   async switchFile(targetFilename: string): Promise<{ success: boolean; error?: string }> {
-    return this.call<{ success: boolean; error?: string }>('switchFile', [targetFilename]);
+    return this.call<{ success: boolean; error?: string }>('switchFile', targetFilename);
   }
 }

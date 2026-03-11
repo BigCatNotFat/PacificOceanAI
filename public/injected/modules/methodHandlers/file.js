@@ -99,39 +99,85 @@ export function createFileHandlers(getEditorView, methodHandlers) {
       return null;
     },
 
-    // 切换当前编辑的文件
+    // 切换当前编辑的文件。支持传入全路径 (例如 "folder/subfolder/file.tex") 以自动展开文件夹
     switchFile: function(targetFilename) {
       debug(`[OverleafBridge] Attempting to switch to file: "${targetFilename}"`);
+      
+      return new Promise((resolve) => {
+        // 1. 解析路径
+        // 如果传入的是完整路径（例如 "folder/subfolder/file.tex"）或者只是文件名 ("file.tex")
+        const parts = targetFilename.split('/').filter(Boolean);
+        const fileName = parts.pop();
+        const folders = parts;
 
-      // 1. 查找文件节点
-      // Overleaf 文件树节点通常带有 aria-label="文件名"
-      // 注意：如果是文件夹中的文件，这里可能需要先展开文件夹，目前仅支持顶层或已展开的文件
-      const fileNode = document.querySelector(`li[role="treeitem"][aria-label="${targetFilename}"]`);
+        // 递归展开目录树的辅助函数
+        const expandFolders = (folderNames, index) => {
+          if (index >= folderNames.length) {
+            // 所有文件夹都已经展开完毕，现在去点击文件
+            clickTargetFile();
+            return;
+          }
 
-      if (fileNode) {
-        debug("[OverleafBridge] Found file node DOM, clicking...");
-        
-        // 2. 找到最佳点击目标
-        // 通常点击内部的 .entity 元素，如果没有则点击 li 本身
-        const clickTarget = fileNode.querySelector('.entity') || fileNode;
+          const currentFolderName = folderNames[index];
+          const folderNodes = Array.from(document.querySelectorAll('li[role="treeitem"]'));
+          const folderNode = folderNodes.find(el => el.getAttribute('aria-label') === currentFolderName);
 
-        // 3. 模拟完整的鼠标点击事件序列 (MouseDown -> MouseUp -> Click)
-        // 这样比单纯的 .click() 更能骗过某些框架的事件监听
-        const eventOptions = { bubbles: true, cancelable: true, view: window };
-        
-        clickTarget.dispatchEvent(new MouseEvent('mousedown', eventOptions));
-        clickTarget.dispatchEvent(new MouseEvent('mouseup', eventOptions));
-        clickTarget.dispatchEvent(new MouseEvent('click', eventOptions));
-
-        debug(`[OverleafBridge] Switch command sent to "${targetFilename}"`);
-        return { success: true };
-      } else {
-        warn(`[OverleafBridge] DOM node not found for file "${targetFilename}"`);
-        return { 
-          success: false, 
-          error: 'File not found in file tree (it might be in a collapsed folder)' 
+          if (folderNode) {
+            const isExpanded = folderNode.getAttribute('aria-expanded') === 'true';
+            if (!isExpanded) {
+              debug(`[OverleafBridge] Expanding folder: ${currentFolderName}`);
+              const toggleBtn = folderNode.querySelector('button') || folderNode.querySelector('.ol-cm-collapse-button') || folderNode;
+              
+              const opts = { bubbles: true, cancelable: true, view: window };
+              toggleBtn.dispatchEvent(new MouseEvent('mousedown', opts));
+              toggleBtn.dispatchEvent(new MouseEvent('mouseup', opts));
+              toggleBtn.dispatchEvent(new MouseEvent('click', opts));
+              
+              // 等待一段时间让 React 将内部节点渲染到 DOM
+              setTimeout(() => expandFolders(folderNames, index + 1), 500);
+            } else {
+              // 已经展开，直接进入下一级
+              expandFolders(folderNames, index + 1);
+            }
+          } else {
+            warn(`[OverleafBridge] Folder node not found for "${currentFolderName}"`);
+            // 尽力而为，如果找不到中间文件夹，也尝试找一下最终的文件看能不能找到
+            clickTargetFile();
+          }
         };
-      }
+
+        const clickTargetFile = () => {
+          // 2. 查找文件节点
+          const fileNodes = Array.from(document.querySelectorAll('li[role="treeitem"]'));
+          const fileNode = fileNodes.find(el => el.getAttribute('aria-label') === fileName);
+
+          if (fileNode) {
+            debug("[OverleafBridge] Found file node DOM, clicking...");
+            
+            // 3. 找到最佳点击目标
+            const clickTarget = fileNode.querySelector('.entity') || fileNode;
+
+            // 4. 模拟完整的鼠标点击事件序列
+            const eventOptions = { bubbles: true, cancelable: true, view: window };
+            
+            clickTarget.dispatchEvent(new MouseEvent('mousedown', eventOptions));
+            clickTarget.dispatchEvent(new MouseEvent('mouseup', eventOptions));
+            clickTarget.dispatchEvent(new MouseEvent('click', eventOptions));
+
+            debug(`[OverleafBridge] Switch command sent to "${fileName}"`);
+            resolve({ success: true });
+          } else {
+            warn(`[OverleafBridge] DOM node not found for file "${fileName}"`);
+            resolve({ 
+              success: false, 
+              error: `File not found in file tree (could not expand to "${targetFilename}")` 
+            });
+          }
+        };
+
+        // 开始展开目录结构
+        expandFolders(folders, 0);
+      });
     }
   };
 }

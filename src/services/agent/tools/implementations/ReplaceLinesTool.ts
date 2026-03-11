@@ -245,7 +245,7 @@ Examples:
       let preSwitchContent: string | null = null;
       try { preSwitchContent = await overleafEditor.document.getText(); } catch { /* ignore */ }
 
-      const switchResult = await overleafEditor.file.switchFile(targetBaseName);
+      const switchResult = await overleafEditor.file.switchFile(targetFile);
       if (!switchResult.success) {
         return { success: false, error: `[${targetFile}] 无法切换到文件: ${switchResult.error}` };
       }

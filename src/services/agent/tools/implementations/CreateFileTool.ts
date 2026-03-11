@@ -12,6 +12,12 @@ import { getAllEntities } from '../utils/FileEntityResolver';
 import { recentlyCreatedFiles } from '../utils/RecentlyCreatedFilesRegistry';
 
 export class CreateFileTool extends BaseTool {
+  /**
+   * 本地缓存：记录当前 execute() 批次中创建的文件夹路径 → ID
+   * 用于解决 React 状态不同步导致的 "file already exists" 问题
+   */
+  private folderCache = new Map<string, string>();
+
   protected metadata: ToolMetadata = {
     name: 'create_file',
     description: `Create one or more new files or folders in the Overleaf project. Supports batch creation in a single call.
@@ -112,17 +118,48 @@ Examples:
     }
 
     if (isFolder) {
-      const result = await overleafEditor.fileOps.newFolder(name, parentFolderId);
-      recentlyCreatedFiles.register({ name, path: filePath, id: result._id, type: 'folder' });
-      return {
-        success: true,
-        data: { type: 'folder', name, path: filePath, id: result._id, message: `Created folder "${filePath}"` }
-      };
+      try {
+        const result = await overleafEditor.fileOps.newFolder(name, parentFolderId);
+        recentlyCreatedFiles.register({ name, path: filePath, id: result._id, type: 'folder' });
+        this.folderCache.set(this.normalizePath(filePath), result._id);
+        return {
+          success: true,
+          data: { type: 'folder', name, path: filePath, id: result._id, message: `Created folder "${filePath}"` }
+        };
+      } catch (folderError) {
+        const errorMsg = folderError instanceof Error ? folderError.message : String(folderError);
+        if (errorMsg.includes('file already exists') || errorMsg.includes('400')) {
+          // 文件夹已存在，尝试恢复其 ID
+          console.warn('[CreateFileTool] Folder already exists, recovering:', filePath);
+          await new Promise(r => setTimeout(r, 500));
+          const entities = await getAllEntities();
+          const found = entities.find(
+            f => f.type === 'folder' && (this.normalizePath(f.path) === this.normalizePath(filePath) || f.name === name)
+          );
+          if (found) {
+            this.folderCache.set(this.normalizePath(filePath), found.id);
+            return {
+              success: true,
+              data: { type: 'folder', name, path: filePath, id: found.id, message: `Folder "${filePath}" already exists (reused)` }
+            };
+          }
+          // 检查 recentlyCreatedFiles
+          const recent = recentlyCreatedFiles.findByPath(filePath);
+          if (recent) {
+            this.folderCache.set(this.normalizePath(filePath), recent.id);
+            return {
+              success: true,
+              data: { type: 'folder', name, path: filePath, id: recent.id, message: `Folder "${filePath}" already exists (reused)` }
+            };
+          }
+        }
+        throw folderError;
+      }
     } else {
       const result = await overleafEditor.fileOps.newDoc(name, parentFolderId);
       recentlyCreatedFiles.register({ name, path: filePath, id: result._id, type: 'doc' });
       await this.waitForFileInTree(name, 5000);
-      await this.switchToNewFile(name);
+      await this.switchToNewFile(filePath);
       return {
         success: true,
         data: { type: 'doc', name, path: filePath, id: result._id, message: `Created file "${filePath}"` }
@@ -137,6 +174,7 @@ Examples:
     explanation?: string;
   }): Promise<ToolExecutionResult> {
     const startTime = Date.now();
+    this.folderCache.clear(); // 每次执行清空缓存
 
     try {
       const files = this.normalizeToFiles(args);
@@ -287,7 +325,10 @@ Examples:
   }
 
   /**
-   * 逐级解析父文件夹路径，不存在则自动创建
+   * 逐级解析父文件夹路径，不存在则自动创建。
+   *
+   * 使用 folderCache 缓存本次 batch 中已创建的文件夹 ID，
+   * 避免因 React 状态未同步而重复创建导致 400 "file already exists"。
    */
   private async resolveOrCreateParentFolders(parentPath: string): Promise<string | undefined> {
     try {
@@ -297,16 +338,96 @@ Examples:
 
       for (let i = 0; i < segments.length; i++) {
         const segmentPath = segments.slice(0, i + 1).join('/');
+        const normalizedSegmentPath = this.normalizePath(segmentPath);
+
+        // 优先级 1: 检查本地缓存（本次 batch 中刚创建的）
+        const cachedId = this.folderCache.get(normalizedSegmentPath);
+        if (cachedId) {
+          console.log('[CreateFileTool] Found folder in cache:', segmentPath, 'id:', cachedId);
+          currentParentId = cachedId;
+          continue;
+        }
+
+        // 优先级 2: 检查 entities（React 状态 + REST API）
         const existing = entities.find(
-          f => f.type === 'folder' && this.normalizePath(f.path) === this.normalizePath(segmentPath)
+          f => f.type === 'folder' && this.normalizePath(f.path) === normalizedSegmentPath
         );
 
         if (existing) {
           currentParentId = existing.id;
-        } else {
-          console.log('[CreateFileTool] Creating parent folder:', segments[i], 'parentId:', currentParentId);
+          // 也写入缓存，方便后续快速查找
+          this.folderCache.set(normalizedSegmentPath, existing.id);
+          continue;
+        }
+
+        // 优先级 3: 检查 recentlyCreatedFiles 注册表
+        const recentEntry = recentlyCreatedFiles.findByPath(segmentPath);
+        if (recentEntry && recentEntry.type === 'folder') {
+          console.log('[CreateFileTool] Found folder in recently-created registry:', segmentPath, 'id:', recentEntry.id);
+          currentParentId = recentEntry.id;
+          this.folderCache.set(normalizedSegmentPath, recentEntry.id);
+          continue;
+        }
+
+        // 不存在，需要创建
+        console.log('[CreateFileTool] Creating parent folder:', segments[i], 'parentId:', currentParentId);
+        try {
           const result = await overleafEditor.fileOps.newFolder(segments[i], currentParentId);
           currentParentId = result._id;
+          // 缓存新创建的文件夹 ID
+          this.folderCache.set(normalizedSegmentPath, result._id);
+          // 也注册到 recentlyCreatedFiles 中
+          recentlyCreatedFiles.register({ name: segments[i], path: segmentPath, id: result._id, type: 'folder' });
+          console.log('[CreateFileTool] Created and cached folder:', segmentPath, 'id:', result._id);
+        } catch (createError) {
+          const errorMsg = createError instanceof Error ? createError.message : String(createError);
+
+          // 检查是否是 "file already exists" 错误
+          if (errorMsg.includes('file already exists') || errorMsg.includes('400')) {
+            console.warn('[CreateFileTool] Folder already exists on server, recovering:', segments[i]);
+
+            // 等待短暂时间让 React 状态可能同步
+            await new Promise(r => setTimeout(r, 1000));
+
+            // 重新查询 entities
+            const refreshedEntities = await getAllEntities();
+            const found = refreshedEntities.find(
+              f => f.type === 'folder' && this.normalizePath(f.path) === normalizedSegmentPath
+            );
+
+            if (found) {
+              console.log('[CreateFileTool] Recovered existing folder id:', found.id);
+              currentParentId = found.id;
+              this.folderCache.set(normalizedSegmentPath, found.id);
+              continue;
+            }
+
+            // 如果还是找不到，尝试按名称 + 父文件夹匹配
+            const foundByName = refreshedEntities.find(
+              f => f.type === 'folder' && f.name === segments[i]
+            );
+            if (foundByName) {
+              console.log('[CreateFileTool] Recovered folder by name:', foundByName.id);
+              currentParentId = foundByName.id;
+              this.folderCache.set(normalizedSegmentPath, foundByName.id);
+              continue;
+            }
+
+            // 最终手段：查 recentlyCreatedFiles
+            const recentFallback = recentlyCreatedFiles.findByPath(segmentPath);
+            if (recentFallback) {
+              console.log('[CreateFileTool] Recovered folder from recently-created:', recentFallback.id);
+              currentParentId = recentFallback.id;
+              this.folderCache.set(normalizedSegmentPath, recentFallback.id);
+              continue;
+            }
+
+            console.error('[CreateFileTool] Cannot recover folder ID for:', segmentPath);
+            return undefined;
+          }
+
+          // 不是 "already exists" 错误，直接抛出
+          throw createError;
         }
       }
 
