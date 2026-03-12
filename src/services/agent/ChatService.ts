@@ -281,12 +281,12 @@ export class ChatService implements IChatService {
         }
       }
 
+      session.isProcessing = false;
       this._onDidMessageUpdate.fire({
         conversationId,
         messages: [...session.messages]
       });
 
-      session.isProcessing = false;
       session.currentTurnStartIndex = undefined;
       await this.saveMessagesNow(session);
 
@@ -299,12 +299,12 @@ export class ChatService implements IChatService {
         assistantMsg.error = error instanceof Error ? error.message : String(error);
       }
 
+      session.isProcessing = false;
       this._onDidMessageUpdate.fire({
         conversationId,
         messages: [...session.messages]
       });
 
-      session.isProcessing = false;
       session.currentTurnStartIndex = undefined;
     } finally {
       // 无论成功/失败都必须释放订阅，避免残留回调持续把 UI 写回“正在工作...”
@@ -465,11 +465,11 @@ export class ChatService implements IChatService {
           return;
         }
         session.messages = finalMessages;
+        session.isProcessing = false;
         this._onDidMessageUpdate.fire({
           conversationId,
           messages: [...session.messages]
         });
-        session.isProcessing = false;
         session.currentTurnStartIndex = undefined;
         
         this.saveMessagesNow(session);
@@ -490,12 +490,12 @@ export class ChatService implements IChatService {
         const errorMessage = this.createMessage(session, 'assistant', `抱歉，发生了错误: ${error.message}`);
         errorMessage.status = 'error';
         session.messages.push(errorMessage);
+        session.isProcessing = false;
         this._onDidMessageUpdate.fire({
           conversationId,
           messages: [...session.messages]
         });
         
-        session.isProcessing = false;
         session.currentTurnStartIndex = undefined;
         
         // 错误时也保存，确保错误状态被持久化
@@ -522,12 +522,12 @@ export class ChatService implements IChatService {
       errorMessage.status = 'error';
       errorMessage.error = error instanceof Error ? error.message : String(error);
       session.messages.push(errorMessage);
+      session.isProcessing = false;
       this._onDidMessageUpdate.fire({
         conversationId,
         messages: [...session.messages]
       });
       
-      session.isProcessing = false;
       session.currentTurnStartIndex = undefined;
     }
   }
@@ -568,6 +568,8 @@ export class ChatService implements IChatService {
       session.currentLoopId = undefined;
     }
 
+    session.isProcessing = false;
+
     // 回滚当前这一轮对话
     if (typeof session.currentTurnStartIndex === 'number') {
       session.messages = session.messages.slice(0, session.currentTurnStartIndex);
@@ -577,8 +579,6 @@ export class ChatService implements IChatService {
         messages: [...session.messages]
       });
     }
-
-    session.isProcessing = false;
   }
 
   /**
