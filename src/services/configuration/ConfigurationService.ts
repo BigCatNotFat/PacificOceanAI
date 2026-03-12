@@ -230,8 +230,23 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
     
     // 去重：根据 id 保留第一个出现的模型
     const seen = new Set<string>();
+    const seenBuiltinActualModelIds = new Set<string>();
     const uniqueModels: AIModelConfig[] = [];
     for (const model of models) {
+      // 额外清理内置模型历史重复：同 actualModelId 仅保留一条
+      if (model.provider === 'builtin') {
+        const actualModelId =
+          model.actualModelId?.trim()
+          || (model.id.startsWith('builtin::') ? model.id.slice('builtin::'.length).trim() : '')
+          || model.name.replace(/（内置）$/, '').trim();
+
+        if (!actualModelId || seenBuiltinActualModelIds.has(actualModelId)) {
+          continue;
+        }
+
+        seenBuiltinActualModelIds.add(actualModelId);
+      }
+
       if (!seen.has(model.id)) {
         seen.add(model.id);
         uniqueModels.push(model);
