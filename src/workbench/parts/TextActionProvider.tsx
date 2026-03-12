@@ -54,17 +54,26 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
 
   // ============ 激活状态同步到注入脚本 ============
+
+  const hasActivatedModel = useCallback(async (): Promise<boolean> => {
+    const config = await configService.getAPIConfig();
+    return !!(config?.models?.some(m => {
+      if (!m.enabled) return false;
+      if (m.provider === 'codex-oauth') return true;
+      if (m.provider === 'builtin') return !!m.apiKey && !!m.actualModelId;
+      return !!m.apiKey;
+    }));
+  }, [configService]);
   
   // 发送激活状态到注入脚本（开源版：检查是否有任一供应商配置了 API Key）
   const sendActivationStatus = useCallback(async () => {
-    const config = await configService.getAPIConfig();
-    const isActivated = !!(config?.models?.some(m => m.enabled && (m.apiKey || m.provider === 'codex-oauth')));
+    const isActivated = await hasActivatedModel();
     
     window.postMessage({
       type: 'OVERLEAF_ACTIVATION_STATUS_UPDATE',
       data: { isActivated }
     }, '*');
-  }, [configService]);
+  }, [hasActivatedModel]);
 
   // 初始化时和配置变化时同步激活状态
   useEffect(() => {
@@ -97,12 +106,19 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
       window.removeEventListener('message', handleOpenSettings);
     };
   }, [sendActivationStatus]);
+
+  // 配置变更时主动同步激活状态，避免注入脚本长期缓存旧状态
+  useEffect(() => {
+    const disposable = configService.onDidChangeConfiguration(() => {
+      sendActivationStatus();
+    });
+    return () => disposable.dispose();
+  }, [configService, sendActivationStatus]);
   
   // 创建 AI 调用处理器
   const createAIHandler = useCallback((action: TextActionType) => {
     return async (_action: TextActionType, text: string, from: number, to: number, modelId?: string, customPrompt?: string, context?: { before?: string; after?: string }): Promise<string | null> => {
-      const config = await configService.getAPIConfig();
-      if (!config?.models?.some(m => m.enabled && (m.apiKey || m.provider === 'codex-oauth'))) {
+      if (!(await hasActivatedModel())) {
         return null;
       }
 
@@ -197,7 +213,7 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
         return null;
       }
     };
-  }, []);
+  }, [hasActivatedModel]);
   
   // 注册 AI 处理器
   useEffect(() => {

@@ -70,9 +70,12 @@ export class LLMService implements ILLMService {
     messages: LLMMessage[],
     config: LLMConfig
   ): Promise<LLMFinalMessage> {
-    const { providerType, apiConfig } = await this.resolveModelAndConfig(config.modelId);
+    const { providerType, apiConfig, requestModelId } = await this.resolveModelAndConfig(config.modelId);
     const provider = await this.getProvider(providerType, apiConfig);
-    return await provider.chat(messages, config);
+    const resolvedConfig = requestModelId === config.modelId
+      ? config
+      : { ...config, modelId: requestModelId };
+    return await provider.chat(messages, resolvedConfig);
   }
 
   /**
@@ -92,9 +95,12 @@ export class LLMService implements ILLMService {
     config: LLMConfig
   ): Promise<LLMFinalMessage> {
 
-    const { providerType, apiConfig } = await this.resolveModelAndConfig(config.modelId);
+    const { providerType, apiConfig, requestModelId } = await this.resolveModelAndConfig(config.modelId);
     const provider = await this.getProvider(providerType, apiConfig);
-    const result = await provider.managerChat(messages, config);
+    const resolvedConfig = requestModelId === config.modelId
+      ? config
+      : { ...config, modelId: requestModelId };
+    const result = await provider.managerChat(messages, resolvedConfig);
 
 
     return result;
@@ -106,7 +112,7 @@ export class LLMService implements ILLMService {
    * 解析模型并获取对应的 API 凭证
    * 优先从用户模型配置取凭证，其次查静态注册表 + 旧版全局配置
    */
-  private async resolveModelAndConfig(modelId: string): Promise<{ providerType: string; apiConfig: APIConfig }> {
+  private async resolveModelAndConfig(modelId: string): Promise<{ providerType: string; apiConfig: APIConfig; requestModelId: string }> {
     const config = await this.configService.getAPIConfig();
     const userModel = config?.models?.find(m => m.id === modelId && m.enabled);
 
@@ -114,7 +120,8 @@ export class LLMService implements ILLMService {
     if (userModel?.provider === 'codex-oauth') {
       return {
         providerType: 'codex-oauth',
-        apiConfig: { apiKey: '', baseUrl: 'https://chatgpt.com/backend-api' }
+        apiConfig: { apiKey: '', baseUrl: 'https://chatgpt.com/backend-api' },
+        requestModelId: userModel.actualModelId || userModel.id
       };
     }
 
@@ -123,7 +130,8 @@ export class LLMService implements ILLMService {
       const providerType = userModel.provider; // 直接使用用户配置的 provider（openai/gemini/deepseek/moonshot）
       return {
         providerType,
-        apiConfig: { apiKey: userModel.apiKey, baseUrl: userModel.baseUrl }
+        apiConfig: { apiKey: userModel.apiKey, baseUrl: userModel.baseUrl },
+        requestModelId: userModel.actualModelId || userModel.id
       };
     }
 
@@ -133,7 +141,8 @@ export class LLMService implements ILLMService {
       if (config?.apiKey) {
         return {
           providerType: registryInfo.provider,
-          apiConfig: { apiKey: config.apiKey, baseUrl: config.baseUrl || 'https://api.openai.com/v1' }
+          apiConfig: { apiKey: config.apiKey, baseUrl: config.baseUrl || 'https://api.openai.com/v1' },
+          requestModelId: modelId
         };
       }
       throw new Error(`模型 ${modelId} 在注册表中，但缺少 API Key，请在设置中配置`);
@@ -186,6 +195,7 @@ export class LLMService implements ILLMService {
         break;
       
       case 'openai-compatible':
+      case 'builtin':
       case 'deepseek':
       case 'moonshot':
       case 'qwen':

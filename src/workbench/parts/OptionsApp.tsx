@@ -4,6 +4,72 @@ import { IConfigurationServiceId } from '../../platform/configuration/configurat
 import type { IConfigurationService, AIModelConfig, APIConfig } from '../../platform/configuration/configuration';
 import { codexOAuthService } from '../../services/auth/CodexOAuthService';
 
+const BUILTIN_CHANNEL_BASE_URL = 'https://api.silicondream.top/v1';
+const BUILTIN_CHANNEL_ID_PREFIX = 'builtin::';
+
+const getBuiltinChannelModelId = (modelName: string): string => `${BUILTIN_CHANNEL_ID_PREFIX}${modelName}`;
+const getBuiltinActualModelId = (model: AIModelConfig): string => {
+  const fromActual = model.actualModelId?.trim();
+  if (fromActual) {
+    return fromActual;
+  }
+
+  if (model.id.startsWith(BUILTIN_CHANNEL_ID_PREFIX)) {
+    const fromId = model.id.slice(BUILTIN_CHANNEL_ID_PREFIX.length).trim();
+    if (fromId) {
+      return fromId;
+    }
+  }
+
+  return model.name.replace(/（内置）$/, '').trim();
+};
+
+const normalizeModelListForStorage = (models: AIModelConfig[]): AIModelConfig[] => {
+  const normalizedModels: AIModelConfig[] = [];
+  const seenModelIds = new Set<string>();
+  const seenBuiltinActualModelIds = new Set<string>();
+
+  for (const model of models) {
+    if (model.provider === 'builtin') {
+      const actualModelId = getBuiltinActualModelId(model);
+      if (!actualModelId || seenBuiltinActualModelIds.has(actualModelId)) {
+        continue;
+      }
+      seenBuiltinActualModelIds.add(actualModelId);
+
+      const normalizedBuiltinModel: AIModelConfig = {
+        ...model,
+        id: getBuiltinChannelModelId(actualModelId),
+        name: `${actualModelId}（内置）`,
+        provider: 'builtin',
+        actualModelId,
+        baseUrl: BUILTIN_CHANNEL_BASE_URL
+      };
+
+      if (!seenModelIds.has(normalizedBuiltinModel.id)) {
+        seenModelIds.add(normalizedBuiltinModel.id);
+        normalizedModels.push(normalizedBuiltinModel);
+      }
+      continue;
+    }
+
+    if (seenModelIds.has(model.id)) {
+      continue;
+    }
+    seenModelIds.add(model.id);
+    normalizedModels.push(model);
+  }
+
+  return normalizedModels;
+};
+
+const getAssetUrl = (assetPath: string): string => {
+  if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+    return chrome.runtime.getURL(assetPath);
+  }
+  return `/${assetPath}`;
+};
+
 /**
  * Options 设置页面主组件
  * 在独立的标签页中显示完整的设置界面
@@ -48,6 +114,18 @@ const OptionsApp: React.FC = () => {
   const [codexModelName, setCodexModelName] = useState('');
   const [codexAddResult, setCodexAddResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  // 内置模型渠道
+  const [builtinApiKey, setBuiltinApiKey] = useState('');
+  const [showBuiltinKey, setShowBuiltinKey] = useState(false);
+  const [builtinFetchedModels, setBuiltinFetchedModels] = useState<string[]>([]);
+  const [builtinFetching, setBuiltinFetching] = useState(false);
+  const [builtinFetchError, setBuiltinFetchError] = useState('');
+  const [builtinModelName, setBuiltinModelName] = useState('');
+  const [builtinAdding, setBuiltinAdding] = useState(false);
+  const [builtinAddResult, setBuiltinAddResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showBuiltinCodeModal, setShowBuiltinCodeModal] = useState(false);
+  const [builtinQrLoadError, setBuiltinQrLoadError] = useState(false);
+
   // 加载保存的设置
   useEffect(() => {
     chrome.storage.sync.get(['settings'], (result) => {
@@ -60,7 +138,25 @@ const OptionsApp: React.FC = () => {
 
   // 加载 API 配置
   useEffect(() => {
-    configService.getAPIConfig().then(config => {
+    configService.getAPIConfig().then(async config => {
+      if (!config) {
+        setApiConfig(config);
+        return;
+      }
+
+      const normalizedModels = normalizeModelListForStorage(config.models || []);
+      const hasModelListChanged = JSON.stringify(normalizedModels) !== JSON.stringify(config.models || []);
+
+      if (hasModelListChanged) {
+        const normalizedConfig: APIConfig = {
+          ...config,
+          models: normalizedModels
+        };
+        await configService.setAPIConfig(normalizedConfig);
+        setApiConfig(normalizedConfig);
+        return;
+      }
+
       setApiConfig(config);
     });
   }, [configService]);
@@ -125,6 +221,102 @@ const OptionsApp: React.FC = () => {
       setCodexAddResult({ success: true, message: `模型 "${name}" 添加成功` });
     } catch (error) {
       setCodexAddResult({ success: false, message: '添加失败：' + (error instanceof Error ? error.message : String(error)) });
+    }
+  };
+
+  // 扫描内置模型渠道中的可用模型列表
+  const fetchBuiltinModelList = async () => {
+    const key = builtinApiKey.trim();
+    if (!key) {
+      setBuiltinFetchError('请输入启动码');
+      return;
+    }
+
+    setBuiltinFetching(true);
+    setBuiltinFetchError('');
+    setBuiltinFetchedModels([]);
+    setBuiltinModelName('');
+    setBuiltinAddResult(null);
+
+    try {
+      const result = await configService.testConnectivity(key, BUILTIN_CHANNEL_BASE_URL);
+      if (!result.success) {
+        setBuiltinFetchError(`连接失败：${result.error || '未知错误'}`);
+        return;
+      }
+
+      const scannedModels = Array.from(
+        new Set(
+          (result.availableModels || [])
+            .map(model => model.trim())
+            .filter(model => !!model)
+        )
+      );
+
+      if (scannedModels.length === 0) {
+        setBuiltinFetchError('连接成功，但未检测到可用模型');
+        return;
+      }
+
+      setBuiltinFetchedModels(scannedModels);
+      setBuiltinModelName(scannedModels[0]);
+    } catch (error) {
+      setBuiltinFetchError(`获取失败：${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBuiltinFetching(false);
+    }
+  };
+
+  // 手动添加所选内置模型
+  const addBuiltinModel = async () => {
+    const key = builtinApiKey.trim();
+    const name = builtinModelName.trim();
+    if (!key) { setBuiltinAddResult({ success: false, message: '请输入启动码' }); return; }
+    if (!name) { setBuiltinAddResult({ success: false, message: '请先选择模型' }); return; }
+
+    setBuiltinAdding(true);
+    setBuiltinAddResult(null);
+
+    try {
+      const currentConfig = await configService.getAPIConfig();
+      const workingConfig = currentConfig || configService.getDefaultConfig();
+      workingConfig.models = normalizeModelListForStorage(workingConfig.models || []);
+
+      const internalModelId = getBuiltinChannelModelId(name);
+      const nextModel: AIModelConfig = {
+        id: internalModelId,
+        name: `${name}（内置）`,
+        enabled: true,
+        provider: 'builtin',
+        actualModelId: name,
+        apiKey: key,
+        baseUrl: BUILTIN_CHANNEL_BASE_URL
+      };
+
+      const existingIndex = workingConfig.models.findIndex(m => m.id === internalModelId);
+      if (existingIndex === -1) {
+        workingConfig.models.push(nextModel);
+      } else {
+        workingConfig.models[existingIndex] = {
+          ...workingConfig.models[existingIndex],
+          ...nextModel
+        };
+      }
+
+      await configService.setAPIConfig(workingConfig);
+      const latestConfig = await configService.getAPIConfig();
+      setApiConfig(latestConfig);
+      setBuiltinAddResult({
+        success: true,
+        message: existingIndex === -1 ? `模型 "${name}" 添加成功` : `模型 "${name}" 已更新`
+      });
+    } catch (error) {
+      setBuiltinAddResult({
+        success: false,
+        message: `添加失败：${error instanceof Error ? error.message : String(error)}`
+      });
+    } finally {
+      setBuiltinAdding(false);
     }
   };
 
@@ -211,10 +403,10 @@ const OptionsApp: React.FC = () => {
   };
 
   // 删除模型
-  const removeModel = async (modelId: string) => {
-    if (!confirm(`确定要删除模型 "${modelId}" 吗？`)) return;
+  const removeModel = async (model: AIModelConfig) => {
+    if (!confirm(`确定要删除模型 "${model.name}" 吗？`)) return;
     try {
-      await configService.removeModel(modelId);
+      await configService.removeModel(model.id);
       const updated = await configService.getAPIConfig();
       setApiConfig(updated);
     } catch (error) {
@@ -337,6 +529,121 @@ const OptionsApp: React.FC = () => {
             
             {apiConfig && (
               <>
+                {/* 内置模型渠道 */}
+                <div style={styles.providerSection}>
+                  <h3 style={styles.providerTitle}>内置模型渠道</h3>
+                  <p style={styles.providerDesc}>输入启动码后先扫描模型列表，再手动选择模型添加。该渠道的 Base URL 由系统内置，不需要手动配置。</p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <label style={{ fontSize: '14px', fontWeight: 600, color: '#333', minWidth: '70px' }}>启动码</label>
+                      <div style={{ ...styles.inputWithButton, flex: 1 }}>
+                        <input
+                          type={showBuiltinKey ? 'text' : 'password'}
+                          value={builtinApiKey}
+                          onChange={(e) => {
+                            setBuiltinApiKey(e.target.value);
+                            setBuiltinFetchedModels([]);
+                            setBuiltinModelName('');
+                            setBuiltinFetchError('');
+                            setBuiltinAddResult(null);
+                          }}
+                          placeholder="请输入启动码"
+                          style={{ ...styles.formInput, width: '100%', paddingRight: '40px' }}
+                        />
+                        <button onClick={() => setShowBuiltinKey(!showBuiltinKey)} style={styles.visibilityButton} title={showBuiltinKey ? '隐藏' : '显示'}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            {showBuiltinKey
+                              ? <><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></>
+                              : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>
+                            }
+                          </svg>
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setBuiltinQrLoadError(false);
+                          setShowBuiltinCodeModal(true);
+                        }}
+                        style={{
+                          ...styles.testButton,
+                          backgroundColor: '#4a90e2',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        获取启动码
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <label style={{ fontSize: '14px', fontWeight: 600, color: '#333', minWidth: '70px' }}>选择模型</label>
+                      {builtinFetchedModels.length > 0 ? (
+                        <select
+                          value={builtinModelName}
+                          onChange={(e) => setBuiltinModelName(e.target.value)}
+                          style={{ ...styles.select, flex: 1 }}
+                        >
+                          {builtinFetchedModels.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span style={{ flex: 1, fontSize: '13px', color: '#999' }}>
+                          {builtinFetching ? '正在扫描模型列表...' : '请先点击右侧按钮扫描可用模型'}
+                        </span>
+                      )}
+                      <button
+                        onClick={fetchBuiltinModelList}
+                        disabled={builtinFetching || !builtinApiKey.trim()}
+                        style={{
+                          ...styles.testButton,
+                          whiteSpace: 'nowrap',
+                          opacity: (builtinFetching || !builtinApiKey.trim()) ? 0.6 : 1,
+                          cursor: (builtinFetching || !builtinApiKey.trim()) ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {builtinFetching ? '扫描中...' : '扫描模型列表'}
+                      </button>
+                    </div>
+
+                    {builtinFetchError && (
+                      <div style={{ padding: '8px 12px', borderRadius: '6px', fontSize: '13px', backgroundColor: '#f8d7da', color: '#721c24', border: '1px solid #f5c6cb' }}>
+                        {builtinFetchError}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <button
+                        onClick={addBuiltinModel}
+                        disabled={builtinAdding || !builtinApiKey.trim() || !builtinModelName.trim()}
+                        style={{
+                          ...styles.submitButton,
+                          opacity: (builtinAdding || !builtinApiKey.trim() || !builtinModelName.trim()) ? 0.6 : 1,
+                          cursor: (builtinAdding || !builtinApiKey.trim() || !builtinModelName.trim()) ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        {builtinAdding ? '添加中...' : '添加模型'}
+                      </button>
+                      {builtinAdding && (
+                        <span style={{ fontSize: '13px', color: '#888' }}>正在添加内置模型</span>
+                      )}
+                    </div>
+
+                    {builtinAddResult && (
+                      <div style={{
+                        padding: '10px 14px',
+                        borderRadius: '6px',
+                        fontSize: '13px',
+                        backgroundColor: builtinAddResult.success ? '#d4edda' : '#f8d7da',
+                        color: builtinAddResult.success ? '#155724' : '#721c24',
+                        border: `1px solid ${builtinAddResult.success ? '#c3e6cb' : '#f5c6cb'}`
+                      }}>
+                        {builtinAddResult.success ? '✓ ' : '✕ '}{builtinAddResult.message}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* Codex OAuth 登录区域 */}
                 <div style={styles.providerSection}>
                   <h3 style={styles.providerTitle}>ChatGPT 订阅登录</h3>
@@ -575,6 +882,7 @@ const OptionsApp: React.FC = () => {
                               backgroundColor:
                                 model.provider === 'gemini' ? '#e8f0fe'
                                 : model.provider === 'codex-oauth' ? '#e8f5e9'
+                                : model.provider === 'builtin' ? '#e6f4ea'
                                 : model.provider === 'deepseek' ? '#e3f2fd'
                                 : model.provider === 'moonshot' ? '#fce4ec'
                                 : model.provider === 'qwen' ? '#fff8e1'
@@ -582,6 +890,7 @@ const OptionsApp: React.FC = () => {
                               color:
                                 model.provider === 'gemini' ? '#1a73e8'
                                 : model.provider === 'codex-oauth' ? '#2e7d32'
+                                : model.provider === 'builtin' ? '#1b5e20'
                                 : model.provider === 'deepseek' ? '#0d47a1'
                                 : model.provider === 'moonshot' ? '#c62828'
                                 : model.provider === 'qwen' ? '#ff6f00'
@@ -589,6 +898,7 @@ const OptionsApp: React.FC = () => {
                             }}>
                               {model.provider === 'gemini' ? 'Gemini'
                                 : model.provider === 'codex-oauth' ? 'Codex OAuth'
+                                : model.provider === 'builtin' ? '内置模型'
                                 : model.provider === 'deepseek' ? 'DeepSeek'
                                 : model.provider === 'moonshot' ? 'Moonshot'
                                 : model.provider === 'qwen' ? 'Qwen'
@@ -611,7 +921,7 @@ const OptionsApp: React.FC = () => {
                             )}
                           </p>
                           <p style={{ ...styles.modelDescription, marginTop: '2px', fontSize: '12px', color: '#999' }}>
-                            {model.baseUrl}
+                            {model.provider === 'builtin' ? '内置渠道地址（系统内置）' : model.baseUrl}
                           </p>
                         </div>
                         
@@ -629,7 +939,7 @@ const OptionsApp: React.FC = () => {
                           </label>
                           
                           <button
-                            onClick={() => removeModel(model.id)}
+                            onClick={() => removeModel(model)}
                             style={styles.deleteButton}
                             title="删除模型"
                           >
@@ -707,6 +1017,36 @@ const OptionsApp: React.FC = () => {
           {renderContent()}
         </main>
       </div>
+
+      {showBuiltinCodeModal && (
+        <div style={styles.modalOverlay} onClick={() => setShowBuiltinCodeModal(false)}>
+          <div style={styles.codeModal} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.codeModalHeader}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#333' }}>获取启动码</h3>
+              <button
+                onClick={() => setShowBuiltinCodeModal(false)}
+                style={styles.codeModalClose}
+                title="关闭"
+              >
+                ×
+              </button>
+            </div>
+            <p style={styles.codeModalDesc}>扫码关注公众号，回复“启动码”获取。</p>
+            <div style={styles.codeModalQrWrap}>
+              {!builtinQrLoadError ? (
+                <img
+                  src={getAssetUrl('images/qrcode.jpg')}
+                  alt="启动码二维码"
+                  style={styles.codeModalQrImage}
+                  onError={() => setBuiltinQrLoadError(true)}
+                />
+              ) : (
+                <div style={styles.codeModalQrFallback}>图片未找到，请检查 public/images/qrcode.jpg</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1080,6 +1420,67 @@ const styles: { [key: string]: React.CSSProperties } = {
     margin: '0 0 20px 0',
     fontSize: '13px',
     color: '#888',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 9999,
+    padding: '20px',
+  },
+  codeModal: {
+    width: '100%',
+    maxWidth: '420px',
+    backgroundColor: 'white',
+    borderRadius: '12px',
+    padding: '20px',
+    boxShadow: '0 20px 50px rgba(0, 0, 0, 0.25)',
+  },
+  codeModalHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '10px',
+  },
+  codeModalClose: {
+    border: 'none',
+    backgroundColor: 'transparent',
+    fontSize: '24px',
+    lineHeight: 1,
+    color: '#666',
+    cursor: 'pointer',
+    padding: 0,
+  },
+  codeModalDesc: {
+    margin: '0 0 14px 0',
+    fontSize: '14px',
+    color: '#555',
+  },
+  codeModalQrWrap: {
+    border: '1px solid #e6e6e6',
+    borderRadius: '10px',
+    padding: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fafafa',
+    minHeight: '260px',
+  },
+  codeModalQrImage: {
+    width: '100%',
+    maxWidth: '280px',
+    height: 'auto',
+    objectFit: 'contain',
+    borderRadius: '8px',
+  },
+  codeModalQrFallback: {
+    fontSize: '13px',
+    color: '#888',
+    textAlign: 'center',
+    lineHeight: '1.6',
   },
   addModelInline: {
     display: 'flex',

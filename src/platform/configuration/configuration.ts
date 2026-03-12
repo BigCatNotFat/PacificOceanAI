@@ -11,7 +11,9 @@ export interface AIModelConfig {
   /** 是否启用 */
   enabled: boolean;
   /** 供应商类型 */
-  provider: 'openai' | 'gemini' | 'deepseek' | 'moonshot' | 'qwen' | 'codex-oauth';
+  provider: 'openai' | 'gemini' | 'deepseek' | 'moonshot' | 'qwen' | 'codex-oauth' | 'builtin';
+  /** 实际请求给上游 API 的模型 ID（可选，未设置时默认使用 id） */
+  actualModelId?: string;
   /** 该模型使用的 API Key（codex-oauth 模式下为空） */
   apiKey: string;
   /** 该模型使用的 Base URL（codex-oauth 模式下为 chatgpt.com/backend-api） */
