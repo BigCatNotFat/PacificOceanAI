@@ -89,6 +89,44 @@ function summarizeLongText(text: string | undefined, maxPreview: number = 160): 
   };
 }
 
+function extractExplanationFromArgs(rawArgs: unknown): string | undefined {
+  if (!rawArgs) return undefined;
+
+  if (typeof rawArgs === 'object') {
+    const value = (rawArgs as any).explanation;
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+    return undefined;
+  }
+
+  if (typeof rawArgs !== 'string') return undefined;
+
+  const parsed = safeJsonParse(rawArgs);
+  if (parsed && typeof parsed === 'object') {
+    const value = (parsed as any).explanation;
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  const fallback = extractStringField(rawArgs, 'explanation');
+  return fallback?.trim() || undefined;
+}
+
+const ToolCallExplanation: React.FC<{ explanation?: string }> = ({ explanation }) => {
+  if (!explanation) return null;
+  const explanationSummary = summarizeLongText(explanation, 220);
+  if (!explanationSummary) return null;
+
+  return (
+    <div className="tool-call-explanation">
+      <span className="material-symbols">help</span>
+      <span>调用原因：{explanationSummary.preview}</span>
+    </div>
+  );
+};
+
 // ==================== 工具参数预览组件 ====================
 
 const ToolArgsPreview: React.FC<{ toolName?: string; args: string }> = ({ toolName, args }) => {
@@ -99,6 +137,7 @@ const ToolArgsPreview: React.FC<{ toolName?: string; args: string }> = ({ toolNa
     parsed && typeof parsed === 'object' && parsed[key] != null ? String(parsed[key]) : extractStringField(args, key);
 
   const targetFile = getStr('target_file') || getStr('file') || getStr('path');
+  const explanation = getStr('explanation');
 
   if (normalized.includes('editfile')) {
     const oldStr = getStr('old_string');
@@ -115,6 +154,8 @@ const ToolArgsPreview: React.FC<{ toolName?: string; args: string }> = ({ toolNa
           <span>{targetFile || '编辑文件'}</span>
           <span className="tool-result-count">{args.length.toLocaleString()} 字符</span>
         </div>
+
+        <ToolCallExplanation explanation={explanation} />
 
         {insSum && (
           <div className="tool-result-instructions">
@@ -156,6 +197,7 @@ const ToolArgsPreview: React.FC<{ toolName?: string; args: string }> = ({ toolNa
         <span>{toolName || '工具参数'}</span>
         <span className="tool-result-count">{args.length.toLocaleString()} 字符</span>
       </div>
+      <ToolCallExplanation explanation={explanation} />
       {(targetFile || query) && (
         <div className="tool-result-message">
           {targetFile && <div>目标：{targetFile}</div>}
@@ -199,6 +241,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   const [hasApiKey, setHasApiKey] = useState<boolean>(false);
   const [isCheckingApiKey, setIsCheckingApiKey] = useState<boolean>(true);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [retryState, setRetryState] = useState<{ currentAttempt: number; maxAttempts: number } | null>(null);
   const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [isConversationMenuOpen, setIsConversationMenuOpen] = useState(false);
@@ -301,12 +344,38 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
     if (!chatService) return;
     
     // 初始化检查
-    setIsGenerating(chatService.isProcessing(conversationId));
+    const initialMessages = chatService.getMessages(conversationId);
+    const initialHasStreamingMessage = initialMessages.some(
+      (msg) => msg.status === 'streaming' || msg.status === 'pending'
+    );
+    const initialRetryingMessage = initialMessages.find(
+      (msg) => (msg.status === 'streaming' || msg.status === 'pending') && !!msg.retryInfo
+    );
+    setRetryState(
+      initialRetryingMessage?.retryInfo
+        ? {
+            currentAttempt: initialRetryingMessage.retryInfo.currentAttempt,
+            maxAttempts: initialRetryingMessage.retryInfo.maxAttempts
+          }
+        : null
+    );
+    setIsGenerating(initialHasStreamingMessage || chatService.isProcessing(conversationId));
 
     const disposable = chatService.onDidMessageUpdate((event) => {
       if (event.conversationId === conversationId) {
         const hasStreamingMessage = event.messages.some(
           (msg) => msg.status === 'streaming' || msg.status === 'pending'
+        );
+        const retryingMessage = event.messages.find(
+          (msg) => (msg.status === 'streaming' || msg.status === 'pending') && !!msg.retryInfo
+        );
+        setRetryState(
+          retryingMessage?.retryInfo
+            ? {
+                currentAttempt: retryingMessage.retryInfo.currentAttempt,
+                maxAttempts: retryingMessage.retryInfo.maxAttempts
+              }
+            : null
         );
         // 即使没有 streaming 消息，如果 chatService 仍在处理（例如初始化阶段），
         // 也应保持 isGenerating 为 true，避免发送按钮在处理初期短暂显示为"发送"
@@ -550,6 +619,10 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   
   const currentConversation = conversations.find(c => c.id === conversationId);
   const currentConversationName = currentConversation?.name || '新对话';
+  const reconnectLabel = retryState
+    ? `正在重连（${retryState.currentAttempt}/${retryState.maxAttempts}）...`
+    : null;
+  const inputPlaceholder = reconnectLabel || (isGenerating ? '正在生成...' : 'Ask anything...');
 
   // 切换对话
   const handleSwitchConversation = useCallback(async (newConvId: string) => {
@@ -842,6 +915,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                         ?.replace(/([A-Z])/g, ' $1')
                         ?.trim()
                         ?.toLowerCase() || '工具';
+                      const explanation = extractExplanationFromArgs(toolCall.args);
 
                       return (
                         <div key={toolCallId} className={`ai-tool-block ${statusClass}`}>
@@ -870,9 +944,15 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                                   <div className="tool-result-empty">正在生成工具参数...</div>
                                 )
                               ) : toolCall.status === 'error' ? (
-                                <ToolResultRenderer toolName={toolCall.name} result={toolCall.result || toolCall.error} />
+                                <>
+                                  <ToolCallExplanation explanation={explanation} />
+                                  <ToolResultRenderer toolName={toolCall.name} result={toolCall.result || toolCall.error} />
+                                </>
                               ) : (
-                                <ToolResultRenderer toolName={toolCall.name} result={toolCall.result} />
+                                <>
+                                  <ToolCallExplanation explanation={explanation} />
+                                  <ToolResultRenderer toolName={toolCall.name} result={toolCall.result} />
+                                </>
                               )}
                             </div>
                           )}
@@ -906,6 +986,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                       ?.replace(/([A-Z])/g, ' $1')
                       ?.trim()
                       ?.toLowerCase() || '工具';
+                    const explanation = extractExplanationFromArgs(toolCall.arguments);
 
                     // 将参数转换为字符串（用于显示）
                     const argsString = typeof toolCall.arguments === 'string' 
@@ -933,9 +1014,15 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                         {canExpand && isExpanded && (
                           <div className="ai-tool-content">
                             {toolCall.status === 'error' ? (
-                              <ToolResultRenderer toolName={toolCall.name} result={resultString} />
+                              <>
+                                <ToolCallExplanation explanation={explanation} />
+                                <ToolResultRenderer toolName={toolCall.name} result={resultString} />
+                              </>
                             ) : toolCall.result ? (
-                              <ToolResultRenderer toolName={toolCall.name} result={resultString} />
+                              <>
+                                <ToolCallExplanation explanation={explanation} />
+                                <ToolResultRenderer toolName={toolCall.name} result={resultString} />
+                              </>
                             ) : (
                               <ToolArgsPreview toolName={toolCall.name} args={argsString} />
                             )}
@@ -959,7 +1046,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
           <RichTextInput
             ref={inputRef}
             className="ai-input"
-            placeholder={isGenerating ? "正在生成..." : "Ask anything..."}
+            placeholder={inputPlaceholder}
             onKeyDown={handleKeyDown}
             disabled={isGenerating}
           />
@@ -1039,6 +1126,12 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
           </div>
           
           <div className="ai-input-toolbar-right">
+            {reconnectLabel && (
+              <div className="ai-reconnect-indicator" title={reconnectLabel}>
+                <span className="material-symbols">sync</span>
+                <span>{reconnectLabel}</span>
+              </div>
+            )}
             {modelRegistry.getCapabilities(selectedModel)?.supportsVision && (
               <button
                 className="ai-image-upload-btn"
@@ -1077,8 +1170,13 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
               } : isGenerating ? stopGeneration : sendMessage} 
               disabled={isCheckingApiKey}
               title={
-                !hasApiKey ? '未添加模型，点击前往设置' : 
-                isGenerating ? '停止生成' : '发送'
+                !hasApiKey
+                  ? '未添加模型，点击前往设置'
+                  : reconnectLabel
+                    ? reconnectLabel
+                    : isGenerating
+                      ? '停止生成'
+                      : '发送'
               }
               style={{ 
                 opacity: isCheckingApiKey ? 0.5 : 1, 
@@ -1111,4 +1209,3 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
 };
 
 export default ConversationPane;
-

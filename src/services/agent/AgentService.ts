@@ -28,7 +28,7 @@ import type {
   MessageRole,
   ToolCallPendingEvent
 } from '../../platform/agent/IChatService';
-import type { ILLMService, LLMConfig } from '../../platform/llm/ILLMService';
+import type { ILLMService, LLMConfig, LLMMessage, LLMFinalMessage } from '../../platform/llm/ILLMService';
 import { ILLMServiceId } from '../../platform/llm/ILLMService';
 import type { IPromptService } from '../../platform/agent/IPromptService';
 import { IPromptServiceId } from '../../platform/agent/IPromptService';
@@ -66,6 +66,10 @@ export class AgentService implements IAgentService {
   
   /** Loop ID 计数器 */
   private loopIdCounter: number = 0;
+
+  /** Network reconnect policy for LLM stream failures */
+  private static readonly MAX_NETWORK_RETRIES = 5;
+  private static readonly BASE_RETRY_DELAY_MS = 800;
 
   constructor(
     private readonly llmService: ILLMService,
@@ -235,7 +239,12 @@ export class AgentService implements IAgentService {
         };
         
         // 5. 调用 LLM（一次性返回完整结果，UI 更新由 Provider 内部实时推送）
-        const finalResult = await this.llmService.chat(llmMessages, llmConfig);
+        const finalResult = await this.executeWithReconnectRetry(
+          context,
+          assistantMessage,
+          llmMessages,
+          llmConfig
+        );
         context.abortController = undefined;
         
         // 输出大模型返回的内容到控制台
@@ -253,6 +262,8 @@ export class AgentService implements IAgentService {
         }
         
         // 6. 更新 assistant 消息
+        assistantMessage.retryInfo = undefined;
+        assistantMessage.interrupted = undefined;
         assistantMessage.content = finalResult.content;
         assistantMessage.status = 'completed';
         
@@ -407,19 +418,28 @@ export class AgentService implements IAgentService {
           });
         }).then(
           (result) => {
+            const resultObj = (typeof result === 'object' && result !== null) ? result as any : undefined;
+            const payload = resultObj?.data ?? result;
+            const declaredSuccess = typeof resultObj?.success === 'boolean' ? resultObj.success : true;
+            const declaredError = typeof resultObj?.error === 'string' ? resultObj.error : undefined;
+
             // 输出审批通过的工具执行结果到控制台
-            const resultStr = JSON.stringify(result.data || result, null, 2);
+            const resultStr = JSON.stringify(payload, null, 2);
             resultStr.split('\n').forEach(line => {
               const truncated = line.length > 76 ? line.substring(0, 73) + '...' : line;
             });
-            // 工具执行成功
-            const toolMessage = this.createMessage('tool', JSON.stringify(result.data || result));
+            // 工具执行完成（可能是 success=false 的业务失败）
+            const toolMessage = this.createMessage('tool', JSON.stringify(payload));
+            toolMessage.status = declaredSuccess ? 'completed' : 'error';
+            if (!declaredSuccess && declaredError) {
+              toolMessage.error = declaredError;
+            }
             toolMessage.toolCalls = [{
               id: toolCallId,
               name: toolName,
               arguments: toolArgs,
-              result: result.data,
-              status: 'completed'
+              result: resultObj?.data,
+              status: declaredSuccess ? 'completed' : 'error'
             }];
             context.messages.push(toolMessage);
             context.workingMemory.push(toolMessage); // 加入工作记忆
@@ -465,11 +485,15 @@ export class AgentService implements IAgentService {
 
         try {
           const result = await this.toolService.executeTool(toolName, toolArgs);
+          const resultObj = (typeof result === 'object' && result !== null) ? result as any : undefined;
+          const payload = resultObj?.data ?? result;
+          const declaredSuccess = typeof resultObj?.success === 'boolean' ? resultObj.success : true;
+          const declaredError = typeof resultObj?.error === 'string' ? resultObj.error : undefined;
           
           // 输出工具执行结果到控制台
           
           // 提取 preview 字段单独处理，避免被截断
-          const data = result.data || result;
+          const data = payload;
           const preview = data?.preview;
           const displayData = preview ? { ...data, preview: '(见下方详细预览)' } : data;
           
@@ -481,21 +505,49 @@ export class AgentService implements IAgentService {
           // 单独打印 preview 内容（不截断）
           if (preview) {
           }
+
+          if (!declaredSuccess) {
+            this.uiStreamService.pushToolCall({
+              messageId,
+              toolCallId,
+              phase: 'error',
+              name: toolName,
+              resultDelta: JSON.stringify(payload),
+              error: declaredError || `Tool ${toolName} returned success=false`
+            });
+
+            const toolMessage = this.createMessage('tool', JSON.stringify(payload));
+            toolMessage.status = 'error';
+            if (declaredError) {
+              toolMessage.error = declaredError;
+            }
+            toolMessage.toolCalls = [{
+              id: toolCallId,
+              name: toolName,
+              arguments: toolArgs,
+              result: resultObj?.data,
+              status: 'error'
+            }];
+            context.messages.push(toolMessage);
+            context.onUpdateEmitter.fire([...context.messages]);
+            continue;
+          }
+
           // 通知 UI：工具执行完成
           this.uiStreamService.pushToolCall({
             messageId,
             toolCallId,
             phase: 'end',
             name: toolName,
-            resultDelta: JSON.stringify(result.data || result)
+            resultDelta: JSON.stringify(payload)
           });
 
-          const toolMessage = this.createMessage('tool', JSON.stringify(result.data || result));
+          const toolMessage = this.createMessage('tool', JSON.stringify(payload));
           toolMessage.toolCalls = [{
             id: toolCallId,
             name: toolName,
             arguments: toolArgs,
-            result: result.data,
+            result: resultObj?.data,
             status: 'completed'
           }];
           context.messages.push(toolMessage);
@@ -533,6 +585,105 @@ export class AgentService implements IAgentService {
 
     // 所有工具都已处理，继续循环
     return true;
+  }
+
+  /**
+   * Retry transient network errors and surface reconnect progress to UI.
+   */
+  private async executeWithReconnectRetry(
+    context: LoopContext,
+    assistantMessage: ChatMessage,
+    llmMessages: LLMMessage[],
+    llmConfig: LLMConfig
+  ): Promise<LLMFinalMessage> {
+    let retryCount = 0;
+
+    while (true) {
+      try {
+        const result = await this.llmService.chat(llmMessages, llmConfig);
+        assistantMessage.retryInfo = undefined;
+        return result;
+      } catch (error) {
+        if (context.aborted || this.isAbortError(error)) {
+          throw error;
+        }
+
+        if (!this.isRetryableNetworkError(error) || retryCount >= AgentService.MAX_NETWORK_RETRIES) {
+          assistantMessage.retryInfo = undefined;
+          throw error;
+        }
+
+        retryCount += 1;
+        assistantMessage.retryInfo = {
+          currentAttempt: retryCount,
+          maxAttempts: AgentService.MAX_NETWORK_RETRIES
+        };
+        assistantMessage.content = `网络异常，正在重连（${retryCount}/${AgentService.MAX_NETWORK_RETRIES}）...`;
+        context.onUpdateEmitter.fire([...context.messages]);
+
+        const delayMs = AgentService.BASE_RETRY_DELAY_MS * retryCount;
+        await this.waitForRetryDelay(delayMs, context.abortController?.signal);
+      }
+    }
+  }
+
+  private isAbortError(error: unknown): boolean {
+    const message = this.errorMessage(error).toLowerCase();
+    return message.includes('abort') || message.includes('aborted');
+  }
+
+  private isRetryableNetworkError(error: unknown): boolean {
+    const message = this.errorMessage(error).toLowerCase();
+
+    if (error instanceof TypeError && message.includes('fetch')) {
+      return true;
+    }
+
+    return (
+      message.includes('failed to fetch') ||
+      message.includes('networkerror') ||
+      message.includes('network request failed') ||
+      message.includes('fetch failed') ||
+      message.includes('load failed') ||
+      message.includes('后台连接断开')
+    );
+  }
+
+  private errorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message || error.name || String(error);
+    }
+    return String(error ?? '');
+  }
+
+  private waitForRetryDelay(ms: number, abortSignal?: AbortSignal): Promise<void> {
+    if (ms <= 0) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, ms);
+
+      const onAbort = () => {
+        clearTimeout(timer);
+        cleanup();
+        reject(new Error('Aborted'));
+      };
+
+      const cleanup = () => {
+        abortSignal?.removeEventListener('abort', onAbort);
+      };
+
+      if (abortSignal?.aborted) {
+        onAbort();
+        return;
+      }
+
+      abortSignal?.addEventListener('abort', onAbort);
+    });
   }
 
   /**

@@ -114,6 +114,14 @@ export class UIStreamService extends Disposable implements IUIStreamService {
     }
   }
 
+  getThinkingBuffer(messageId: string): string | undefined {
+    return this.thinkingBuffers.get(messageId);
+  }
+
+  getContentBuffer(messageId: string): string | undefined {
+    return this.contentBuffers.get(messageId);
+  }
+
   // ==================== 生命周期 ====================
 
   override dispose(): void {

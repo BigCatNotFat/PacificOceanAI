@@ -81,6 +81,13 @@ export interface ChatMessage {
   content: string;
   /** 思考内容（仅在流式生成时展示，不持久化） */
   thinking?: string;
+  /** LLM 网络故障自动重连状态（仅运行期 UI 使用） */
+  retryInfo?: {
+    currentAttempt: number;
+    maxAttempts: number;
+  };
+  /** Whether this assistant output was interrupted mid-stream */
+  interrupted?: boolean;
   /** 工具调用信息 */
   toolCalls?: ToolCall[];
   /** 消息状态 */

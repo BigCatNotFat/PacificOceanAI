@@ -160,6 +160,84 @@ export class ChatService implements IChatService {
    * 2. 折叠/移除失败的工具调用（可选）
    * 3. 移除中间状态的消息（streaming、aborted 等）
    */
+  /**
+   * Ensure no pending/streaming messages linger after failure/abort.
+   * This prevents UI from being stuck in "generating" state.
+   */
+  private finalizeInFlightMessages(
+    session: SessionState,
+    status: 'error' | 'aborted',
+    errorMessage?: string
+  ): void {
+    for (const msg of session.messages) {
+      // Retry metadata is runtime-only and should not survive failures.
+      msg.retryInfo = undefined;
+
+      if (msg.status !== 'pending' && msg.status !== 'streaming') {
+        continue;
+      }
+
+      const streamContent = this.uiStreamService.getContentBuffer(msg.id);
+      const streamThinking = this.uiStreamService.getThinkingBuffer(msg.id);
+
+      if ((!msg.content || msg.content.length === 0) && streamContent) {
+        msg.content = streamContent;
+      }
+      if ((!msg.thinking || msg.thinking.length === 0) && streamThinking) {
+        msg.thinking = streamThinking;
+      }
+
+      const hasPartialOutput =
+        (msg.content?.trim().length ?? 0) > 0 ||
+        (msg.thinking?.trim().length ?? 0) > 0;
+
+      if (hasPartialOutput) {
+        // Keep partial output visible and reusable for follow-up "continue".
+        msg.status = 'completed';
+        msg.interrupted = true;
+        msg.error = undefined;
+      } else {
+        msg.status = status;
+        if (status === 'error' && errorMessage && !msg.error) {
+          msg.error = errorMessage;
+        }
+      }
+    }
+  }
+
+  private isContinueRequest(input: string): boolean {
+    const normalized = input.trim().toLowerCase();
+    return (
+      normalized === '继续' ||
+      normalized === '继续生成' ||
+      normalized === '继续写' ||
+      normalized === '接着写' ||
+      normalized === 'continue' ||
+      normalized === 'go on'
+    );
+  }
+
+  private buildContinueInstruction(session: SessionState, input: string): string | null {
+    if (!this.isContinueRequest(input)) {
+      return null;
+    }
+
+    const latestAssistantWithOutput = [...session.messages]
+      .reverse()
+      .find((msg) => msg.role === 'assistant' && (msg.content?.trim().length ?? 0) > 0 && msg.status !== 'error');
+
+    if (!latestAssistantWithOutput?.interrupted) {
+      return null;
+    }
+
+    const tail = latestAssistantWithOutput.content.slice(-1200);
+    return [
+      '请从你上一次回答中断的位置继续输出，保持同样语言与格式，不要重复已经输出的内容。',
+      '以下是上次回答末尾片段，可用于定位续写起点：',
+      tail
+    ].join('\n');
+  }
+
   private buildContextList(messages: ChatMessage[]): ChatMessage[] {
     return messages
       .filter(msg => {
@@ -176,7 +254,7 @@ export class ChatService implements IChatService {
       .map(msg => {
         // 剔除 assistant 消息的 thinking
         if (msg.role === 'assistant') {
-          const { thinking, ...rest } = msg;
+          const { thinking, retryInfo, interrupted, ...rest } = msg;
           return rest;
         }
         return { ...msg };
@@ -292,13 +370,15 @@ export class ChatService implements IChatService {
 
 
     } catch (error) {
+      const errorText = error instanceof Error ? error.message : String(error);
       const assistantMsg = session.messages.find(m => m.id === responseMessageId);
       if (assistantMsg) {
-        assistantMsg.content = `执行失败: ${error instanceof Error ? error.message : String(error)}`;
+        assistantMsg.content = `执行失败: ${errorText}`;
         assistantMsg.status = 'error';
-        assistantMsg.error = error instanceof Error ? error.message : String(error);
+        assistantMsg.error = errorText;
       }
 
+      this.finalizeInFlightMessages(session, 'error', errorText);
       session.isProcessing = false;
       this._onDidMessageUpdate.fire({
         conversationId,
@@ -389,7 +469,17 @@ export class ChatService implements IChatService {
         messages: [...session.messages]
       });
 
-      // ========== 步骤 2：首次对话时插入系统提示词（在用户消息之前） ==========
+      // ========== 步骤 2：立即创建 AI 响应占位符 ==========
+      // 这样在首次对话构建 system prompt 的等待期也能显示“正在发送...”
+      const assistantPlaceholder = this.createMessage(session, 'assistant', '');
+      assistantPlaceholder.status = 'streaming';
+      session.messages.push(assistantPlaceholder);
+      this._onDidMessageUpdate.fire({
+        conversationId,
+        messages: [...session.messages]
+      });
+
+      // ========== 步骤 3：首次对话时插入系统提示词（在用户消息之前） ==========
       if (needsSystemPrompt) {
         try {
           const systemPrompt = await this.promptService.buildSystemPrompt(
@@ -407,20 +497,10 @@ export class ChatService implements IChatService {
         }
       }
 
-      // ========== 步骤 3：后台保存到本地（不阻塞 UI） ==========
+      // ========== 步骤 4：后台保存到本地（不阻塞 UI） ==========
       this.saveMessagesNow(session).then(() => {
       }).catch((error) => {
       });
-
-      // ========== 步骤 4：创建 AI 响应占位符 ==========
-      const assistantPlaceholder = this.createMessage(session, 'assistant', '');
-      assistantPlaceholder.status = 'streaming';
-      session.messages.push(assistantPlaceholder);
-      this._onDidMessageUpdate.fire({
-        conversationId,
-        messages: [...session.messages]
-      });
-
 
       // ========== Plan 模式：使用 ManagerAgentLoopService ==========
       if (options.mode === 'plan') {
@@ -430,6 +510,18 @@ export class ChatService implements IChatService {
 
       // 生成列表二：历史上下文视图
       const contextList = this.buildContextList(session.messages);
+      const continueInstruction = this.buildContinueInstruction(session, input);
+      if (continueInstruction) {
+        for (let i = contextList.length - 1; i >= 0; i--) {
+          if (contextList[i].role === 'user') {
+            contextList[i] = {
+              ...contextList[i],
+              content: `${contextList[i].content}\n\n${continueInstruction}`
+            };
+            break;
+          }
+        }
+      }
 
       // 3. 执行 Agent 任务
       session.currentLoop = await this.agentService.execute(
@@ -481,14 +573,12 @@ export class ChatService implements IChatService {
           return;
         }
         // 尝试找到并更新正在流式的消息状态，避免 UI 一直 loading
-        const streamingMsg = session.messages.find(m => m.role === 'assistant' && m.status === 'streaming');
-        if (streamingMsg) {
-          streamingMsg.status = 'error';
-          streamingMsg.error = error instanceof Error ? error.message : String(error);
-        }
+        const errorText = error instanceof Error ? error.message : String(error);
+        this.finalizeInFlightMessages(session, 'error', errorText);
 
         const errorMessage = this.createMessage(session, 'assistant', `抱歉，发生了错误: ${error.message}`);
         errorMessage.status = 'error';
+        errorMessage.content = `抱歉，发生了错误: ${errorText}`;
         session.messages.push(errorMessage);
         session.isProcessing = false;
         this._onDidMessageUpdate.fire({
@@ -520,8 +610,10 @@ export class ChatService implements IChatService {
     } catch (error) {
       const errorMessage = this.createMessage(session, 'assistant', '抱歉，发生了错误');
       errorMessage.status = 'error';
-      errorMessage.error = error instanceof Error ? error.message : String(error);
+      const errorText = error instanceof Error ? error.message : String(error);
+      errorMessage.error = errorText;
       session.messages.push(errorMessage);
+      this.finalizeInFlightMessages(session, 'error', errorText);
       session.isProcessing = false;
       this._onDidMessageUpdate.fire({
         conversationId,
@@ -568,17 +660,17 @@ export class ChatService implements IChatService {
       session.currentLoopId = undefined;
     }
 
+    this.finalizeInFlightMessages(session, 'aborted');
     session.isProcessing = false;
+    session.currentTurnStartIndex = undefined;
 
-    // 回滚当前这一轮对话
-    if (typeof session.currentTurnStartIndex === 'number') {
-      session.messages = session.messages.slice(0, session.currentTurnStartIndex);
-      session.currentTurnStartIndex = undefined;
-      this._onDidMessageUpdate.fire({
-        conversationId: session.conversationId,
-        messages: [...session.messages]
-      });
-    }
+    this._onDidMessageUpdate.fire({
+      conversationId: session.conversationId,
+      messages: [...session.messages]
+    });
+
+    // Persist partial output so user can continue after refresh.
+    this.saveMessagesNow(session);
   }
 
   /**

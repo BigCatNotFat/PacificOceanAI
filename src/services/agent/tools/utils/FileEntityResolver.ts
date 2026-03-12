@@ -31,7 +31,8 @@ function normalize(p: string): string {
 function matchInBridgeFiles(
   files: Array<{ type: string; name: string; path: string; id: string }>,
   normalized: string,
-  baseName: string
+  baseName: string,
+  allowNameFallback: boolean
 ): ResolvedEntity | null {
   // 识别根文件夹（路径中不含 "/" 的 folder）
   const rootFolder = files.find(f => f.type === 'folder' && !f.path.includes('/'));
@@ -48,9 +49,13 @@ function matchInBridgeFiles(
       if (relativePath.startsWith('/')) relativePath = relativePath.slice(1);
     }
 
+    if (recentlyCreatedFiles.isMarkedDeleted({ id: f.id, path: relativePath, name: f.name })) {
+      continue;
+    }
+
     const matched =
       relativePath === normalized ||
-      f.name === baseName;
+      (allowNameFallback && f.name === baseName);
 
     if (matched) {
       return {
@@ -72,6 +77,7 @@ function matchInBridgeFiles(
 export async function findEntityByPath(targetPath: string): Promise<ResolvedEntity | null> {
   const normalized = normalize(targetPath);
   const baseName = normalized.split('/').pop() || normalized;
+  const allowNameFallback = !normalized.includes('/');
 
   // 策略 1: REST API（对 doc/file 最可靠，但不返回空文件夹）
   try {
@@ -85,8 +91,7 @@ export async function findEntityByPath(targetPath: string): Promise<ResolvedEnti
 
       const matched =
         entityPath === normalized ||
-        entityPath === baseName ||
-        entityName === baseName;
+        (allowNameFallback && entityName === baseName);
 
       if (matched) {
         const type = mapEntityType(entity.type);
@@ -100,7 +105,7 @@ export async function findEntityByPath(targetPath: string): Promise<ResolvedEnti
   // 策略 2: Bridge listFiles（能看到文件夹，包括空文件夹）
   try {
     const files = await overleafEditor.fileOps.listFiles();
-    const result = matchInBridgeFiles(files, normalized, baseName);
+    const result = matchInBridgeFiles(files, normalized, baseName, allowNameFallback);
     if (result) {
       return result;
     }
@@ -110,7 +115,7 @@ export async function findEntityByPath(targetPath: string): Promise<ResolvedEnti
 
   // 策略 3: recently-created-files registry (for files just created in this session)
   const recentEntry = recentlyCreatedFiles.findByPath(targetPath);
-  if (recentEntry) {
+  if (recentEntry && !recentlyCreatedFiles.isMarkedDeleted({ id: recentEntry.id, path: recentEntry.path, name: recentEntry.name })) {
     return recentEntry;
   }
 
@@ -123,6 +128,7 @@ export async function findEntityByPath(targetPath: string): Promise<ResolvedEnti
 export async function findFolderByPath(folderPath: string): Promise<ResolvedEntity | null> {
   const normalized = normalize(folderPath);
   const baseName = normalized.split('/').pop() || normalized;
+  const allowNameFallback = !normalized.includes('/');
 
   // 文件夹：优先 Bridge（REST API 找不到空文件夹）
   try {
@@ -130,7 +136,8 @@ export async function findFolderByPath(folderPath: string): Promise<ResolvedEnti
     const result = matchInBridgeFiles(
       files.filter(f => f.type === 'folder'),
       normalized,
-      baseName
+      baseName,
+      allowNameFallback
     );
     if (result) return result;
   } catch (error) {
@@ -180,6 +187,10 @@ export async function getAllEntities(): Promise<ResolvedEntity[]> {
       let relativePath = f.path;
       if (rootPrefix && relativePath.startsWith(rootPrefix)) {
         relativePath = relativePath.slice(rootPrefix.length);
+      }
+
+      if (recentlyCreatedFiles.isMarkedDeleted({ id: f.id, path: relativePath, name: f.name })) {
+        continue;
       }
 
       resultMap.set(f.id, {

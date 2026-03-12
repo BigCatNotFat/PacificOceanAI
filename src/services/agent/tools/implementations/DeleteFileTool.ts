@@ -9,6 +9,7 @@ import { BaseTool } from '../base/BaseTool';
 import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import { findEntityByPath } from '../utils/FileEntityResolver';
+import { recentlyCreatedFiles } from '../utils/RecentlyCreatedFilesRegistry';
 
 export class DeleteFileTool extends BaseTool {
   protected metadata: ToolMetadata = {
@@ -74,6 +75,11 @@ Examples:
     }
 
     await overleafEditor.fileOps.deleteEntity(entity.type, entity.id);
+    recentlyCreatedFiles.markDeleted({
+      id: entity.id,
+      path: entity.path || targetFile,
+      name: entity.name
+    });
 
     return {
       success: true,

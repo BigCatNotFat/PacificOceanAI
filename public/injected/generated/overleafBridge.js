@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-03-12T07:36:30.300Z
+ * 构建时间: 2026-03-12T11:13:54.667Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */
@@ -515,26 +515,88 @@
   }
   function findProjectState(fiber) {
     if (!fiber) return null;
-    function search(node) {
-      if (!node) return null;
+    const isObject = (v) => Boolean(v) && typeof v === "object" && !Array.isArray(v);
+    const isProjectLike = (v) => isObject(v) && v._id && Array.isArray(v.rootFolder);
+    const extractProject = (v) => {
+      if (!isObject(v)) return null;
+      if (isProjectLike(v)) return v;
+      if (isProjectLike(v.project)) return v.project;
+      return null;
+    };
+    const candidates = [];
+    const seen = /* @__PURE__ */ new WeakSet();
+    const collect = (node) => {
+      if (!node) return;
       let hook = node.memoizedState;
       while (hook) {
         for (const v of [hook.memoizedState, hook.queue?.lastRenderedState]) {
-          if (v && typeof v === "object" && !Array.isArray(v) && v._id && v.compiler) {
-            return v;
+          const project = extractProject(v);
+          if (project && !seen.has(project)) {
+            seen.add(project);
+            candidates.push(project);
           }
         }
         hook = hook.next;
       }
       let c = node.child;
       while (c) {
-        const r = search(c);
-        if (r) return r;
+        collect(c);
         c = c.sibling;
       }
-      return null;
+    };
+    const scanFolder = (folder, openDocId2, openDocName2) => {
+      if (!folder || typeof folder !== "object") return { idMatch: false, nameMatch: false, count: 0 };
+      const docs = Array.isArray(folder.docs) ? folder.docs : [];
+      const fileRefs = Array.isArray(folder.fileRefs) ? folder.fileRefs : [];
+      const folders = Array.isArray(folder.folders) ? folder.folders : [];
+      let idMatch = false;
+      let nameMatch = false;
+      let count = docs.length + fileRefs.length + folders.length;
+      for (const d of docs) {
+        if (openDocId2 && d?._id === openDocId2) idMatch = true;
+        if (openDocName2 && d?.name === openDocName2) nameMatch = true;
+      }
+      for (const f of folders) {
+        const sub = scanFolder(f, openDocId2, openDocName2);
+        idMatch = idMatch || sub.idMatch;
+        nameMatch = nameMatch || sub.nameMatch;
+        count += sub.count;
+      }
+      return { idMatch, nameMatch, count };
+    };
+    const scoreProject = (project, openDocId2, openDocName2) => {
+      const root = Array.isArray(project.rootFolder) ? project.rootFolder[0] : null;
+      const { idMatch, nameMatch, count } = scanFolder(root, openDocId2, openDocName2);
+      let score = 0;
+      if (project.compiler) score += 1;
+      if (root) score += 2;
+      if (idMatch) score += 100;
+      else if (nameMatch) score += 50;
+      score += Math.min(count, 1e3) / 1e3;
+      return score;
+    };
+    collect(fiber);
+    if (candidates.length === 0) return null;
+    let openDocId = null;
+    let openDocName = null;
+    try {
+      const store = window.overleaf?.unstable?.store;
+      if (store) {
+        openDocId = store.get("editor.open_doc_id");
+        openDocName = store.get("editor.open_doc_name");
+      }
+    } catch (_) {
     }
-    return search(fiber);
+    let best = candidates[0];
+    let bestScore = scoreProject(best, openDocId, openDocName);
+    for (let i = 1; i < candidates.length; i++) {
+      const score = scoreProject(candidates[i], openDocId, openDocName);
+      if (score > bestScore) {
+        bestScore = score;
+        best = candidates[i];
+      }
+    }
+    return best;
   }
   function getCsrfToken() {
     const meta = document.querySelector('meta[name="ol-csrfToken"]');

@@ -67,7 +67,7 @@ const ListDirResult: React.FC<{ data: any }> = ({ data }) => {
   }
 
   const folders = data.items.filter((item: any) => item.type === 'directory');
-  const files = data.items.filter((item: any) => item.type === 'file');
+  const files = data.items.filter((item: any) => item.type === 'file' || item.type === 'doc');
 
   // 计算总行数和总字符数
   const totalStats = files.reduce((acc: { lines: number; chars: number }, file: any) => {
@@ -350,17 +350,44 @@ const DeleteFileResult: React.FC<{ data: any }> = ({ data }) => {
     return <div className="tool-result-empty">删除操作未返回结果</div>;
   }
 
+  // AgentService usually streams `result.data || result`.
+  // For delete_file single mode this is commonly:
+  // { file, type, deleted: true, message } (no top-level `success` field).
+  const payload =
+    data?.data && (typeof data?.success === 'boolean' || typeof data?.error === 'string')
+      ? { ...data.data, success: data.success, error: data.error }
+      : data;
+
+  const isBatch = !!payload?.batchMode;
+  const isSuccess =
+    typeof payload?.success === 'boolean'
+      ? payload.success
+      : typeof payload?.deleted === 'boolean'
+        ? payload.deleted
+        : isBatch
+          ? (payload?.errorCount ?? 0) === 0 && (payload?.successCount ?? 0) > 0
+          : !payload?.error;
+
+  const fileName = payload?.file || payload?.target_file || payload?.name || '未知目标';
+  const statusText = isBatch
+    ? isSuccess
+      ? `已删除 ${payload?.successCount ?? 0}/${payload?.totalOperations ?? 0}`
+      : '删除失败'
+    : isSuccess
+      ? '已删除'
+      : '删除失败';
+
   return (
-    <div className={`tool-result-delete-file ${data.success ? 'success' : 'error'}`}>
+    <div className={`tool-result-delete-file ${isSuccess ? 'success' : 'error'}`}>
       <div className="tool-result-header">
-        <span className="material-symbols">{data.success ? 'delete_sweep' : 'error'}</span>
-        <span className="tool-result-filename">{data.file || data.target_file}</span>
-        <span className={`tool-result-status ${data.success ? 'success' : 'error'}`}>
-          {data.success ? '已删除' : '删除失败'}
+        <span className="material-symbols">{isSuccess ? 'delete_sweep' : 'error'}</span>
+        <span className="tool-result-filename">{fileName}</span>
+        <span className={`tool-result-status ${isSuccess ? 'success' : 'error'}`}>
+          {statusText}
         </span>
       </div>
-      {data.message && (
-        <div className="tool-result-message">{data.message}</div>
+      {payload?.message && (
+        <div className="tool-result-message">{payload.message}</div>
       )}
     </div>
   );

@@ -123,6 +123,16 @@ export interface IUIStreamService {
   pushToolCall(update: ToolCallUpdateInput): void;
 
   /**
+   * Get current buffered thinking text for a message.
+   */
+  getThinkingBuffer(messageId: string): string | undefined;
+
+  /**
+   * Get current buffered content text for a message.
+   */
+  getContentBuffer(messageId: string): string | undefined;
+
+  /**
    * 思考内容更新事件
    */
   readonly onDidThinkingUpdate: Event<ThinkingUpdateEvent>;
