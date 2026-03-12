@@ -1,11 +1,9 @@
 /**
- * FileEntityResolver - 可靠的文件实体查找工具
+ * FileEntityResolver
  *
- * 通过多策略查找项目中的文件/文件夹：
- * 1. REST API getFileTree（直接走 HTTP，不返回空文件夹）
- * 2. Bridge listFiles（通过 React Fiber 内部状态，能看到文件夹）
- *
- * 所有文件操作工具（create / delete / rename / move）都应使用此模块。
+ * Resolve files/folders by project-relative path using multiple sources:
+ * 1) REST file tree (`project.getFileTree`) for docs/files
+ * 2) Bridge file tree (`fileOps.listFiles`) for folders and fresher UI state
  */
 
 import { overleafEditor } from '../../../editor/OverleafEditor';
@@ -19,14 +17,23 @@ export interface ResolvedEntity {
 }
 
 function normalize(p: string): string {
-  return p.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+  return (p ?? '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+function toRelativeBridgePath(rawPath: string, rootPrefix: string): string {
+  let relativePath = normalize(rawPath);
+  if (rootPrefix && relativePath.startsWith(rootPrefix)) {
+    relativePath = relativePath.slice(rootPrefix.length);
+    if (relativePath.startsWith('/')) relativePath = relativePath.slice(1);
+  }
+  return relativePath;
 }
 
 /**
- * 从 Bridge listFiles 结果中匹配实体。
+ * Match an entity from bridge listFiles output.
  *
- * Bridge 路径格式: "rootFolderName/subfolder/file.tex"
- * 第一段是根文件夹名，需要跳过。
+ * Bridge path format: "rootFolderName/subfolder/file.tex"
+ * We remove root folder prefix and match by project-relative path.
  */
 function matchInBridgeFiles(
   files: Array<{ type: string; name: string; path: string; id: string }>,
@@ -34,52 +41,52 @@ function matchInBridgeFiles(
   baseName: string,
   allowNameFallback: boolean
 ): ResolvedEntity | null {
-  // 识别根文件夹（路径中不含 "/" 的 folder）
   const rootFolder = files.find(f => f.type === 'folder' && !f.path.includes('/'));
-  const rootPrefix = rootFolder ? rootFolder.path + '/' : '';
+  const rootPrefix = rootFolder ? normalize(rootFolder.path) + '/' : '';
+
+  let exactMatch: ResolvedEntity | null = null;
+  let fallbackMatch: ResolvedEntity | null = null;
 
   for (const f of files) {
-    // 跳过根文件夹本身
     if (f === rootFolder) continue;
 
-    // 将 bridge 路径转为相对于项目根的路径
-    let relativePath = normalize(f.path);
-    if (rootPrefix && relativePath.startsWith(normalize(rootPrefix))) {
-      relativePath = relativePath.slice(normalize(rootPrefix).length);
-      if (relativePath.startsWith('/')) relativePath = relativePath.slice(1);
-    }
+    const relativePath = toRelativeBridgePath(f.path, rootPrefix);
 
     if (recentlyCreatedFiles.isMarkedDeleted({ id: f.id, path: relativePath, name: f.name })) {
       continue;
     }
 
-    const matched =
-      relativePath === normalized ||
-      (allowNameFallback && f.name === baseName);
+    const candidate: ResolvedEntity = {
+      type: mapEntityType(f.type),
+      id: f.id,
+      name: f.name,
+      path: relativePath
+    };
 
-    if (matched) {
-      return {
-        type: mapEntityType(f.type),
-        id: f.id,
-        name: f.name,
-        path: relativePath
-      };
+    if (relativePath === normalized) {
+      // Exact path match takes priority. Keep the latest exact match to reduce
+      // stale-id issues when duplicated entries briefly coexist.
+      exactMatch = candidate;
+      continue;
+    }
+
+    if (allowNameFallback && f.name === baseName && !fallbackMatch) {
+      fallbackMatch = candidate;
     }
   }
-  return null;
+
+  return exactMatch ?? fallbackMatch;
 }
 
 /**
- * 根据路径查找文件实体
- * @param targetPath 目标路径（相对于项目根目录）
- * @returns 找到的实体信息，未找到则返回 null
+ * Resolve file/folder by project-relative path.
  */
 export async function findEntityByPath(targetPath: string): Promise<ResolvedEntity | null> {
   const normalized = normalize(targetPath);
   const baseName = normalized.split('/').pop() || normalized;
   const allowNameFallback = !normalized.includes('/');
 
-  // 策略 1: REST API（对 doc/file 最可靠，但不返回空文件夹）
+  // Strategy 1: REST API (reliable for doc/file)
   try {
     const fileTree = await overleafEditor.project.getFileTree();
     for (const entity of fileTree.entities) {
@@ -94,26 +101,30 @@ export async function findEntityByPath(targetPath: string): Promise<ResolvedEnti
         (allowNameFallback && entityName === baseName);
 
       if (matched) {
-        const type = mapEntityType(entity.type);
-        return { type, id: entityId, name: entityName, path: entity.path };
+        return {
+          type: mapEntityType(entity.type),
+          id: entityId,
+          name: entityName,
+          path: entity.path
+        };
       }
     }
-
-  } catch (error) {
+  } catch {
+    // ignore and fallback
   }
 
-  // 策略 2: Bridge listFiles（能看到文件夹，包括空文件夹）
+  // Strategy 2: Bridge listFiles (includes folders and often fresher)
   try {
     const files = await overleafEditor.fileOps.listFiles();
     const result = matchInBridgeFiles(files, normalized, baseName, allowNameFallback);
     if (result) {
       return result;
     }
-
-  } catch (error) {
+  } catch {
+    // ignore and fallback
   }
 
-  // 策略 3: recently-created-files registry (for files just created in this session)
+  // Strategy 3: session recently-created registry
   const recentEntry = recentlyCreatedFiles.findByPath(targetPath);
   if (recentEntry && !recentlyCreatedFiles.isMarkedDeleted({ id: recentEntry.id, path: recentEntry.path, name: recentEntry.name })) {
     return recentEntry;
@@ -123,14 +134,14 @@ export async function findEntityByPath(targetPath: string): Promise<ResolvedEnti
 }
 
 /**
- * 查找文件夹实体（优先走 Bridge，因为 REST API 不返回空文件夹）
+ * Resolve folder by path.
+ * Prefer bridge because REST API may miss empty folders.
  */
 export async function findFolderByPath(folderPath: string): Promise<ResolvedEntity | null> {
   const normalized = normalize(folderPath);
   const baseName = normalized.split('/').pop() || normalized;
   const allowNameFallback = !normalized.includes('/');
 
-  // 文件夹：优先 Bridge（REST API 找不到空文件夹）
   try {
     const files = await overleafEditor.fileOps.listFiles();
     const result = matchInBridgeFiles(
@@ -140,10 +151,10 @@ export async function findFolderByPath(folderPath: string): Promise<ResolvedEnti
       allowNameFallback
     );
     if (result) return result;
-  } catch (error) {
+  } catch {
+    // ignore and fallback
   }
 
-  // Fallback: REST API（非空文件夹可能通过路径推断）
   const entity = await findEntityByPath(folderPath);
   if (entity && entity.type === 'folder') return entity;
 
@@ -151,13 +162,12 @@ export async function findFolderByPath(folderPath: string): Promise<ResolvedEnti
 }
 
 /**
- * 获取所有文件实体（合并 REST API + Bridge，确保包含文件夹）
- * 返回的 path 均为相对于项目根的路径（无根文件夹前缀）
+ * Merge entities from REST + bridge and return all known entities.
  */
 export async function getAllEntities(): Promise<ResolvedEntity[]> {
   const resultMap = new Map<string, ResolvedEntity>();
 
-  // 策略 1: REST API（doc/file，路径已经是 /xxx 格式）
+  // REST entities
   try {
     const fileTree = await overleafEditor.project.getFileTree();
     for (const e of fileTree.entities) {
@@ -171,23 +181,21 @@ export async function getAllEntities(): Promise<ResolvedEntity[]> {
         path: e.path
       });
     }
-  } catch (error) {
+  } catch {
+    // ignore
   }
 
-  // 策略 2: Bridge（补全文件夹，路径需要去掉根文件夹前缀）
+  // Bridge entities (fill missing folders/entries)
   try {
     const files = await overleafEditor.fileOps.listFiles();
     const rootFolder = files.find(f => f.type === 'folder' && !f.path.includes('/'));
-    const rootPrefix = rootFolder ? rootFolder.path + '/' : '';
+    const rootPrefix = rootFolder ? normalize(rootFolder.path) + '/' : '';
 
     for (const f of files) {
       if (f === rootFolder) continue;
       if (resultMap.has(f.id)) continue;
 
-      let relativePath = f.path;
-      if (rootPrefix && relativePath.startsWith(rootPrefix)) {
-        relativePath = relativePath.slice(rootPrefix.length);
-      }
+      const relativePath = toRelativeBridgePath(f.path, rootPrefix);
 
       if (recentlyCreatedFiles.isMarkedDeleted({ id: f.id, path: relativePath, name: f.name })) {
         continue;
@@ -200,7 +208,8 @@ export async function getAllEntities(): Promise<ResolvedEntity[]> {
         path: relativePath
       });
     }
-  } catch (error) {
+  } catch {
+    // ignore
   }
 
   return Array.from(resultMap.values());
