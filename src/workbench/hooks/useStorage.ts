@@ -73,7 +73,6 @@ export function useStorage<T>(
         await storageService.set(key, newValue);
         setValue(newValue);
       } catch (error) {
-        console.error(`[useStorage] Failed to set key "${key}":`, error);
         throw error;
       }
     },

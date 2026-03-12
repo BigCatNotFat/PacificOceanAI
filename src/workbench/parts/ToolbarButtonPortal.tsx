@@ -76,8 +76,6 @@ const ToolbarButtonPortal: React.FC<ToolbarButtonPortalProps> = ({ onClick }) =>
 
   useEffect(() => {
     const siteType = detectSiteType();
-    console.log('[ToolbarButtonPortal] 检测到网站类型:', siteType);
-
     const inject = () => {
       const existing = document.getElementById(ELEMENTS.BUTTON_WRAPPER_ID);
       if (existing) {
@@ -113,7 +111,6 @@ const ToolbarButtonPortal: React.FC<ToolbarButtonPortalProps> = ({ onClick }) =>
         
         setHost(wrapper);
         setButtonStyle(style);
-        console.log('[ToolbarButtonPortal] 按钮已注入，样式:', style);
       }
     };
 

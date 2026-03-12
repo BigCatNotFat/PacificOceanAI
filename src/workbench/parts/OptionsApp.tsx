@@ -27,7 +27,7 @@ const OptionsApp: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'ai'>('general');
 
   // 添加模型表单
-  const [formProvider, setFormProvider] = useState<'openai' | 'gemini'>('openai');
+  const [formProvider, setFormProvider] = useState<'openai' | 'gemini' | 'deepseek' | 'moonshot' | 'qwen'>('openai');
   const [formApiKey, setFormApiKey] = useState('');
   const [formBaseUrl, setFormBaseUrl] = useState('https://api.openai.com/v1');
   const [formModelName, setFormModelName] = useState('');
@@ -129,11 +129,17 @@ const OptionsApp: React.FC = () => {
   };
 
   // 供应商切换时自动填充默认 Base URL 并清空模型列表
-  const handleProviderChange = (p: 'openai' | 'gemini') => {
+  const providerDefaultUrls: Record<string, string> = {
+    openai: 'https://api.openai.com/v1',
+    gemini: 'https://generativelanguage.googleapis.com/v1beta',
+    deepseek: 'https://api.deepseek.com/v1',
+    moonshot: 'https://api.moonshot.cn/v1',
+    qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  };
+
+  const handleProviderChange = (p: 'openai' | 'gemini' | 'deepseek' | 'moonshot' | 'qwen') => {
     setFormProvider(p);
-    setFormBaseUrl(p === 'gemini'
-      ? 'https://generativelanguage.googleapis.com/v1beta'
-      : 'https://api.openai.com/v1');
+    setFormBaseUrl(providerDefaultUrls[p] || 'https://api.openai.com/v1');
     setFetchedModels([]);
     setFormModelName('');
     setFetchError('');
@@ -436,11 +442,14 @@ const OptionsApp: React.FC = () => {
                       <label style={{ fontSize: '14px', fontWeight: 600, color: '#333', minWidth: '70px' }}>供应商</label>
                       <select
                         value={formProvider}
-                        onChange={(e) => handleProviderChange(e.target.value as 'openai' | 'gemini')}
+                        onChange={(e) => handleProviderChange(e.target.value as 'openai' | 'gemini' | 'deepseek' | 'moonshot' | 'qwen')}
                         style={{ ...styles.select, flex: 1 }}
                       >
                         <option value="openai">OpenAI</option>
                         <option value="gemini">Google Gemini</option>
+                        <option value="deepseek">DeepSeek</option>
+                        <option value="moonshot">Moonshot / Kimi</option>
+                        <option value="qwen">Qwen / 通义千问</option>
                       </select>
                     </div>
 
@@ -451,7 +460,7 @@ const OptionsApp: React.FC = () => {
                           type={showFormKey ? 'text' : 'password'}
                           value={formApiKey}
                           onChange={(e) => setFormApiKey(e.target.value)}
-                          placeholder={formProvider === 'openai' ? 'sk-...' : 'AIza...'}
+                          placeholder={formProvider === 'gemini' ? 'AIza...' : formProvider === 'qwen' ? 'sk-...' : 'sk-...'}
                           style={{ ...styles.formInput, width: '100%', paddingRight: '40px' }}
                         />
                         <button onClick={() => setShowFormKey(!showFormKey)} style={styles.visibilityButton} title={showFormKey ? '隐藏' : '显示'}>
@@ -563,15 +572,26 @@ const OptionsApp: React.FC = () => {
                             <strong style={styles.modelName}>{model.name}</strong>
                             <span style={{
                               ...styles.modelId,
-                              backgroundColor: model.provider === 'gemini' ? '#e8f0fe'
+                              backgroundColor:
+                                model.provider === 'gemini' ? '#e8f0fe'
                                 : model.provider === 'codex-oauth' ? '#e8f5e9'
+                                : model.provider === 'deepseek' ? '#e3f2fd'
+                                : model.provider === 'moonshot' ? '#fce4ec'
+                                : model.provider === 'qwen' ? '#fff8e1'
                                 : '#fff3e0',
-                              color: model.provider === 'gemini' ? '#1a73e8'
+                              color:
+                                model.provider === 'gemini' ? '#1a73e8'
                                 : model.provider === 'codex-oauth' ? '#2e7d32'
+                                : model.provider === 'deepseek' ? '#0d47a1'
+                                : model.provider === 'moonshot' ? '#c62828'
+                                : model.provider === 'qwen' ? '#ff6f00'
                                 : '#e65100',
                             }}>
                               {model.provider === 'gemini' ? 'Gemini'
                                 : model.provider === 'codex-oauth' ? 'Codex OAuth'
+                                : model.provider === 'deepseek' ? 'DeepSeek'
+                                : model.provider === 'moonshot' ? 'Moonshot'
+                                : model.provider === 'qwen' ? 'Qwen'
                                 : 'OpenAI'}
                             </span>
                           </div>

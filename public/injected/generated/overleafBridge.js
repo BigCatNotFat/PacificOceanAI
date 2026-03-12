@@ -4,7 +4,7 @@
  * 源文件位置: public/injected/modules/
  * 入口文件: main.js
  * 
- * 构建时间: 2026-03-10T12:04:59.735Z
+ * 构建时间: 2026-03-12T02:30:08.349Z
  * 构建脚本: scripts/build-bridge-new.js
  * 构建工具: esbuild
  */
@@ -429,26 +429,61 @@
         }
         return null;
       },
-      // 切换当前编辑的文件
+      // 切换当前编辑的文件。支持传入全路径 (例如 "folder/subfolder/file.tex") 以自动展开文件夹
       switchFile: function(targetFilename) {
         debug(`[OverleafBridge] Attempting to switch to file: "${targetFilename}"`);
-        const fileNode = document.querySelector(`li[role="treeitem"][aria-label="${targetFilename}"]`);
-        if (fileNode) {
-          debug("[OverleafBridge] Found file node DOM, clicking...");
-          const clickTarget = fileNode.querySelector(".entity") || fileNode;
-          const eventOptions = { bubbles: true, cancelable: true, view: window };
-          clickTarget.dispatchEvent(new MouseEvent("mousedown", eventOptions));
-          clickTarget.dispatchEvent(new MouseEvent("mouseup", eventOptions));
-          clickTarget.dispatchEvent(new MouseEvent("click", eventOptions));
-          debug(`[OverleafBridge] Switch command sent to "${targetFilename}"`);
-          return { success: true };
-        } else {
-          warn(`[OverleafBridge] DOM node not found for file "${targetFilename}"`);
-          return {
-            success: false,
-            error: "File not found in file tree (it might be in a collapsed folder)"
+        return new Promise((resolve) => {
+          const parts = targetFilename.split("/").filter(Boolean);
+          const fileName = parts.pop();
+          const folders = parts;
+          const expandFolders = (folderNames, index) => {
+            if (index >= folderNames.length) {
+              clickTargetFile();
+              return;
+            }
+            const currentFolderName = folderNames[index];
+            const folderNodes = Array.from(document.querySelectorAll('li[role="treeitem"]'));
+            const folderNode = folderNodes.find((el) => el.getAttribute("aria-label") === currentFolderName);
+            if (folderNode) {
+              const isExpanded = folderNode.getAttribute("aria-expanded") === "true";
+              if (!isExpanded) {
+                debug(`[OverleafBridge] Expanding folder: ${currentFolderName}`);
+                const toggleBtn = folderNode.querySelector("button") || folderNode.querySelector(".ol-cm-collapse-button") || folderNode;
+                const opts = { bubbles: true, cancelable: true, view: window };
+                toggleBtn.dispatchEvent(new MouseEvent("mousedown", opts));
+                toggleBtn.dispatchEvent(new MouseEvent("mouseup", opts));
+                toggleBtn.dispatchEvent(new MouseEvent("click", opts));
+                setTimeout(() => expandFolders(folderNames, index + 1), 500);
+              } else {
+                expandFolders(folderNames, index + 1);
+              }
+            } else {
+              warn(`[OverleafBridge] Folder node not found for "${currentFolderName}"`);
+              clickTargetFile();
+            }
           };
-        }
+          const clickTargetFile = () => {
+            const fileNodes = Array.from(document.querySelectorAll('li[role="treeitem"]'));
+            const fileNode = fileNodes.find((el) => el.getAttribute("aria-label") === fileName);
+            if (fileNode) {
+              debug("[OverleafBridge] Found file node DOM, clicking...");
+              const clickTarget = fileNode.querySelector(".entity") || fileNode;
+              const eventOptions = { bubbles: true, cancelable: true, view: window };
+              clickTarget.dispatchEvent(new MouseEvent("mousedown", eventOptions));
+              clickTarget.dispatchEvent(new MouseEvent("mouseup", eventOptions));
+              clickTarget.dispatchEvent(new MouseEvent("click", eventOptions));
+              debug(`[OverleafBridge] Switch command sent to "${fileName}"`);
+              resolve({ success: true });
+            } else {
+              warn(`[OverleafBridge] DOM node not found for file "${fileName}"`);
+              resolve({
+                success: false,
+                error: `File not found in file tree (could not expand to "${targetFilename}")`
+              });
+            }
+          };
+          expandFolders(folders, 0);
+        });
       }
     };
   }

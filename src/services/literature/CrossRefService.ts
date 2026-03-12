@@ -397,7 +397,6 @@ export class CrossRefService {
           }
         } catch (err) {
           // DOI 查询失败，继续尝试标题搜索
-          console.warn('[CrossRef] DOI lookup failed, trying title search:', err);
         }
       }
       

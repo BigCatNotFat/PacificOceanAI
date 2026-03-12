@@ -42,7 +42,6 @@ import { IUIStreamServiceId } from '../../platform/agent/IUIStreamService';
 import type { ILiteratureService } from '../../platform/literature/ILiteratureService';
 import { ILiteratureServiceId } from '../../platform/literature/ILiteratureService';
 import { ManagerAgentLoopService } from './multiAgent/services/ManagerAgentLoopService';
-import { logger } from '../../utils/logger';
 
 /**
  * 单个会话的状态
@@ -97,17 +96,11 @@ export class ChatService implements IChatService {
     private readonly uiStreamService: IUIStreamService,
     private readonly literatureService: ILiteratureService
   ) {
-    logger.debug('[ChatService] 依赖注入成功', {
-      hasAgentService: !!agentService,
-      hasConversationService: !!conversationService,
-      hasPromptService: !!promptService
-    });
 
     // 监听对话切换事件，加载对应对话的消息到 session
     this.conversationService.onDidCurrentConversationChange((event) => {
       if (!event.conversationId) return;
       
-      logger.debug('[ChatService] 对话切换:', event.conversationId);
       
       // 获取或创建 session
       const session = this.getOrCreateSession(event.conversationId);
@@ -123,7 +116,6 @@ export class ChatService implements IChatService {
       });
     });
 
-    logger.debug('[ChatService] 初始化完成');
   }
 
   // ==================== 私有辅助方法 ====================
@@ -229,7 +221,6 @@ export class ChatService implements IChatService {
 
       // 订阅更新事件
       updateDisposable = this.managerAgentLoopService.onUpdate((event) => {
-        logger.debug('[ChatService] Plan 模式更新:', event.phase, event.message);
         
         // 更新 assistant 消息内容
         const assistantMsg = session.messages.find(m => m.id === responseMessageId);
@@ -265,7 +256,6 @@ export class ChatService implements IChatService {
 
       // 订阅错误事件
       errorDisposable = this.managerAgentLoopService.onError((error) => {
-        console.error('[ChatService] Plan 模式错误:', error);
       });
 
       // 执行 ManagerAgentLoop
@@ -300,11 +290,8 @@ export class ChatService implements IChatService {
       session.currentTurnStartIndex = undefined;
       await this.saveMessagesNow(session);
 
-      logger.debug('[ChatService] Plan 模式完成:', result.success ? '成功' : '失败');
 
     } catch (error) {
-      console.error('[ChatService] Plan 模式执行错误:', error);
-      
       const assistantMsg = session.messages.find(m => m.id === responseMessageId);
       if (assistantMsg) {
         assistantMsg.content = `执行失败: ${error instanceof Error ? error.message : String(error)}`;
@@ -360,7 +347,6 @@ export class ChatService implements IChatService {
         }
       }
     } catch (error) {
-      console.error('[ChatService] 保存消息失败:', error);
     }
   }
 
@@ -372,7 +358,6 @@ export class ChatService implements IChatService {
   async sendMessage(input: string, options: ChatOptions, images?: string[]): Promise<void> {
     const { conversationId } = options;
     if (!conversationId) {
-      console.error('[ChatService] conversationId 是必填项');
       return;
     }
 
@@ -380,7 +365,6 @@ export class ChatService implements IChatService {
 
     // 防止同一会话的并发请求
     if (session.isProcessing) {
-      console.warn(`[ChatService] 会话 ${conversationId} 已有请求正在处理中`);
       return;
     }
 
@@ -419,17 +403,13 @@ export class ChatService implements IChatService {
           const userMsgIndex = session.messages.indexOf(userMessage);
           session.messages.splice(userMsgIndex, 0, systemMessage);
           
-          logger.debug('[ChatService] ✅ 插入系统提示词到对话开头');
         } catch (error) {
-          console.error('[ChatService] 构建系统提示词失败:', error);
         }
       }
 
       // ========== 步骤 3：后台保存到本地（不阻塞 UI） ==========
       this.saveMessagesNow(session).then(() => {
-        logger.debug('[ChatService] ✅ 用户消息已保存到本地');
       }).catch((error) => {
-        console.error('[ChatService] 保存用户消息失败:', error);
       });
 
       // ========== 步骤 4：创建 AI 响应占位符 ==========
@@ -441,14 +421,6 @@ export class ChatService implements IChatService {
         messages: [...session.messages]
       });
 
-      logger.debug('[ChatService] 发送消息:', {
-        conversationId,
-        mode: options.mode,
-        modelId: options.modelId,
-        contextItemsCount: options.contextItems?.length || 0,
-        userMessageId: userMessage.id,
-        assistantPlaceholderId: assistantPlaceholder.id
-      });
 
       // ========== Plan 模式：使用 ManagerAgentLoopService ==========
       if (options.mode === 'plan') {
@@ -477,7 +449,6 @@ export class ChatService implements IChatService {
       // 4. 监听 Loop 更新
       session.currentLoop.onUpdate((updatedMessages) => {
         if (session.currentLoopId !== loopId) {
-          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的更新事件`);
           return;
         }
         session.messages = updatedMessages;
@@ -491,7 +462,6 @@ export class ChatService implements IChatService {
       // 5. 监听 Loop 完成
       session.currentLoop.onDone((finalMessages) => {
         if (session.currentLoopId !== loopId) {
-          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的完成事件`);
           return;
         }
         session.messages = finalMessages;
@@ -503,17 +473,13 @@ export class ChatService implements IChatService {
         session.currentTurnStartIndex = undefined;
         
         this.saveMessagesNow(session);
-        logger.debug(`[ChatService] 会话 ${conversationId} 对话完成`);
       });
 
       // 6. 监听 Loop 错误
       session.currentLoop.onError((error) => {
         if (session.currentLoopId !== loopId) {
-          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的错误事件`);
           return;
         }
-        console.error(`[ChatService] 会话 ${conversationId} Agent Loop 错误:`, error);
-        
         // 尝试找到并更新正在流式的消息状态，避免 UI 一直 loading
         const streamingMsg = session.messages.find(m => m.role === 'assistant' && m.status === 'streaming');
         if (streamingMsg) {
@@ -539,10 +505,8 @@ export class ChatService implements IChatService {
       // 7. 监听工具审批事件
       session.currentLoop.onToolCallPending((event) => {
         if (session.currentLoopId !== loopId) {
-          console.warn(`[ChatService] 忽略旧 Loop ${loopId} 的工具审批事件`);
           return;
         }
-        logger.debug(`[ChatService] 会话 ${conversationId} 工具调用待审批:`, event);
         
         // 记录 toolCallId -> toolName 映射（用于统计）
         if (!session.toolCallIdToNameMap) {
@@ -554,8 +518,6 @@ export class ChatService implements IChatService {
       });
 
     } catch (error) {
-      console.error(`[ChatService] 会话 ${conversationId} sendMessage error:`, error);
-      
       const errorMessage = this.createMessage(session, 'assistant', '抱歉，发生了错误');
       errorMessage.status = 'error';
       errorMessage.error = error instanceof Error ? error.message : String(error);
@@ -599,10 +561,8 @@ export class ChatService implements IChatService {
    * 中断单个会话
    */
   private abortSession(session: SessionState): void {
-    logger.debug(`[ChatService] 中断会话 ${session.conversationId}`);
     
     if (session.currentLoop) {
-      logger.debug(`[ChatService] 中断 Loop: ${session.currentLoop.id}`);
       session.currentLoop.abort();
       session.currentLoop = undefined;
       session.currentLoopId = undefined;
@@ -627,17 +587,13 @@ export class ChatService implements IChatService {
   async approveToolCall(conversationId: string, toolCallId: string): Promise<void> {
     const session = this.sessions.get(conversationId);
     if (!session?.currentLoop) {
-      console.warn(`[ChatService] 会话 ${conversationId} 未找到当前 Loop`);
       return;
     }
 
-    logger.debug(`[ChatService] 会话 ${conversationId} 批准工具调用:`, toolCallId);
     
     try {
       await session.currentLoop.approveToolCall(toolCallId);
     } catch (error) {
-      console.error(`[ChatService] 会话 ${conversationId} approveToolCall error:`, error);
-      
       const errorMessage = this.createMessage(session, 'assistant', `工具执行失败: ${error}`);
       errorMessage.status = 'error';
       session.messages.push(errorMessage);
@@ -654,11 +610,9 @@ export class ChatService implements IChatService {
   async rejectToolCall(conversationId: string, toolCallId: string): Promise<void> {
     const session = this.sessions.get(conversationId);
     if (!session?.currentLoop) {
-      console.warn(`[ChatService] 会话 ${conversationId} 未找到当前 Loop`);
       return;
     }
 
-    logger.debug(`[ChatService] 会话 ${conversationId} 拒绝工具调用:`, toolCallId);
     
     await session.currentLoop.rejectToolCall(toolCallId);
     
@@ -685,12 +639,10 @@ export class ChatService implements IChatService {
    * 用于多列对话场景，当打开一个新的对话时需要主动加载消息
    */
   async loadConversationMessages(conversationId: string): Promise<ChatMessage[]> {
-    logger.debug('[ChatService] 加载对话消息:', conversationId);
     
     // 检查是否已经有消息（避免重复加载）
     const existingSession = this.sessions.get(conversationId);
     if (existingSession && existingSession.messages.length > 0) {
-      logger.debug('[ChatService] 对话已有消息，跳过加载:', conversationId);
       return existingSession.messages;
     }
     
@@ -699,7 +651,6 @@ export class ChatService implements IChatService {
       const conversation = await this.conversationService.loadConversation(conversationId);
       
       if (!conversation) {
-        console.warn('[ChatService] 对话不存在:', conversationId);
         return [];
       }
       
@@ -710,10 +661,6 @@ export class ChatService implements IChatService {
       session.messages = conversation.messages;
       session.messageIdCounter = conversation.messages.length;
       
-      logger.debug('[ChatService] 对话消息加载成功:', {
-        conversationId,
-        messageCount: session.messages.length
-      });
       
       // 触发更新事件
       this._onDidMessageUpdate.fire({
@@ -723,7 +670,6 @@ export class ChatService implements IChatService {
       
       return session.messages;
     } catch (error) {
-      console.error('[ChatService] 加载对话消息失败:', error);
       return [];
     }
   }

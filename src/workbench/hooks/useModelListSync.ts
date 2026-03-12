@@ -33,9 +33,7 @@ async function pushModelListToBridge(configService: IConfigurationService): Prom
       data: { models: bridgeModels }
     }, '*');
     
-    console.log('[useModelListSync] Pushed', bridgeModels.length, 'enabled models to bridge');
   } catch (error) {
-    console.error('[useModelListSync] Failed to push model list:', error);
   }
 }
 
@@ -57,8 +55,6 @@ export function useModelListSync(): void {
     const data = event.data;
     if (!data || data.type !== 'OVERLEAF_REQUEST_MODEL_LIST') return;
     
-    console.log('[useModelListSync] Received model list request from bridge');
-    
     if (configServiceRef.current) {
       pushModelListToBridge(configServiceRef.current);
     }
@@ -76,7 +72,6 @@ export function useModelListSync(): void {
     // 监听配置变化事件，模型列表变更时实时同步到 bridge
     const disposable = configService.onDidChangeConfiguration((event) => {
       if (event.key === 'apiConfig') {
-        console.log('[useModelListSync] Config changed, re-pushing model list to bridge');
         pushModelListToBridge(configService);
       }
     });

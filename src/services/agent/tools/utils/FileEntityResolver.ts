@@ -73,13 +73,9 @@ export async function findEntityByPath(targetPath: string): Promise<ResolvedEnti
   const normalized = normalize(targetPath);
   const baseName = normalized.split('/').pop() || normalized;
 
-  console.log('[FileEntityResolver] Looking for:', { targetPath, normalized, baseName });
-
   // 策略 1: REST API（对 doc/file 最可靠，但不返回空文件夹）
   try {
     const fileTree = await overleafEditor.project.getFileTree();
-    console.log('[FileEntityResolver] REST API returned', fileTree.entities.length, 'entities');
-
     for (const entity of fileTree.entities) {
       const entityPath = normalize(entity.path);
       const entityName = entityPath.split('/').pop() || entityPath;
@@ -94,40 +90,30 @@ export async function findEntityByPath(targetPath: string): Promise<ResolvedEnti
 
       if (matched) {
         const type = mapEntityType(entity.type);
-        console.log('[FileEntityResolver] Found via REST API:', { path: entity.path, type, id: entityId });
         return { type, id: entityId, name: entityName, path: entity.path };
       }
     }
 
-    console.log('[FileEntityResolver] Not found via REST API (may be an empty folder)');
   } catch (error) {
-    console.warn('[FileEntityResolver] REST API getFileTree failed:', error);
   }
 
   // 策略 2: Bridge listFiles（能看到文件夹，包括空文件夹）
   try {
     const files = await overleafEditor.fileOps.listFiles();
-    console.log('[FileEntityResolver] Bridge listFiles returned', files.length, 'entries');
-
     const result = matchInBridgeFiles(files, normalized, baseName);
     if (result) {
-      console.log('[FileEntityResolver] Found via Bridge:', result);
       return result;
     }
 
-    console.log('[FileEntityResolver] Not found via Bridge either');
   } catch (error) {
-    console.warn('[FileEntityResolver] Bridge listFiles failed:', error);
   }
 
   // 策略 3: recently-created-files registry (for files just created in this session)
   const recentEntry = recentlyCreatedFiles.findByPath(targetPath);
   if (recentEntry) {
-    console.log('[FileEntityResolver] Found via recently-created registry:', recentEntry);
     return recentEntry;
   }
 
-  console.error('[FileEntityResolver] Entity not found by any strategy:', targetPath);
   return null;
 }
 
@@ -148,7 +134,6 @@ export async function findFolderByPath(folderPath: string): Promise<ResolvedEnti
     );
     if (result) return result;
   } catch (error) {
-    console.warn('[FileEntityResolver] Bridge failed for folder lookup:', error);
   }
 
   // Fallback: REST API（非空文件夹可能通过路径推断）
@@ -180,7 +165,6 @@ export async function getAllEntities(): Promise<ResolvedEntity[]> {
       });
     }
   } catch (error) {
-    console.warn('[FileEntityResolver] REST API failed in getAllEntities');
   }
 
   // 策略 2: Bridge（补全文件夹，路径需要去掉根文件夹前缀）
@@ -206,7 +190,6 @@ export async function getAllEntities(): Promise<ResolvedEntity[]> {
       });
     }
   } catch (error) {
-    console.warn('[FileEntityResolver] Bridge failed in getAllEntities');
   }
 
   return Array.from(resultMap.values());

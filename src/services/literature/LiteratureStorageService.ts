@@ -147,7 +147,6 @@ export class LiteratureStorageService {
    */
   async save(references: BibReference[]): Promise<boolean> {
     if (!this.projectId) {
-      console.warn('[LiteratureStorageService] 无法保存：未检测到项目 ID');
       return false;
     }
     
@@ -168,10 +167,8 @@ export class LiteratureStorageService {
         localStorage.setItem(key, JSON.stringify(data));
       }
       
-      console.log(`[LiteratureStorageService] 已保存 ${references.length} 篇文献到本地库`);
       return true;
     } catch (error) {
-      console.error('[LiteratureStorageService] 保存失败:', error);
       return false;
     }
   }
@@ -181,7 +178,6 @@ export class LiteratureStorageService {
    */
   async load(): Promise<StoredBibReference[]> {
     if (!this.projectId) {
-      console.warn('[LiteratureStorageService] 无法加载：未检测到项目 ID');
       return [];
     }
     
@@ -200,20 +196,16 @@ export class LiteratureStorageService {
       }
       
       if (!data) {
-        console.log('[LiteratureStorageService] 本地库为空');
         return [];
       }
       
       // 版本兼容性处理（未来扩展）
       if (data.version !== STORAGE_VERSION) {
-        console.log(`[LiteratureStorageService] 数据版本不匹配 (${data.version} vs ${STORAGE_VERSION})，进行迁移`);
         // TODO: 版本迁移逻辑
       }
       
-      console.log(`[LiteratureStorageService] 从本地库加载 ${data.references.length} 篇文献`);
       return data.references;
     } catch (error) {
-      console.error('[LiteratureStorageService] 加载失败:', error);
       return [];
     }
   }
@@ -235,10 +227,8 @@ export class LiteratureStorageService {
         localStorage.removeItem(key);
       }
       
-      console.log('[LiteratureStorageService] 已清除本地库');
       return true;
     } catch (error) {
-      console.error('[LiteratureStorageService] 清除失败:', error);
       return false;
     }
   }

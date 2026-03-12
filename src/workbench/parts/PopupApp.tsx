@@ -25,7 +25,6 @@ const PopupApp: React.FC = () => {
         alert('消息已发送到页面');
       }
     } catch (error) {
-      console.error('发送消息失败:', error);
       alert('发送消息失败，请确保在 Overleaf 页面上');
     }
   };

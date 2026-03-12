@@ -73,7 +73,6 @@ export abstract class BaseLLMProvider {
         return true;
       }
       // 过滤掉其他空消息
-      console.warn('[BaseLLMProvider] 过滤空消息', { role: msg.role });
       return false;
     });
   }
@@ -91,10 +90,27 @@ export abstract class BaseLLMProvider {
       stream: true
     };
 
-    if (typeof config.temperature === 'number') {
+    // 某些模型（如 Kimi K2.5）有固定的 temperature/top_p，必须使用固定值或不发送
+    const fixedTemp = (config as any).fixedTemperature;
+    const fixedTopP = (config as any).fixedTopP;
+    const skipTopP = (config as any).skipTopP;
+    const skipTemperature = (config as any).skipTemperature;
+
+    // temperature：优先使用固定值，其次用户值，skipTemperature 时完全不发
+    if (skipTemperature) {
+      // 不发送 temperature
+    } else if (typeof fixedTemp === 'number') {
+      payload.temperature = fixedTemp;
+    } else if (typeof config.temperature === 'number') {
       payload.temperature = config.temperature;
     }
-    if (typeof config.topP === 'number') {
+
+    // top_p：优先使用固定值，其次用户值，skipTopP 时完全不发
+    if (skipTopP) {
+      // 不发送 top_p
+    } else if (typeof fixedTopP === 'number') {
+      payload.top_p = fixedTopP;
+    } else if (typeof config.topP === 'number') {
       payload.top_p = config.topP;
     }
 

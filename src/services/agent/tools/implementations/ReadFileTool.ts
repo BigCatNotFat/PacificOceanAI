@@ -150,20 +150,12 @@ Example (single): target_file="main.tex", start_line_one_indexed=1, end_line_one
         }
       }
 
-      console.log('[ReadFileTool] execute 开始, 共', reads.length, '个读取操作');
-
       const results: ReadFileResult[] = [];
       const errors: string[] = [];
 
       for (let i = 0; i < reads.length; i++) {
         const readOp = reads[i];
         try {
-          console.log(`[ReadFileTool] 读取操作 ${i + 1}/${reads.length}:`, {
-            target_file: readOp.target_file,
-            start: readOp.start_line_one_indexed,
-            end: readOp.end_line_one_indexed_inclusive
-          });
-
           const docId = await this.getDocIdByPath(readOp.target_file);
           if (!docId) {
             errors.push(`[${readOp.target_file}] 无法找到文件的文档 ID`);
@@ -178,15 +170,9 @@ Example (single): target_file="main.tex", start_line_one_indexed=1, end_line_one
           );
           results.push(result);
 
-          console.log(`[ReadFileTool] 读取操作 ${i + 1} 完成:`, {
-            totalLines: result.totalLines,
-            readLines: result.readLines,
-            truncated: result.truncated
-          });
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
           errors.push(`[${readOp.target_file}] ${msg}`);
-          console.error(`[ReadFileTool] 读取操作 ${i + 1} 失败:`, error);
         }
       }
 
@@ -229,7 +215,6 @@ Example (single): target_file="main.tex", start_line_one_indexed=1, end_line_one
         duration: Date.now() - startTime
       };
     } catch (error) {
-      console.error('[ReadFileTool] execute 异常', error);
       return {
         ...this.handleError(error),
         duration: Date.now() - startTime
@@ -247,9 +232,7 @@ Example (single): target_file="main.tex", start_line_one_indexed=1, end_line_one
     endLine: number
   ): Promise<ReadFileResult> {
     // 先获取整个文件以得到总行数
-    console.log('[ReadFileTool] getDocContent (full) 开始, docId:', docId);
     const fullContent = await overleafEditor.document.getDocContent(docId);
-    console.log('[ReadFileTool] getDocContent (full) 完成, 内容长度:', fullContent?.length, '前100字符:', fullContent?.substring(0, 100));
     const totalLines = fullContent.split('\n').length;
 
     // 限制单次读取行数
@@ -367,7 +350,6 @@ Example (single): target_file="main.tex", start_line_one_indexed=1, end_line_one
         });
       }
     } catch (error) {
-      console.error('[ReadFileTool] 获取 DOM 文件 ID 映射失败:', error);
     }
 
     return map;
@@ -382,14 +364,10 @@ Example (single): target_file="main.tex", start_line_one_indexed=1, end_line_one
     const normalizedPath = targetFile.startsWith('/') ? targetFile : `/${targetFile}`;
     const baseName = targetFile.split('/').pop() || targetFile;
 
-    console.log('[ReadFileTool] getDocIdByPath', { targetFile, normalizedPath, baseName });
-
     // 策略 1: 从 DOM 文件树获取（最可靠，官网和自建都有 data-file-id）
     const domMap = this.getDomFileIdMap();
-    console.log('[ReadFileTool] DOM 文件映射:', Object.fromEntries(domMap));
     const domId = domMap.get(baseName);
     if (domId) {
-      console.log('[ReadFileTool] 从 DOM 找到 docId:', domId);
       return domId;
     }
 
@@ -401,43 +379,35 @@ Example (single): target_file="main.tex", start_line_one_indexed=1, end_line_one
         const id = entity.id ?? entity._id ?? entityAny.doc_id ?? entityAny.docId;
         if (!id) continue;
         if (entity.path === normalizedPath || entity.path.split('/').pop() === baseName) {
-          console.log('[ReadFileTool] 从 REST API 找到 docId:', id);
           return id;
         }
       }
     } catch (error) {
-      console.warn('[ReadFileTool] REST API 文件树获取失败:', error);
     }
 
     // 策略 3: 从 Overleaf Store 获取当前打开文件的 ID
     try {
       const currentFile = await overleafEditor.file.getInfo();
-      console.log('[ReadFileTool] 当前打开文件:', currentFile);
       if (currentFile && (currentFile as any).fileName === baseName && (currentFile as any).fileId) {
-        console.log('[ReadFileTool] 从当前文件匹配到 docId:', (currentFile as any).fileId);
         return (currentFile as any).fileId;
       }
     } catch (error) {
-      console.warn('[ReadFileTool] 获取当前文件信息失败:', error);
     }
 
     // 策略 4: 从 recently-created-files registry 获取
     const recentEntry = recentlyCreatedFiles.findByPath(targetFile);
     if (recentEntry) {
-      console.log('[ReadFileTool] 从 recently-created registry 找到 docId:', recentEntry.id);
       return recentEntry.id;
     }
 
     // 策略 5: 如果上面都没找到，可能是文件刚创建但还没同步。
     // 等待一段时间后重试 DOM + REST API。
-    console.log('[ReadFileTool] 未立即找到 docId，等待后重试...');
     for (let attempt = 0; attempt < 3; attempt++) {
       await new Promise(r => setTimeout(r, 1000));
 
       const retryDomMap = this.getDomFileIdMap();
       const retryId = retryDomMap.get(baseName);
       if (retryId) {
-        console.log(`[ReadFileTool] 重试 ${attempt + 1}: 从 DOM 找到 docId:`, retryId);
         return retryId;
       }
 
@@ -448,14 +418,12 @@ Example (single): target_file="main.tex", start_line_one_indexed=1, end_line_one
           const id = entity.id ?? entity._id ?? entityAny.doc_id ?? entityAny.docId;
           if (!id) continue;
           if (entity.path === normalizedPath || entity.path.split('/').pop() === baseName) {
-            console.log(`[ReadFileTool] 重试 ${attempt + 1}: 从 REST API 找到 docId:`, id);
             return id;
           }
         }
       } catch { /* ignore */ }
     }
 
-    console.error('[ReadFileTool] 所有策略均未找到 docId', { targetFile });
     return null;
   }
 

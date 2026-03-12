@@ -27,7 +27,6 @@ export class OverleafEditorService extends Disposable implements IEditorService 
 
       return null;
     } catch (error) {
-      console.error('获取当前文件名时出错:', error);
       return null;
     }
   }
@@ -37,12 +36,10 @@ export class OverleafEditorService extends Disposable implements IEditorService 
       const lines = document.querySelectorAll('.cm-line');
 
       if (lines.length === 0) {
-        console.error('未找到任何 .cm-line 元素');
         return null;
       }
 
       if (lineNumber < 1 || lineNumber > lines.length) {
-        console.error(`行号 ${lineNumber} 超出范围 (1-${lines.length})`);
         return null;
       }
 
@@ -50,7 +47,6 @@ export class OverleafEditorService extends Disposable implements IEditorService 
       const text = lineElement.textContent || lineElement.innerHTML;
       return text ?? '';
     } catch (error) {
-      console.error('读取行文字时出错:', error);
       return null;
     }
   }
@@ -67,7 +63,6 @@ export class OverleafEditorService extends Disposable implements IEditorService 
 
       return result;
     } catch (error) {
-      console.error('读取所有行时出错:', error);
       return [];
     }
   }
@@ -97,13 +92,11 @@ export class OverleafEditorService extends Disposable implements IEditorService 
       }
 
       if (!cmContent) {
-        console.error('未找到 .cm-content 元素');
         return '';
       }
 
       return cmContent.textContent || (cmContent as HTMLElement).innerText || '';
     } catch (error) {
-      console.error('读取完整文本时出错:', error);
       return '';
     }
   }
@@ -132,7 +125,6 @@ export class OverleafEditorService extends Disposable implements IEditorService 
 
       return [];
     } catch (error) {
-      console.error('读取 File Outline 时出错:', error);
       return [];
     }
   }
@@ -170,7 +162,6 @@ export class OverleafEditorService extends Disposable implements IEditorService 
 
       return [];
     } catch (error) {
-      console.error('读取 File Tree 时出错:', error);
       return [];
     }
   }
@@ -180,7 +171,6 @@ export class OverleafEditorService extends Disposable implements IEditorService 
       const opened = this.openFileInEditor(fileName);
 
       if (!opened) {
-        console.error(`在文件树中未找到 ${fileName}`);
         return null;
       }
 
@@ -198,14 +188,12 @@ export class OverleafEditorService extends Disposable implements IEditorService 
       });
 
       if (!targetImg) {
-        console.error('未在页面中找到图片预览');
         return null;
       }
 
       const src = targetImg.getAttribute('src') || targetImg.src || '';
       return src || null;
     } catch (error) {
-      console.error('读取图片预览地址失败:', error);
       return null;
     }
   }
@@ -221,7 +209,6 @@ export class OverleafEditorService extends Disposable implements IEditorService 
       const cmContent = document.querySelector('.cm-content[contenteditable="true"]') as HTMLElement;
       
       if (!cmContent) {
-        console.error('未找到 .cm-content[contenteditable="true"] 元素');
         return false;
       }
 
@@ -231,7 +218,6 @@ export class OverleafEditorService extends Disposable implements IEditorService 
       // 获取当前选区
       const selection = window.getSelection();
       if (!selection || !selection.rangeCount) {
-        console.error('没有选区');
         return false;
       }
 
@@ -255,10 +241,8 @@ export class OverleafEditorService extends Disposable implements IEditorService 
       cmContent.dispatchEvent(new Event('input', { bubbles: true }));
       cmContent.dispatchEvent(new Event('change', { bubbles: true }));
 
-      console.log(`✅ 已在光标位置插入文本: "${text}"`);
       return true;
     } catch (error) {
-      console.error('插入文本失败:', error);
       return false;
     }
   }
@@ -408,7 +392,6 @@ export class OverleafEditorService extends Disposable implements IEditorService 
 
       return false;
     } catch (error) {
-      console.error('打开文件时出错:', error);
       return false;
     }
   }
@@ -426,10 +409,8 @@ export class OverleafEditorService extends Disposable implements IEditorService 
   async getDocLinesViaBridge(): Promise<number> {
     try {
       const lines = await overleafEditor.document.getLines();
-      console.log(`[OverleafEditorService] 文档行数: ${lines}`);
       return lines;
     } catch (error) {
-      console.error('[OverleafEditorService] 获取文档行数失败:', error);
       throw error;
     }
   }
@@ -441,7 +422,6 @@ export class OverleafEditorService extends Disposable implements IEditorService 
     try {
       return await overleafEditor.document.getText();
     } catch (error) {
-      console.error('[OverleafEditorService] 获取文档文本失败:', error);
       throw error;
     }
   }
@@ -453,7 +433,6 @@ export class OverleafEditorService extends Disposable implements IEditorService 
     try {
       return await overleafEditor.selection.getSelection();
     } catch (error) {
-      console.error('[OverleafEditorService] 获取选中文本失败:', error);
       throw error;
     }
   }
@@ -465,7 +444,6 @@ export class OverleafEditorService extends Disposable implements IEditorService 
     try {
       return await overleafEditor.selection.getCursorPosition();
     } catch (error) {
-      console.error('[OverleafEditorService] 获取光标位置失败:', error);
       throw error;
     }
   }
@@ -484,7 +462,6 @@ export class OverleafEditorService extends Disposable implements IEditorService 
     try {
       return await overleafEditor.editor.insertText(text);
     } catch (error) {
-      console.error('[OverleafEditorService] 插入文本失败:', error);
       throw error;
     }
   }

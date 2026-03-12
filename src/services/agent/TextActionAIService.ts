@@ -65,7 +65,6 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
     private readonly uiStreamService: IUIStreamService
   ) {
     super();
-    console.log('[TextActionAIService] 依赖注入成功');
   }
 
   /**
@@ -74,16 +73,6 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
   async execute(options: TextActionAIOptions): Promise<TextActionAIResult> {
     const { action, text, modelId: specifiedModelId, customPrompt, context, onStream, onThinkingStream, abortSignal } = options;
 
-    console.log(`[TextActionAIService] 执行操作: ${action}`, {
-      textLength: text.length,
-      specifiedModelId,
-      customPrompt: customPrompt ? customPrompt.substring(0, 50) + '...' : undefined,
-      hasContext: !!(context?.before || context?.after),
-      contextBeforeLength: context?.before?.length || 0,
-      contextAfterLength: context?.after?.length || 0,
-      hasStreamCallback: !!onStream,
-      hasThinkingStreamCallback: !!onThinkingStream
-    });
 
     try {
       // 1. 获取模型配置（优先使用指定的模型）
@@ -97,8 +86,6 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
         };
       }
       
-      console.log(`[TextActionAIService] 使用模型: ${modelId}`);
-
       // 2. 构建消息（对于自定义操作，传递 customPrompt；对于翻译等操作，传递上下文）
       const messages = this.promptService.buildTextActionPrompt(action, text, customPrompt, context);
 
@@ -111,13 +98,6 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
       const llmConfig = this.buildLLMConfig(modelId, abortSignal);
 
       // 打印发送给 AI 的提示词
-      console.log('='.repeat(80));
-      console.log(`[TextActionAIService] 📤 发送给 AI 的提示词: ${action}`);
-      console.log('='.repeat(80));
-      console.log(JSON.stringify(messages, null, 2));
-      console.log('='.repeat(80));
-      console.log('');
-
       // 5. 调用 LLM
       const result = await this.llmService.chat(messages, llmConfig);
 
@@ -127,10 +107,6 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
       // 7. 返回结果
       const resultText = result.content?.trim() || '';
       
-      console.log(`[TextActionAIService] 操作完成: ${action}`, {
-        resultLength: resultText.length
-      });
-
       return {
         success: true,
         resultText,
@@ -146,7 +122,6 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
 
       // 检查是否是用户取消
       if (errorMessage.includes('aborted') || errorMessage.includes('cancelled') || (error instanceof Error && error.name === 'AbortError')) {
-        console.log(`[TextActionAIService] 操作已取消: ${action}`);
         return {
           success: false,
           error: '操作已取消',
@@ -154,8 +129,6 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
           originalText: text
         };
       }
-
-      console.error(`[TextActionAIService] 操作失败: ${action}`, error);
 
       return {
         success: false,
@@ -202,7 +175,6 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
     
     // 检查是否有 API Key
     if (!apiConfig?.apiKey) {
-      console.warn('[TextActionAIService] 未配置 API Key');
       return null;
     }
 
@@ -221,7 +193,6 @@ export class TextActionAIService extends Disposable implements ITextActionAIServ
       return models[0];
     }
 
-    console.warn('[TextActionAIService] 未找到可用模型');
     return null;
   }
 

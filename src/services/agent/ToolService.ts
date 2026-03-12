@@ -30,10 +30,8 @@ export class ToolService implements IToolService {
   private readonly registry: ToolRegistry;
 
   constructor() {
-    // console.log('[ToolService] 依赖注入成功');
     // 初始化工具注册中心（自动注册所有内置工具）
     this.registry = new ToolRegistry();
-    // console.log(`[ToolService] 已通过 ToolRegistry 初始化 ${this.registry.getAll().length} 个工具`);
   }
 
   // ==================== 公共方法 ====================
@@ -45,7 +43,6 @@ export class ToolService implements IToolService {
    * 内置工具通过 ToolRegistry.BUILTIN_TOOLS 自动注册
    */
   registerTool(tool: ITool): void {
-    console.warn('[ToolService] 外部工具注册暂未完全实现（需要适配器）');
     // TODO: 将旧的 ITool 接口适配为新的 IToolNew 接口
     // const adaptedTool = this.adaptLegacyTool(tool);
     // this.registry.register(adaptedTool);
@@ -82,22 +79,15 @@ export class ToolService implements IToolService {
 
     if (debugToolCalls) {
       const metadata = tool.getMetadata();
-      console.group(`%c[ToolCall Debug] ⚙️ ToolService.executeTool: ${name}`, 'color:#00BCD4;font-weight:bold');
-      console.log('传入参数:', args);
-
       // 参数验证
       const isValid = tool.validate(args);
       if (!isValid) {
-        console.warn(`%c❌ 参数验证失败!`, 'color:#F44336;font-weight:bold');
-        console.warn('required 字段:', metadata.parameters.required);
         const required = metadata.parameters.required || [];
         for (const r of required) {
           if (args?.[r] === undefined || args?.[r] === null) {
-            console.warn(`  缺少: ${r}`);
           }
         }
       } else {
-        console.log('%c✅ 参数验证通过', 'color:#4CAF50');
       }
 
       // 检查参数值类型是否与 schema 匹配
@@ -108,26 +98,14 @@ export class ToolService implements IToolService {
           const expectedType = schemaProp.type;
           const actualType = Array.isArray(val) ? 'array' : typeof val;
           if (expectedType && actualType !== expectedType) {
-            console.warn(
-              `%c⚠️ 类型不匹配: ${key} 期望 ${expectedType}, 实际 ${actualType}`,
-              'color:#FF9800;font-weight:bold',
-              '值:', val
-            );
           }
         }
       }
-      console.groupEnd();
     }
 
     const result = await tool.execute(args);
 
     if (debugToolCalls && !result.success) {
-      console.error(
-        `%c[ToolCall Debug] ❌ 工具执行失败: ${name}`,
-        'color:#F44336;font-weight:bold',
-        '\n错误:', result.error,
-        '\n传入参数:', args
-      );
     }
 
     return result;

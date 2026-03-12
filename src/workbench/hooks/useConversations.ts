@@ -52,7 +52,6 @@ export function useConversations(): UseConversationsResult {
         setConversations(list);
         setCurrentConversationId(conversationService.getCurrentConversationId());
       } catch (error) {
-        console.error('[useConversations] 加载对话列表失败:', error);
       } finally {
         setIsLoading(false);
       }

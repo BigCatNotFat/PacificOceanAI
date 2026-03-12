@@ -40,7 +40,6 @@ const RichTextInput = forwardRef<RichTextInputHandle, RichTextInputProps>(
     const addImageFromFile = useCallback((file: File) => {
       if (!file.type.startsWith('image/')) return;
       if (file.size > MAX_IMAGE_SIZE) {
-        console.warn('[RichTextInput] 图片过大:', (file.size / 1024 / 1024).toFixed(1), 'MB');
         return;
       }
       const reader = new FileReader();
@@ -252,7 +251,6 @@ const RichTextInput = forwardRef<RichTextInputHandle, RichTextInputProps>(
           
           // 如果无法获取文件内容或真实文件名，直接粘贴原文
           if (!fileContent || !fileName) {
-            console.log('[RichTextInput] 无法获取文件内容或文件名，粘贴原文');
             insertText(pastedText);
             return;
           }
@@ -277,7 +275,6 @@ const RichTextInput = forwardRef<RichTextInputHandle, RichTextInputProps>(
           
           // 如果不是完整的行，则粘贴原文
           if (!isStartOfLine || !isEndOfLine) {
-            console.log('[RichTextInput] 粘贴内容不是完整的行，保留原文');
             insertText(pastedText);
             return;
           }
@@ -296,9 +293,7 @@ const RichTextInput = forwardRef<RichTextInputHandle, RichTextInputProps>(
             originalText: normalizedPasted
           });
           
-          console.log(`[RichTextInput] 智能粘贴: 创建引用 ${fileName}:${startLine}-${endLine}`);
         } catch (error) {
-          console.error('[RichTextInput] 智能粘贴失败:', error);
           insertText(pastedText);
         }
       })();

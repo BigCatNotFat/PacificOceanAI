@@ -10,7 +10,6 @@
 import { BaseTool } from '../base/BaseTool';
 import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
-import { logger } from '../../../../utils/logger';
 
 /**
  * 编辑文件工具
@@ -78,12 +77,6 @@ old_string = "regularization is a crucial technique..."
     const startTime = Date.now();
     
     try {
-      logger.debug('[EditFileTool] execute called with:', {
-        target_file: args.target_file,
-        instructions: args.instructions,
-        old_string_len: args.old_string?.length,
-        new_string_len: args.new_string?.length
-      });
 
       if (!this.validate(args)) {
         return {
@@ -94,7 +87,6 @@ old_string = "regularization is a crucial technique..."
       }
 
       // 1. 检查目标文件是否是当前打开的文件
-      logger.debug('[EditFileTool] Step 1: Checking if target file is current file');
       const currentFileName = await this.getCurrentFileName();
       const targetBaseName = args.target_file.split('/').pop() || args.target_file;
       const isCurrentFile = currentFileName !== null && (
@@ -103,11 +95,9 @@ old_string = "regularization is a crucial technique..."
         args.target_file.endsWith(currentFileName)
       );
       
-      logger.debug('[EditFileTool] Current file:', currentFileName, 'Target:', targetBaseName, 'Is current:', isCurrentFile);
 
       // 2. 如果不是当前文件，尝试切换
       if (!isCurrentFile) {
-        logger.debug(`[EditFileTool] Target file "${targetBaseName}" is not active (current: "${currentFileName}"). Attempting to switch...`);
 
         let preSwitchContent: string | null = null;
         try { preSwitchContent = await overleafEditor.document.getText(); } catch { /* ignore */ }
@@ -115,8 +105,6 @@ old_string = "regularization is a crucial technique..."
         const switchResult = await overleafEditor.file.switchFile(targetBaseName);
         
         if (!switchResult.success) {
-          console.error('[EditFileTool] Switch failed:', switchResult.error);
-          
           const docId = await this.getDocIdByPath(args.target_file);
           if (!docId) {
             return {
@@ -133,7 +121,6 @@ old_string = "regularization is a crucial technique..."
           };
         }
 
-        logger.debug('[EditFileTool] Switch command sent. Waiting for editor to update...');
         
         const switchSuccess = await this.waitForFileSwitch(targetBaseName, 5000, preSwitchContent);
         
@@ -145,15 +132,12 @@ old_string = "regularization is a crucial technique..."
           };
         }
         
-        logger.debug('[EditFileTool] File switched successfully.');
       }
 
       // 3. 获取当前文件内容
-      logger.debug('[EditFileTool] Step 2: Getting content from editor');
       let originalContent = await overleafEditor.document.getText();
       
       // 4. 执行替换
-      logger.debug('[EditFileTool] Step 3: Performing replacement');
       
       let matchString = args.old_string;
 
@@ -163,7 +147,6 @@ old_string = "regularization is a crucial technique..."
         const ellipsisMatch = this.findMatchWithEllipsis(originalContent, args.old_string);
         
         if (ellipsisMatch) {
-          logger.debug('[EditFileTool] Found match using ellipsis wildcard');
           matchString = ellipsisMatch;
         } else {
           // 尝试进行一些基本的清理（例如标准化换行符）再试一次
@@ -198,7 +181,6 @@ old_string = "regularization is a crucial technique..."
 
       // 5. 检查内容是否真的有变化
       if (newContent === originalContent) {
-        logger.debug('[EditFileTool] No changes detected');
         return {
           success: true,
           data: {
@@ -213,9 +195,7 @@ old_string = "regularization is a crucial technique..."
       }
 
       // 6. 应用编辑到编辑器
-      logger.debug('[EditFileTool] Step 5: Setting document content');
       const setResult = await overleafEditor.editor.setDocContent(newContent);
-      logger.debug('[EditFileTool] Set result:', setResult);
 
       if (!setResult.success) {
         return {
@@ -225,7 +205,6 @@ old_string = "regularization is a crucial technique..."
         };
       }
 
-      logger.debug('[EditFileTool] Edit successful:', setResult.oldLength, '->', setResult.newLength);
 
       return {
         success: true,
@@ -241,7 +220,6 @@ old_string = "regularization is a crucial technique..."
         duration: Date.now() - startTime
       };
     } catch (error) {
-      console.error('[EditFileTool] Error:', error);
       return {
         ...this.handleError(error),
         duration: Date.now() - startTime,
@@ -284,7 +262,6 @@ old_string = "regularization is a crucial technique..."
         map.set(name, id);
       });
     } catch (error) {
-      console.error('[EditFileTool] 获取 DOM 文件 ID 映射失败:', error);
     }
 
     return map;
@@ -298,7 +275,6 @@ old_string = "regularization is a crucial technique..."
       const fileInfo = await overleafEditor.file.getInfo();
       return fileInfo.fileName;
     } catch (error) {
-      console.error('[EditFileTool] Failed to get current file name:', error);
       // Fallback: 从 DOM 获取
       try {
         const breadcrumb = document.querySelector('.ol-cm-breadcrumbs, .breadcrumbs');
@@ -413,7 +389,6 @@ old_string = "regularization is a crucial technique..."
       const match = originalContent.match(regex);
       return match ? match[0] : null;
     } catch (e) {
-      console.error('[EditFileTool] Regex construction failed:', e);
       return null;
     }
   }

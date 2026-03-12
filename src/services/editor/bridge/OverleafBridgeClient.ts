@@ -10,7 +10,7 @@ import type {
   OverleafBridgeResponse,
   PendingRequest
 } from './types';
-import { isAgentDebugEnabled, logger } from '../../../utils/logger';
+import { isAgentDebugEnabled } from '../../../utils/logger';
 
 export class OverleafBridgeClient {
   private static instance: OverleafBridgeClient | null = null;
@@ -46,7 +46,6 @@ export class OverleafBridgeClient {
     this.injectConsoleFilterScript();
 
     if (this.injected) {
-      logger.debug('[OverleafBridgeClient] Script already injected');
       return;
     }
 
@@ -54,16 +53,13 @@ export class OverleafBridgeClient {
       const script = document.createElement('script');
       script.src = chrome.runtime.getURL('injected/generated/overleafBridge.js');
       script.onload = () => {
-        logger.debug('[OverleafBridgeClient] Bridge script injected successfully');
         this.injected = true;
         this._readyResolve();
       };
       script.onerror = (error) => {
-        logger.error('[OverleafBridgeClient] Failed to inject bridge script:', error);
       };
       (document.head || document.documentElement).appendChild(script);
     } catch (error) {
-      logger.error('[OverleafBridgeClient] Error injecting script:', error);
     }
   }
 
@@ -156,7 +152,6 @@ export class OverleafBridgeClient {
 
     const pending = this.pendingRequests.get(data.requestId);
     if (!pending) {
-      logger.warn('[OverleafBridgeClient] Received response for unknown request:', data.requestId);
       return;
     }
 

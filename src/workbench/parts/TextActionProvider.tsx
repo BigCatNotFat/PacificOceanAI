@@ -103,17 +103,12 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
     return async (_action: TextActionType, text: string, from: number, to: number, modelId?: string, customPrompt?: string, context?: { before?: string; after?: string }): Promise<string | null> => {
       const config = await configService.getAPIConfig();
       if (!config?.models?.some(m => m.enabled && (m.apiKey || m.provider === 'codex-oauth'))) {
-        console.warn('[TextActionProvider] 未配置任何模型，请前往设置页面添加');
         return null;
       }
 
       // 生成唯一的预览 ID（用于多任务并行）
       const previewId = `preview-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       
-      console.log(`[TextActionProvider] AI ${action} - 原文长度:`, text.length, '模型:', modelId, 
-        customPrompt ? '自定义:' + customPrompt.substring(0, 30) + '...' : '',
-        '上下文:', { before: context?.before?.length || 0, after: context?.after?.length || 0 },
-        'previewId:', previewId);
       
       // 创建新的 AbortController（不再取消旧请求，支持多任务并行）
       const currentController = new AbortController();
@@ -166,7 +161,6 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
 
         // 检查是否是取消操作
         if (result.error === '操作已取消') {
-          console.log(`[TextActionProvider] AI ${action} 已取消 (previewId: ${previewId})`);
           // 发送取消消息到预览窗口
           window.postMessage({
             type: 'OVERLEAF_STREAM_PREVIEW_CANCELLED',
@@ -176,8 +170,6 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
         }
 
         if (result.success && result.resultText) {
-          console.log(`[TextActionProvider] AI ${action} 成功 - 结果长度:`, result.resultText.length, 'previewId:', previewId);
-          
           // 发送流式预览完成消息（包含 previewId）
           window.postMessage({
             type: 'OVERLEAF_STREAM_PREVIEW_COMPLETE',
@@ -186,7 +178,6 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
           
           return result.resultText;
         } else {
-          console.error(`[TextActionProvider] AI ${action} 失败:`, result.error, 'previewId:', previewId);
           // 发送完成消息（即使失败也要关闭加载状态，包含 previewId）
           window.postMessage({
             type: 'OVERLEAF_STREAM_PREVIEW_COMPLETE',
@@ -198,7 +189,6 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
         // 清理 AbortController
         abortControllersRef.current.delete(previewId);
         
-        console.error(`[TextActionProvider] AI ${action} 异常:`, error, 'previewId:', previewId);
         // 发送完成消息（包含 previewId）
         window.postMessage({
           type: 'OVERLEAF_STREAM_PREVIEW_COMPLETE',
@@ -216,8 +206,6 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
       return registerHandler(action, createAIHandler(action));
     });
     
-    console.log('[TextActionProvider] 已注册 AI 操作处理器:', actions);
-    
     return () => {
       disposables.forEach(d => d.dispose());
     };
@@ -234,13 +222,11 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
           // 取消特定的请求
           const controller = abortControllersRef.current.get(previewId);
           if (controller) {
-            console.log('[TextActionProvider] 收到取消信号，中断请求 previewId:', previewId);
             controller.abort();
             abortControllersRef.current.delete(previewId);
           }
         } else {
           // 兼容旧版：没有 previewId 时取消所有请求
-          console.log('[TextActionProvider] 收到取消信号（无 previewId），中断所有请求');
           abortControllersRef.current.forEach((controller) => {
             controller.abort();
           });
@@ -279,9 +265,7 @@ export const TextActionProvider: React.FC<TextActionProviderProps> = ({
   useEffect(() => {
     if (lastResult) {
       if (lastResult.success) {
-        console.log('[TextActionProvider] 操作成功:', lastResult.action);
       } else {
-        console.warn('[TextActionProvider] 操作失败:', lastResult.action, lastResult.error);
       }
     }
   }, [lastResult]);

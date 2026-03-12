@@ -67,7 +67,6 @@ export abstract class BaseTool implements ITool {
   protected handleError(error: unknown): ToolExecutionResult {
     const errorMessage = error instanceof Error ? error.message : String(error);
     
-    // console.error(`[${this.metadata.name}] 执行失败:`, error);
     
     return {
       success: false,
@@ -79,6 +78,5 @@ export abstract class BaseTool implements ITool {
    * 记录工具执行日志
    */
   protected log(message: string, data?: any): void {
-    // console.log(`[${this.metadata.name}] ${message}`, data || '');
   }
 }

@@ -18,7 +18,6 @@ import type {
   CreateSegmentSuggestionInput,
   SuggestionResolvedEvent
 } from '../../platform/editor/IDiffSuggestionService';
-import { logger } from '../../utils/logger';
 
 /**
  * DiffSuggestionService 实现
@@ -47,7 +46,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
   private constructor() {
     super();
     this.setupMessageListener();
-    logger.debug('[DiffSuggestionService] 初始化完成');
   }
   
   static getInstance(): DiffSuggestionService {
@@ -98,7 +96,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
     action: string;
     accepted: boolean;
   }): void {
-    logger.debug(`[DiffSuggestionService] 文本操作 ${data.action} 被${data.accepted ? '接受' : '拒绝'}`);
     
   }
   
@@ -120,17 +117,14 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       if (data.id.startsWith('text-action-')) {
         // 文本操作的统计已通过 OVERLEAF_TEXT_ACTION_DECISION 消息处理
         // 这里只输出日志
-        logger.debug(`[DiffSuggestionService] 文本操作建议 ${data.id} 被${data.accepted ? '接受' : '拒绝'}（统计由 OVERLEAF_TEXT_ACTION_DECISION 处理）`);
         return;
       }
-      console.warn('[DiffSuggestionService] 未找到建议:', data.id);
       return;
     }
     
     // 更新建议状态
     suggestion.status = data.accepted ? 'accepted' : 'rejected';
     
-    logger.debug(`[DiffSuggestionService] 建议 ${data.id} 被${data.accepted ? '接受' : '拒绝'}`);
     
     // 触发事件
     this._onSuggestionResolved.fire({
@@ -177,7 +171,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       }
     }, '*');
     
-    logger.debug(`[DiffSuggestionService] 创建行级建议 ${id}: 行 ${input.startLine}-${input.endLine} 文件: ${input.targetFile}`);
     
     return id;
   }
@@ -234,7 +227,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       }
     }, '*');
     
-    logger.debug(`[DiffSuggestionService] 批量创建 ${ids.length} 个行级建议`);
     
     return ids;
   }
@@ -276,7 +268,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       }
     }, '*');
     
-    logger.debug(`[DiffSuggestionService] 创建片段级建议 ${id}: 偏移 ${input.startOffset}-${input.endOffset} 文件: ${input.targetFile}`);
     
     return id;
   }
@@ -335,7 +326,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       }
     }, '*');
     
-    logger.debug(`[DiffSuggestionService] 批量创建 ${ids.length} 个片段级建议`);
     
     return ids;
   }
@@ -346,12 +336,10 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
   async acceptSuggestion(id: string): Promise<void> {
     const suggestion = this.suggestions.get(id);
     if (!suggestion) {
-      console.warn('[DiffSuggestionService] 未找到建议:', id);
       return;
     }
     
     if (suggestion.status !== 'pending') {
-      console.warn('[DiffSuggestionService] 建议已处理:', id);
       return;
     }
     
@@ -368,12 +356,10 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
   async rejectSuggestion(id: string): Promise<void> {
     const suggestion = this.suggestions.get(id);
     if (!suggestion) {
-      console.warn('[DiffSuggestionService] 未找到建议:', id);
       return;
     }
     
     if (suggestion.status !== 'pending') {
-      console.warn('[DiffSuggestionService] 建议已处理:', id);
       return;
     }
     
@@ -394,7 +380,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       data: {}
     }, '*');
     
-    logger.debug('[DiffSuggestionService] 发送接受全部建议请求');
   }
   
   /**
@@ -407,7 +392,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
       data: {}
     }, '*');
     
-    logger.debug('[DiffSuggestionService] 发送拒绝全部建议请求');
   }
   
   /**
@@ -434,7 +418,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
    */
   private handleDiffReady(file: string | null): void {
     this.readyFile = file;
-    logger.debug(`[DiffSuggestionService] DiffAPI ready for file: ${file}`);
 
     const remaining: Array<{ resolve: (file: string) => void; targetFile: string }> = [];
     for (const waiter of this.readyResolvers) {
@@ -502,7 +485,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
         if (!settled) {
           settled = true;
           this.readyResolvers = this.readyResolvers.filter(w => w !== waiter);
-          logger.debug(`[DiffSuggestionService] waitForReady timed out for: ${targetFile}`);
           resolve(false);
         }
       }, timeoutMs);
@@ -520,7 +502,6 @@ export class DiffSuggestionService extends Disposable implements IDiffSuggestion
     }, '*');
     
     this.suggestions.clear();
-    logger.debug('[DiffSuggestionService] 清除所有建议');
   }
   
   /**

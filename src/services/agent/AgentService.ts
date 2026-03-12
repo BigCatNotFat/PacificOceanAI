@@ -74,7 +74,6 @@ export class AgentService implements IAgentService {
     private readonly modelRegistry: IModelRegistryService,
     private readonly uiStreamService: IUIStreamService
   ) {
-    // console.log('[AgentService] 依赖注入成功');
   }
 
   // ==================== 公共方法（唯一） ====================
@@ -87,7 +86,6 @@ export class AgentService implements IAgentService {
     options: AgentOptions
   ): Promise<AgentLoopController> {
     const loopId = `loop_${this.loopIdCounter++}`;
-    // console.log(`[AgentService] 启动 Agent Loop: ${loopId}`, options);
 
     // 创建事件发射器
     const onDoneEmitter = new Emitter<ChatMessage[]>();
@@ -132,17 +130,14 @@ export class AgentService implements IAgentService {
   private async approveToolCall(loopId: string, toolCallId: string): Promise<void> {
     const context = this.activeLoops.get(loopId);
     if (!context) {
-      // console.warn(`[AgentService] Loop ${loopId} 不存在`);
       return;
     }
 
     const pendingCall = context.pendingToolCalls.get(toolCallId);
     if (!pendingCall) {
-      // console.warn(`[AgentService] 工具调用 ${toolCallId} 不存在`);
       return;
     }
 
-    // console.log(`[AgentService] 用户批准工具调用: ${pendingCall.toolName}`);
 
     try {
       // 执行工具
@@ -164,17 +159,14 @@ export class AgentService implements IAgentService {
   private async rejectToolCall(loopId: string, toolCallId: string): Promise<void> {
     const context = this.activeLoops.get(loopId);
     if (!context) {
-      // console.warn(`[AgentService] Loop ${loopId} 不存在`);
       return;
     }
 
     const pendingCall = context.pendingToolCalls.get(toolCallId);
     if (!pendingCall) {
-      // console.warn(`[AgentService] 工具调用 ${toolCallId} 不存在`);
       return;
     }
 
-    // console.log(`[AgentService] 用户拒绝工具调用: ${pendingCall.toolName}`);
 
     // 移除 pending 记录
     context.pendingToolCalls.delete(toolCallId);
@@ -192,7 +184,6 @@ export class AgentService implements IAgentService {
       const requestedMaxIterations = maxIterations;
 
       while (context.iteration < maxIterations && !context.aborted) {
-        // console.log(`[AgentService] Loop ${context.loopId} 第 ${context.iteration + 1} 轮迭代`);
 
         // 重置当前轮的工作记忆
         context.workingMemory = [];
@@ -215,13 +206,6 @@ export class AgentService implements IAgentService {
         );
 
         // 打印发送给 AI 的提示词
-        console.log('='.repeat(80));
-        console.log(`[AgentService] 📤 发送给 AI 的提示词 - 第 ${context.iteration + 1} 轮迭代`);
-        console.log('='.repeat(80));
-        console.log(JSON.stringify(llmMessages, null, 2));
-        console.log('='.repeat(80));
-        console.log('');
-
         // 3. 构建 LLM 配置
         const llmConfig = this.buildLLMConfig(
           context.options.modelId,
@@ -249,45 +233,22 @@ export class AgentService implements IAgentService {
           conversationId: context.loopId,
           messageId: assistantMessage.id
         };
-        // console.log('[AgentService] 调用 LLM 前的配置', {
-        //   loopId: context.loopId,
-        //   modelId: context.options.modelId,
-        //   uiStreamMeta: (llmConfig as any).uiStreamMeta,
-        //   hasAbortSignal: !!(llmConfig as any).abortSignal
-        // });
         
         // 5. 调用 LLM（一次性返回完整结果，UI 更新由 Provider 内部实时推送）
         const finalResult = await this.llmService.chat(llmMessages, llmConfig);
         context.abortController = undefined;
         
         // 输出大模型返回的内容到控制台
-        console.log('='.repeat(80));
-        console.log(`[AgentService] 🤖 大模型响应 - 第 ${context.iteration + 1} 轮迭代`);
-        console.log('='.repeat(80));
         if (finalResult.thinking) {
-          console.log('💭 思考过程:');
-          console.log(finalResult.thinking);
-          console.log('-'.repeat(80));
         }
         if (finalResult.content) {
-          console.log('💬 回复内容:');
-          console.log(finalResult.content);
-          console.log('-'.repeat(80));
         }
         if (finalResult.toolCalls && finalResult.toolCalls.length > 0) {
-          console.log('🛠️  工具调用:');
           finalResult.toolCalls.forEach((tc: any, index: number) => {
-            console.log(`  [${index + 1}] ${tc.name}`);
-            console.log(`      参数:`, JSON.stringify(tc.arguments, null, 2));
           });
-          console.log('-'.repeat(80));
         }
-        console.log('='.repeat(80));
-        console.log('');
-        
         // 检查是否已被中断
         if (context.aborted) {
-          // console.log(`[AgentService] Loop ${context.loopId} 已中断，停止处理 LLM 响应`);
           return;
         }
         
@@ -318,7 +279,6 @@ export class AgentService implements IAgentService {
         // 7. 检查是否有工具调用
         if (!assistantMessage.toolCalls || assistantMessage.toolCalls.length === 0) {
           // 没有工具调用，结束循环
-          // console.log(`[AgentService] Loop ${context.loopId} 完成（无工具调用）`);
           break;
         }
 
@@ -330,7 +290,6 @@ export class AgentService implements IAgentService {
 
         if (!shouldContinue) {
           // 有需要审批的工具，暂停循环等待用户操作
-          // console.log(`[AgentService] Loop ${context.loopId} 暂停（等待审批）`);
           context.status = 'waiting_approval';
           return; // 等待 controller.approveToolCall 或 controller.rejectToolCall
         }
@@ -364,17 +323,14 @@ export class AgentService implements IAgentService {
         
         context.onDoneEmitter.fire([...context.messages]);
       } else {
-        // console.log(`[AgentService] Loop ${context.loopId} 已中断，不触发完成事件`);
       }
       this.activeLoops.delete(context.loopId);
 
     } catch (error) {
       if (!context.aborted) {
-        // console.error(`[AgentService] Loop ${context.loopId} 错误:`, error);
         context.status = 'error';
         context.onErrorEmitter.fire(error instanceof Error ? error : new Error(String(error)));
       } else {
-        // console.log(`[AgentService] Loop ${context.loopId} 已中断，不触发错误事件`);
       }
       this.activeLoops.delete(context.loopId);
     }
@@ -388,7 +344,6 @@ export class AgentService implements IAgentService {
     context: LoopContext,
     toolCalls: any[]
   ): Promise<boolean> {
-    // console.log(`[AgentService] 处理 ${toolCalls.length} 个工具调用`);
 
     // 🔧 工具调用调试开关
     const debugToolCalls =
@@ -400,28 +355,20 @@ export class AgentService implements IAgentService {
 
       // 🔧 打印工具调用请求详情
       if (debugToolCalls) {
-        console.group(`%c[ToolCall Debug] 🚀 AgentService 准备执行工具: ${toolName}`, 'color:#9C27B0;font-weight:bold');
-        console.log('toolCallId:', toolCallId);
-        console.log('参数类型:', typeof toolArgs);
-        console.log('参数值:', toolArgs);
         if (toolArgs && typeof toolArgs === 'object') {
           const keys = Object.keys(toolArgs);
-          console.log('参数 keys:', keys);
           for (const key of keys) {
             const val = toolArgs[key];
             const display = typeof val === 'string'
               ? (val.length > 200 ? val.slice(0, 200) + `...(${val.length}字符)` : val)
               : val;
-            console.log(`  📌 ${key} (${typeof val}):`, display);
           }
         }
-        console.groupEnd();
       }
 
       // 获取工具元信息
       const tool = this.toolService.getTool(toolName);
       if (!tool) {
-        // console.warn(`[AgentService] 未找到工具: ${toolName}`);
         // 添加错误消息（必须包含 toolCalls 以提供 tool_call_id）
         const errorMessage = this.createMessage('tool', `工具 ${toolName} 不存在`);
         errorMessage.status = 'error';
@@ -437,7 +384,6 @@ export class AgentService implements IAgentService {
 
       // 检查是否需要审批
       if (tool.needApproval) {
-        // console.log(`[AgentService] 工具 ${toolName} 需要用户审批`);
 
         // 触发审批事件
         this._onDidToolCallPending.fire({
@@ -462,18 +408,10 @@ export class AgentService implements IAgentService {
         }).then(
           (result) => {
             // 输出审批通过的工具执行结果到控制台
-            console.log('┌' + '─'.repeat(78) + '┐');
-            console.log(`│ ✅ 工具执行成功 (需审批): ${toolName}`.padEnd(79) + '│');
-            console.log('├' + '─'.repeat(78) + '┤');
-            console.log('│ 📥 执行结果:'.padEnd(79) + '│');
             const resultStr = JSON.stringify(result.data || result, null, 2);
             resultStr.split('\n').forEach(line => {
               const truncated = line.length > 76 ? line.substring(0, 73) + '...' : line;
-              console.log(`│ ${truncated}`.padEnd(79) + '│');
             });
-            console.log('└' + '─'.repeat(78) + '┘');
-            console.log('');
-            
             // 工具执行成功
             const toolMessage = this.createMessage('tool', JSON.stringify(result.data || result));
             toolMessage.toolCalls = [{
@@ -489,18 +427,10 @@ export class AgentService implements IAgentService {
           },
           (error) => {
             // 输出工具被拒绝的信息到控制台
-            console.log('┌' + '─'.repeat(78) + '┐');
-            console.log(`│ 🚫 工具调用被拒绝: ${toolName}`.padEnd(79) + '│');
-            console.log('├' + '─'.repeat(78) + '┤');
-            console.log('│ ⚠️  拒绝原因:'.padEnd(79) + '│');
             const errorStr = String(error);
             errorStr.split('\n').forEach(line => {
               const truncated = line.length > 76 ? line.substring(0, 73) + '...' : line;
-              console.log(`│ ${truncated}`.padEnd(79) + '│');
             });
-            console.log('└' + '─'.repeat(78) + '┘');
-            console.log('');
-            
             // 用户拒绝或执行失败
             const errorMessage = this.createMessage('assistant', `用户拒绝了工具调用: ${toolName}`);
             errorMessage.status = 'completed';
@@ -525,22 +455,11 @@ export class AgentService implements IAgentService {
           const extraKeys = argKeys.filter((k: string) => !Object.keys(properties).includes(k));
 
           if (missingRequired.length > 0 || extraKeys.length > 0) {
-            console.group(`%c[ToolCall Debug] ⚠️ 参数与 Schema 不匹配: ${toolName}`, 'color:#F44336;font-weight:bold');
             if (missingRequired.length > 0) {
-              console.warn('❌ 缺少必需参数:', missingRequired);
             }
             if (extraKeys.length > 0) {
-              console.warn('⚠️ 多余参数 (schema 中未定义):', extraKeys);
             }
-            console.log('Schema 定义的参数:', Object.keys(properties));
-            console.log('Schema required:', required);
-            console.log('实际传入的参数:', argKeys);
-            console.groupEnd();
           } else {
-            console.log(
-              `%c[ToolCall Debug] ✅ ${toolName} 参数与 Schema 匹配`,
-              'color:#4CAF50'
-            );
           }
         }
 
@@ -548,10 +467,6 @@ export class AgentService implements IAgentService {
           const result = await this.toolService.executeTool(toolName, toolArgs);
           
           // 输出工具执行结果到控制台
-          console.log('┌' + '─'.repeat(78) + '┐');
-          console.log(`│ ✅ 工具执行成功: ${toolName}`.padEnd(79) + '│');
-          console.log('├' + '─'.repeat(78) + '┤');
-          console.log('│ 📥 执行结果:'.padEnd(79) + '│');
           
           // 提取 preview 字段单独处理，避免被截断
           const data = result.data || result;
@@ -561,19 +476,11 @@ export class AgentService implements IAgentService {
           const resultStr = JSON.stringify(displayData, null, 2);
           resultStr.split('\n').forEach(line => {
             const truncated = line.length > 76 ? line.substring(0, 73) + '...' : line;
-            console.log(`│ ${truncated}`.padEnd(79) + '│');
           });
-          console.log('└' + '─'.repeat(78) + '┘');
           
           // 单独打印 preview 内容（不截断）
           if (preview) {
-            console.log('\n📝 替换预览:');
-            console.log('─'.repeat(40));
-            console.log(preview);
-            console.log('─'.repeat(40));
           }
-          console.log('');
-          
           // 通知 UI：工具执行完成
           this.uiStreamService.pushToolCall({
             messageId,
@@ -596,18 +503,10 @@ export class AgentService implements IAgentService {
           context.onUpdateEmitter.fire([...context.messages]);
         } catch (error) {
           // 输出工具执行错误到控制台
-          console.log('┌' + '─'.repeat(78) + '┐');
-          console.log(`│ ❌ 工具执行失败: ${toolName}`.padEnd(79) + '│');
-          console.log('├' + '─'.repeat(78) + '┤');
-          console.log('│ ⚠️  错误信息:'.padEnd(79) + '│');
           const errorStr = String(error);
           errorStr.split('\n').forEach(line => {
             const truncated = line.length > 76 ? line.substring(0, 73) + '...' : line;
-            console.log(`│ ${truncated}`.padEnd(79) + '│');
           });
-          console.log('└' + '─'.repeat(78) + '┘');
-          console.log('');
-          
           // 通知 UI：工具执行出错
           this.uiStreamService.pushToolCall({
             messageId,
@@ -701,13 +600,11 @@ export class AgentService implements IAgentService {
       return;
     }
 
-    // console.log(`[AgentService] 中断 Loop: ${loopId}`);
 
     if (context.abortController) {
       try {
         context.abortController.abort();
       } catch (error) {
-        // console.warn(`[AgentService] 中断 LLM 请求失败:`, error);
       }
       context.abortController = undefined;
     }

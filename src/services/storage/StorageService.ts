@@ -65,15 +65,12 @@ export class StorageService extends Disposable implements IStorageService {
                 chrome.storage.onChanged.removeListener(listener);
               }
             } catch (error) {
-              console.warn('[StorageService] Failed to remove storage listener:', error);
             }
           }
         });
       } else {
-        console.warn('[StorageService] Chrome storage change listener not available');
       }
     } catch (error) {
-      console.warn('[StorageService] Failed to setup storage listener:', error);
     }
   }
 
@@ -82,7 +79,6 @@ export class StorageService extends Disposable implements IStorageService {
       const value = await this.adapter.get<T>(key);
       return value !== undefined ? value : defaultValue;
     } catch (error) {
-      console.error(`[StorageService] Failed to get key "${key}":`, error);
       return defaultValue;
     }
   }
@@ -91,7 +87,6 @@ export class StorageService extends Disposable implements IStorageService {
     try {
       await this.adapter.set(key, value);
     } catch (error) {
-      console.error(`[StorageService] Failed to set key "${key}":`, error);
       throw error;
     }
   }
@@ -100,7 +95,6 @@ export class StorageService extends Disposable implements IStorageService {
     try {
       await this.adapter.remove(key);
     } catch (error) {
-      console.error(`[StorageService] Failed to remove key "${key}":`, error);
       throw error;
     }
   }
@@ -109,7 +103,6 @@ export class StorageService extends Disposable implements IStorageService {
     try {
       await this.adapter.clear();
     } catch (error) {
-      console.error('[StorageService] Failed to clear storage:', error);
       throw error;
     }
   }
@@ -119,7 +112,6 @@ export class StorageService extends Disposable implements IStorageService {
       const all = await this.adapter.getAll();
       return Object.keys(all);
     } catch (error) {
-      console.error('[StorageService] Failed to get keys:', error);
       return [];
     }
   }
@@ -129,7 +121,6 @@ export class StorageService extends Disposable implements IStorageService {
       const value = await this.adapter.get(key);
       return value !== undefined;
     } catch (error) {
-      console.error(`[StorageService] Failed to check key "${key}":`, error);
       return false;
     }
   }
@@ -147,7 +138,6 @@ export class StorageService extends Disposable implements IStorageService {
       
       return result;
     } catch (error) {
-      console.error(`[StorageService] Failed to get by prefix "${prefix}":`, error);
       return {};
     }
   }

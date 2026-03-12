@@ -40,12 +40,13 @@ export interface ContentDeltaInput {
  * 工具调用更新阶段
  */
 export type ToolCallPhase =
-  | 'start'   // 开始显示一个工具调用
-  | 'args'    // 参数流式输出
-  | 'log'     // 执行过程日志
-  | 'result'  // 结果流式输出
-  | 'end'     // 工具调用完成
-  | 'error';  // 工具调用出错
+  | 'start'      // 开始显示一个工具调用
+  | 'args'       // 参数流式输出
+  | 'args_done'  // 参数流式输出完成（工具尚未执行）
+  | 'log'        // 执行过程日志
+  | 'result'     // 结果流式输出
+  | 'end'        // 工具调用完成（工具已执行）
+  | 'error';     // 工具调用出错
 
 /**
  * 工具调用增量输入

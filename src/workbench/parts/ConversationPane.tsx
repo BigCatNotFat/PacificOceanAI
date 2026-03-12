@@ -20,6 +20,7 @@ import type { IUIStreamService } from '../../platform/agent/IUIStreamService';
 import { ToolResultRenderer } from './ToolResultRenderer';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import RichTextInput, { RichTextInputHandle } from './RichTextInput';
+import { IModelRegistryService, IModelRegistryServiceId } from '../../platform/llm/IModelRegistryService';
 
 // 扩展消息类型以支持更多UI元素
 interface ExtendedChatMessage extends ChatMessage {
@@ -187,6 +188,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   const { messages } = useChatMessages(conversationId);
   const configService = useService<IConfigurationService>(IConfigurationServiceId);
   const chatService = useService<IChatService>(IChatServiceId);
+  const modelRegistry = useService<IModelRegistryService>(IModelRegistryServiceId);
   const uiStreamService = useService<IUIStreamService>(IUIStreamServiceId);
   const { streamingBuffers } = useUIStreamUpdates();
   
@@ -210,6 +212,10 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
     branchConversation
   } = useConversations();
 
+  // 用于追踪模型是否已初始化的 ref
+  const selectedModelRef = useRef(selectedModel);
+  selectedModelRef.current = selectedModel;
+
   // 加载可用模型列表
   const loadModels = useCallback(async () => {
     try {
@@ -217,18 +223,20 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
       const enabledModels = models.filter(m => m.enabled);
       setAvailableModels(enabledModels);
       
+      // 使用 ref 获取最新值，避免 selectedModel 作为依赖导致循环重建
+      const currentSelected = selectedModelRef.current;
       // 如果当前没有选中模型，或者选中的模型不再可用列表里，则重新选择
-      if (!selectedModel || !enabledModels.find(m => m.id === selectedModel)) {
+      if (!currentSelected || !enabledModels.find(m => m.id === currentSelected)) {
         const preferred = enabledModels.find(m => m.id === 'deepseek-reasoner');
         const defaultModel = preferred ? preferred.id : (enabledModels[0]?.id ?? '');
         if (defaultModel) {
           setSelectedModel(defaultModel);
         }
       }
-    } catch (error) {
-      console.error('Failed to load models:', error);
+    } catch {
+      // ignore
     }
-  }, [configService, selectedModel]);
+  }, [configService]);
 
   // 初始加载及监听配置变化
   useEffect(() => {
@@ -254,8 +262,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
         ));
         
         setHasApiKey(hasConfiguredModel);
-      } catch (error) {
-        console.error('[ConversationPane] 检查 API Key 失败:', error);
+      } catch {
         setHasApiKey(false);
       } finally {
         setIsCheckingApiKey(false);
@@ -301,7 +308,10 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
         const hasStreamingMessage = event.messages.some(
           (msg) => msg.status === 'streaming' || msg.status === 'pending'
         );
-        setIsGenerating(hasStreamingMessage);
+        // 即使没有 streaming 消息，如果 chatService 仍在处理（例如初始化阶段），
+        // 也应保持 isGenerating 为 true，避免发送按钮在处理初期短暂显示为"发送"
+        const isStillProcessing = chatService.isProcessing(conversationId);
+        setIsGenerating(hasStreamingMessage || isStillProcessing);
       }
     });
 
@@ -347,7 +357,6 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
     if (!value && attachedImages.length === 0) return;
     
     if (!hasApiKey) {
-      console.warn('[ConversationPane] 未配置 API Key，请前往设置页面配置');
       try {
         if (typeof chrome !== 'undefined' && chrome.runtime?.openOptionsPage) {
           chrome.runtime.openOptionsPage();
@@ -373,7 +382,6 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
     // 确保有对话 ID
     let convId = conversationId;
     if (!convId) {
-      console.log('[ConversationPane] 没有当前对话，先创建一个');
       convId = await createConversation();
       onConversationChange(convId);
     }
@@ -402,7 +410,6 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
         attachedImages.length > 0 ? attachedImages : undefined
       );
     } catch (error) {
-      console.error('[ConversationPane] 发送消息失败:', error);
       setIsGenerating(false);
     }
   }, [chatService, chatMode, selectedModel, conversationId, hasApiKey, createConversation, onConversationChange]);
@@ -439,7 +446,6 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
         setCopiedMessageId(prev => prev === messageId ? null : prev);
       }, 2000);
     } catch (error) {
-      console.error('[ConversationPane] 复制失败:', error);
     }
   }, []);
 
@@ -449,8 +455,6 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
     
     try {
       const branchId = await branchConversation(conversationId, upToMessageId);
-      console.log('[ConversationPane] 创建分支成功:', branchId);
-      
       // 如果提供了 onBranchInNewPane 回调，在新列中打开分支
       if (onBranchInNewPane) {
         onBranchInNewPane(branchId);
@@ -459,7 +463,6 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
         onConversationChange(branchId);
       }
     } catch (error) {
-      console.error('[ConversationPane] 创建分支失败:', error);
     }
   }, [conversationId, branchConversation, onBranchInNewPane, onConversationChange]);
 
@@ -1036,25 +1039,27 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
           </div>
           
           <div className="ai-input-toolbar-right">
-            <button
-              className="ai-image-upload-btn"
-              onClick={(e) => {
-                const target = e.currentTarget as HTMLElement;
-                const pane = target.closest('.conversation-pane');
-                if (pane) {
-                  const fileInput = pane.querySelector('.ai-rich-input-container input[type="file"]') as HTMLInputElement;
-                  fileInput?.click();
-                } else {
-                  // Fallback
-                  const fileInput = document.querySelector('.ai-rich-input-container input[type="file"]') as HTMLInputElement;
-                  fileInput?.click();
-                }
-              }}
-              disabled={isGenerating}
-              title="上传图片"
-            >
-              <span className="material-symbols">image</span>
-            </button>
+            {modelRegistry.getCapabilities(selectedModel)?.supportsVision && (
+              <button
+                className="ai-image-upload-btn"
+                onClick={(e) => {
+                  const target = e.currentTarget as HTMLElement;
+                  const pane = target.closest('.conversation-pane');
+                  if (pane) {
+                    const fileInput = pane.querySelector('.ai-rich-input-container input[type="file"]') as HTMLInputElement;
+                    fileInput?.click();
+                  } else {
+                    // Fallback
+                    const fileInput = document.querySelector('.ai-rich-input-container input[type="file"]') as HTMLInputElement;
+                    fileInput?.click();
+                  }
+                }}
+                disabled={isGenerating}
+                title="上传图片"
+              >
+                <span className="material-symbols">image</span>
+              </button>
+            )}
             <button 
               className="ai-send-btn-new" 
               onClick={!hasApiKey && !isCheckingApiKey ? () => {

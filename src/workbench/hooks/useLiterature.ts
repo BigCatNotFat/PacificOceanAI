@@ -101,7 +101,6 @@ export function useLiterature(): UseLiteratureResult {
         setError(result.errors.join('\n'));
       }
       
-      console.log(`[useLiterature] 扫描完成: ${result.references.length} 篇文献, ${result.sourceFiles.length} 个文件`);
     } catch (err) {
       setError(err instanceof Error ? err.message : '扫描失败');
     }
@@ -143,7 +142,6 @@ export function useLiterature(): UseLiteratureResult {
       const { overleafEditor } = await import('../../services/editor/OverleafEditor');
       return await overleafEditor.editor.insertText(citation);
     } catch (err) {
-      console.error('[useLiterature] 插入引用失败:', err);
       return false;
     }
   }, [literatureService]);
@@ -161,7 +159,6 @@ export function useLiterature(): UseLiteratureResult {
       const { overleafEditor } = await import('../../services/editor/OverleafEditor');
       return await overleafEditor.editor.insertText(citations);
     } catch (err) {
-      console.error('[useLiterature] 插入引用失败:', err);
       return false;
     }
   }, [literatureService, references]);

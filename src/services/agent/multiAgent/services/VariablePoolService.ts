@@ -12,7 +12,6 @@
  * - 线程安全：每个会话独立的变量池
  */
 
-import { logger } from '../../../../utils/logger';
 
 // ==================== 类型定义 ====================
 
@@ -153,7 +152,6 @@ export class VariablePoolService {
 
     this.variables.set(name, entry);
     
-    logger.debug(`[VariablePoolService] 保存变量: ${name} (来源: ${sourceAgent})`);
     
     return entry;
   }
@@ -197,7 +195,6 @@ export class VariablePoolService {
   deleteVariable(name: string): boolean {
     const deleted = this.variables.delete(name);
     if (deleted) {
-      logger.debug(`[VariablePoolService] 删除变量: ${name}`);
     }
     return deleted;
   }
@@ -227,7 +224,6 @@ export class VariablePoolService {
     this.variables.clear();
     this.variableCounter = 0;
     // 注意：系统变量定义不清空，只清空动态变量
-    logger.debug('[VariablePoolService] 变量池已清空');
   }
 
   // ==================== 系统变量管理 ====================
@@ -242,7 +238,6 @@ export class VariablePoolService {
    */
   registerSystemVariable(definition: SystemVariableDefinition): void {
     this.systemVariableDefinitions.set(definition.name, definition);
-    logger.debug(`[VariablePoolService] 注册系统变量: ${definition.name}`);
   }
 
   /**
@@ -265,7 +260,6 @@ export class VariablePoolService {
   unregisterSystemVariable(name: string): boolean {
     const deleted = this.systemVariableDefinitions.delete(name);
     if (deleted) {
-      logger.debug(`[VariablePoolService] 取消注册系统变量: ${name}`);
     }
     return deleted;
   }
@@ -309,7 +303,6 @@ export class VariablePoolService {
       const value = await definition.valueProvider();
       return value;
     } catch (error) {
-      logger.error(`[VariablePoolService] 获取系统变量 ${name} 失败:`, error);
       return undefined;
     }
   }
@@ -359,13 +352,11 @@ export class VariablePoolService {
 
     // 如果有缺失的变量，添加警告
     if (missingVariables.length > 0) {
-      logger.warn(`[VariablePoolService] 未找到变量: ${missingVariables.join(', ')}`);
     }
 
     // 注意：系统变量需要异步获取，这里返回的是同步结果
     // 调用方需要使用 buildInjectionContentAsync 来获取包含系统变量的完整结果
     if (pendingSystemVariables.length > 0) {
-      logger.debug(`[VariablePoolService] 检测到 ${pendingSystemVariables.length} 个系统变量，建议使用 buildInjectionContentAsync`);
     }
 
     return {
@@ -419,7 +410,6 @@ export class VariablePoolService {
             missingVariables.push(name);
           }
         } catch (error) {
-          logger.error(`[VariablePoolService] 获取系统变量 ${name} 失败:`, error);
           missingVariables.push(name);
         }
       } else {
@@ -435,7 +425,6 @@ export class VariablePoolService {
 
     // 如果有缺失的变量，添加警告
     if (missingVariables.length > 0) {
-      logger.warn(`[VariablePoolService] 未找到变量: ${missingVariables.join(', ')}`);
     }
 
     return {
@@ -533,7 +522,6 @@ export class VariablePoolService {
 
     if (oldestName) {
       this.variables.delete(oldestName);
-      logger.debug(`[VariablePoolService] 淘汰旧变量: ${oldestName}`);
     }
   }
 
@@ -558,19 +546,12 @@ export class VariablePoolService {
    * 打印变量池摘要（用于调试）
    */
   printSummary(): void {
-    console.log('\n' + '='.repeat(60));
-    console.log('[VariablePoolService] 变量池摘要');
-    console.log('-'.repeat(60));
-    console.log(`总变量数: ${this.variables.size}`);
-    
     for (const [name, entry] of this.variables) {
       const preview = entry.value.length > 100 
         ? entry.value.substring(0, 100) + '...' 
         : entry.value;
-      console.log(`  ${name} (${entry.sourceAgent}): ${preview}`);
     }
     
-    console.log('='.repeat(60) + '\n');
   }
 }
 

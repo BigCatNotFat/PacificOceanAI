@@ -175,7 +175,6 @@ export class ProjectModule extends BaseModule {
 
       return null;
     } catch (error) {
-      console.error('获取项目名称时出错:', error);
       return null;
     }
   }

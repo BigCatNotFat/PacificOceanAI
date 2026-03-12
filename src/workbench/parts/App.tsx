@@ -143,12 +143,9 @@ const App: React.FC = () => {
     setTimeout(() => {
       const literatureService = di.getService<ILiteratureService>(ILiteratureServiceId);
       literatureService.initializeWithSync().then((result) => {
-        console.log(`[App] 文献库同步完成: ${result.references.length} 篇`);
         if (result.errors.length > 0) {
-          console.warn('[App] 文献库同步警告:', result.errors);
         }
       }).catch((err) => {
-        console.warn('[App] 文献库同步失败:', err);
       });
     }, 1000);
 

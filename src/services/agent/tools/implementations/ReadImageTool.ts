@@ -86,7 +86,6 @@ The image will be sent to the vision model for analysis - you can describe what 
 
       // 策略 2：回退到 DOM 点击方式
       if (!dataUrl) {
-        console.log('[ReadImageTool] 策略1(API)失败，尝试策略2(DOM)');
         const previewUrl = await this.getImagePreviewUrlViaDom(fileName);
         if (previewUrl) {
           dataUrl = await this.fetchAsDataUrl(previewUrl);
@@ -131,7 +130,6 @@ The image will be sent to the vision model for analysis - you can describe what 
       // 获取 projectId
       const projectId = await overleafEditor.project.getProjectId();
       if (!projectId) {
-        console.warn('[ReadImageTool] 无法获取 projectId');
         return null;
       }
 
@@ -150,7 +148,6 @@ The image will be sent to the vision model for analysis - you can describe what 
 
         if (entityPath === normalizedPath || entityBaseName === baseName) {
           fileId = id;
-          console.log(`[ReadImageTool] 从文件树找到图片: ${entityPath} -> ${fileId}`);
           break;
         }
       }
@@ -161,16 +158,13 @@ The image will be sent to the vision model for analysis - you can describe what 
       }
 
       if (!fileId) {
-        console.warn(`[ReadImageTool] 未在文件树中找到: ${fileName}`);
         return null;
       }
 
       // 构造下载 URL 并 fetch
       const downloadUrl = `/project/${projectId}/file/${fileId}`;
-      console.log(`[ReadImageTool] 直接下载图片: ${downloadUrl}`);
       return await this.fetchAsDataUrl(downloadUrl, fileName);
     } catch (error) {
-      console.warn('[ReadImageTool] 文件树 API 方式失败:', error);
       return null;
     }
   }
@@ -188,7 +182,6 @@ The image will be sent to the vision model for analysis - you can describe what 
         const entity = item.querySelector('.entity') as HTMLElement | null;
         const id = entity?.getAttribute('data-file-id');
         if (id) {
-          console.log(`[ReadImageTool] 从 DOM 找到 file ID: ${baseName} -> ${id}`);
           return id;
         }
       }
@@ -214,11 +207,9 @@ The image will be sent to the vision model for analysis - you can describe what 
         try {
           const result = await overleafEditor.file.switchFile(baseName);
           if (!result.success) {
-            console.error(`[ReadImageTool] 所有方式均无法打开文件 ${baseName}`);
             return null;
           }
         } catch {
-          console.error(`[ReadImageTool] switchFile 失败: ${baseName}`);
           return null;
         }
       }
@@ -248,13 +239,11 @@ The image will be sent to the vision model for analysis - you can describe what 
       }
 
       if (!targetImg) {
-        console.error('[ReadImageTool] 未在页面中找到图片预览');
         return null;
       }
 
       return targetImg.getAttribute('src') || targetImg.src || null;
     } catch (error) {
-      console.error('[ReadImageTool] DOM 方式获取图片失败:', error);
       return null;
     }
   }
@@ -274,10 +263,8 @@ The image will be sent to the vision model for analysis - you can describe what 
         }
       });
       if (collapsedFolders.length > 0) {
-        console.log(`[ReadImageTool] 展开了 ${collapsedFolders.length} 个折叠文件夹`);
       }
     } catch (error) {
-      console.warn('[ReadImageTool] 展开文件夹失败:', error);
     }
   }
 
@@ -299,7 +286,6 @@ The image will be sent to the vision model for analysis - you can describe what 
       }
       return false;
     } catch (error) {
-      console.error('[ReadImageTool] 打开文件失败:', error);
       return false;
     }
   }
@@ -317,14 +303,12 @@ The image will be sent to the vision model for analysis - you can describe what 
 
       const response = await fetch(url);
       if (!response.ok) {
-        console.error(`[ReadImageTool] fetch 图片失败: ${response.status}`);
         return null;
       }
 
       const blob = await response.blob();
 
       if (blob.size > MAX_IMAGE_SIZE_BYTES) {
-        console.error(`[ReadImageTool] 图片过大: ${(blob.size / 1024 / 1024).toFixed(1)}MB > 4MB`);
         return null;
       }
 
@@ -335,7 +319,6 @@ The image will be sent to the vision model for analysis - you can describe what 
         const ext = hint.split('.').pop()?.toLowerCase() || '';
         const correctMime = EXT_TO_MIME[ext];
         if (correctMime) {
-          console.log(`[ReadImageTool] 修正 MIME: ${blob.type} -> ${correctMime}`);
           correctBlob = new Blob([blob], { type: correctMime });
         }
       }
@@ -347,7 +330,6 @@ The image will be sent to the vision model for analysis - you can describe what 
         reader.readAsDataURL(correctBlob);
       });
     } catch (error) {
-      console.error('[ReadImageTool] 转换图片失败:', error);
       return null;
     }
   }

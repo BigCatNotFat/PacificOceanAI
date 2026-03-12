@@ -117,7 +117,6 @@ Examples:
       const results: Array<{ success: boolean; data?: any; error?: string }> = [];
 
       for (let i = 0; i < files.length; i++) {
-        console.log(`[DeleteFileTool] Processing ${i + 1}/${files.length}: ${files[i].target_file}`);
         try {
           const result = await this.deleteSingleFile(files[i].target_file);
           results.push(result);

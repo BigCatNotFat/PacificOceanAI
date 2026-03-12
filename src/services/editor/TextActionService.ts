@@ -141,9 +141,6 @@ export class TextActionService extends Disposable {
         contextAfter: data.data.contextAfter     // 选区后的上下文
       };
       
-      console.log('[TextActionService] 收到操作请求:', request.action, '模型:', request.modelId, 
-        request.customPrompt ? '自定义:' + request.customPrompt.substring(0, 30) + '...' : '',
-        '上下文:', { before: request.contextBefore?.length || 0, after: request.contextAfter?.length || 0 });
       
       // 触发请求事件
       this._onActionRequest.fire(request);
@@ -166,8 +163,6 @@ export class TextActionService extends Disposable {
       if (!data || data.type !== 'OVERLEAF_PREVIEW_DECISION_RESULT') return;
       
       const decisionData = data.data;
-      console.log('[TextActionService] 收到预览决策结果:', decisionData.accepted ? '接受' : '拒绝');
-      
       // 触发预览决策事件（包含 action 信息）
       this._onPreviewDecision.fire({
         id: decisionData.id,
@@ -218,8 +213,6 @@ export class TextActionService extends Disposable {
     const handler = this.handlers.get(request.action);
     
     if (!handler) {
-      console.warn(`[TextActionService] 未找到操作处理器: ${request.action}`);
-      
       // 没有处理器时，仅触发事件，由外部处理
       const result: TextActionResult = {
         success: false,
@@ -241,8 +234,6 @@ export class TextActionService extends Disposable {
       
       if (resultText === null) {
         // 操作被取消或失败
-        console.log('[TextActionService] 操作已取消或失败');
-        
         // 触发完成事件，通知 UI 重置状态
         const result: TextActionResult = {
           success: false,
@@ -273,11 +264,7 @@ export class TextActionService extends Disposable {
       // 注意：不再发送 OVERLEAF_SHOW_PREVIEW_REQUEST 消息
       // 因为现在使用流式预览模式，预览消息由 TextActionProvider 在流式过程中发送
       
-      console.log('[TextActionService] 流式预览已处理:', request.action);
-      
     } catch (error) {
-      console.error('[TextActionService] 操作失败:', error);
-      
       this._onActionError.fire({
         request,
         error: error instanceof Error ? error : new Error(String(error))

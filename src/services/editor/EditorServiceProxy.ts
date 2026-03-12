@@ -92,7 +92,6 @@ export class EditorServiceProxy extends Disposable implements IEditorService {
           this._onDidChangeActiveFile.fire(currentFile);
         }
       } catch (error) {
-        console.error('Error polling active file:', error);
       }
     }, 1000); // 每秒检查一次
   }

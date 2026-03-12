@@ -81,7 +81,6 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
     // 如果去重后数量变少了，说明有重复数据
     const hadDuplicates = deduplicatedModels.length < currentConfig.models.length;
     if (hadDuplicates) {
-      console.log(`[ConfigurationService] Removed ${currentConfig.models.length - deduplicatedModels.length} duplicate models`);
     }
     currentConfig.models = deduplicatedModels;
     
@@ -154,7 +153,6 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
       
       return config;
     } catch (error) {
-      console.error('[ConfigurationService] Failed to get API config:', error);
       return this.getDefaultConfig();
     }
   }
@@ -171,7 +169,6 @@ export class ConfigurationService extends Disposable implements IConfigurationSe
       
       await this.storageService.set(ConfigurationService.STORAGE_KEY, updatedConfig);
     } catch (error) {
-      console.error('[ConfigurationService] Failed to set API config:', error);
       throw error;
     }
   }

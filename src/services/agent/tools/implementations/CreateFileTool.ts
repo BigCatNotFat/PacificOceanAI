@@ -102,8 +102,6 @@ Examples:
     const name = parts.pop()!;
     const parentPath = parts.join('/');
 
-    console.log('[CreateFileTool] Creating:', { filePath, name, parentPath, isFolder });
-
     if (!name) {
       return { success: false, error: `[${fileOp.file_path}] Invalid file path: name cannot be empty` };
     }
@@ -130,7 +128,6 @@ Examples:
         const errorMsg = folderError instanceof Error ? folderError.message : String(folderError);
         if (errorMsg.includes('file already exists') || errorMsg.includes('400')) {
           // 文件夹已存在，尝试恢复其 ID
-          console.warn('[CreateFileTool] Folder already exists, recovering:', filePath);
           await new Promise(r => setTimeout(r, 500));
           const entities = await getAllEntities();
           const found = entities.find(
@@ -200,7 +197,6 @@ Examples:
       const results: Array<{ success: boolean; data?: any; error?: string }> = [];
 
       for (let i = 0; i < files.length; i++) {
-        console.log(`[CreateFileTool] Processing ${i + 1}/${files.length}: ${files[i].file_path}`);
         try {
           const result = await this.createSingleFile(files[i]);
           results.push(result);
@@ -264,13 +260,11 @@ Examples:
       try {
         const files = await overleafEditor.fileOps.listFiles();
         if (files.some(f => f.name === fileName)) {
-          console.log('[CreateFileTool] File appeared in tree:', fileName);
           return true;
         }
       } catch { /* ignore */ }
       await new Promise(r => setTimeout(r, 500));
     }
-    console.warn('[CreateFileTool] Timed out waiting for file in tree:', fileName);
     return false;
   }
 
@@ -289,7 +283,6 @@ Examples:
 
       const switchResult = await overleafEditor.file.switchFile(fileName);
       if (!switchResult.success) {
-        console.warn('[CreateFileTool] Could not auto-switch to new file:', switchResult.error);
         return;
       }
 
@@ -318,9 +311,7 @@ Examples:
       // Phase 3: stabilisation delay for DiffAPI
       await new Promise(r => setTimeout(r, 600));
 
-      console.log('[CreateFileTool] Switched to new file:', fileName);
     } catch (err) {
-      console.warn('[CreateFileTool] switchToNewFile error:', err);
     }
   }
 
@@ -343,7 +334,6 @@ Examples:
         // 优先级 1: 检查本地缓存（本次 batch 中刚创建的）
         const cachedId = this.folderCache.get(normalizedSegmentPath);
         if (cachedId) {
-          console.log('[CreateFileTool] Found folder in cache:', segmentPath, 'id:', cachedId);
           currentParentId = cachedId;
           continue;
         }
@@ -363,14 +353,12 @@ Examples:
         // 优先级 3: 检查 recentlyCreatedFiles 注册表
         const recentEntry = recentlyCreatedFiles.findByPath(segmentPath);
         if (recentEntry && recentEntry.type === 'folder') {
-          console.log('[CreateFileTool] Found folder in recently-created registry:', segmentPath, 'id:', recentEntry.id);
           currentParentId = recentEntry.id;
           this.folderCache.set(normalizedSegmentPath, recentEntry.id);
           continue;
         }
 
         // 不存在，需要创建
-        console.log('[CreateFileTool] Creating parent folder:', segments[i], 'parentId:', currentParentId);
         try {
           const result = await overleafEditor.fileOps.newFolder(segments[i], currentParentId);
           currentParentId = result._id;
@@ -378,14 +366,11 @@ Examples:
           this.folderCache.set(normalizedSegmentPath, result._id);
           // 也注册到 recentlyCreatedFiles 中
           recentlyCreatedFiles.register({ name: segments[i], path: segmentPath, id: result._id, type: 'folder' });
-          console.log('[CreateFileTool] Created and cached folder:', segmentPath, 'id:', result._id);
         } catch (createError) {
           const errorMsg = createError instanceof Error ? createError.message : String(createError);
 
           // 检查是否是 "file already exists" 错误
           if (errorMsg.includes('file already exists') || errorMsg.includes('400')) {
-            console.warn('[CreateFileTool] Folder already exists on server, recovering:', segments[i]);
-
             // 等待短暂时间让 React 状态可能同步
             await new Promise(r => setTimeout(r, 1000));
 
@@ -396,7 +381,6 @@ Examples:
             );
 
             if (found) {
-              console.log('[CreateFileTool] Recovered existing folder id:', found.id);
               currentParentId = found.id;
               this.folderCache.set(normalizedSegmentPath, found.id);
               continue;
@@ -407,7 +391,6 @@ Examples:
               f => f.type === 'folder' && f.name === segments[i]
             );
             if (foundByName) {
-              console.log('[CreateFileTool] Recovered folder by name:', foundByName.id);
               currentParentId = foundByName.id;
               this.folderCache.set(normalizedSegmentPath, foundByName.id);
               continue;
@@ -416,13 +399,11 @@ Examples:
             // 最终手段：查 recentlyCreatedFiles
             const recentFallback = recentlyCreatedFiles.findByPath(segmentPath);
             if (recentFallback) {
-              console.log('[CreateFileTool] Recovered folder from recently-created:', recentFallback.id);
               currentParentId = recentFallback.id;
               this.folderCache.set(normalizedSegmentPath, recentFallback.id);
               continue;
             }
 
-            console.error('[CreateFileTool] Cannot recover folder ID for:', segmentPath);
             return undefined;
           }
 
@@ -433,7 +414,6 @@ Examples:
 
       return currentParentId;
     } catch (error) {
-      console.error('[CreateFileTool] resolveOrCreateParentFolders failed:', error);
       return undefined;
     }
   }

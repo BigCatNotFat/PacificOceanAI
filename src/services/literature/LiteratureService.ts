@@ -183,7 +183,6 @@ export class LiteratureService extends Disposable implements ILiteratureService 
     }
     this._saveTimeout = setTimeout(() => {
       this.saveToLocalStorage().catch(err => {
-        console.error('[LiteratureService] 自动保存失败:', err);
       });
     }, 500);
   }
@@ -326,7 +325,6 @@ export class LiteratureService extends Disposable implements ILiteratureService 
           const merged = this.mergeReferences(existingRef, ref);
           idsToRemove.add(existingRef.id);
           addedRefs.push(merged);
-          console.log(`[LiteratureService] 合并手动添加文献: ${ref.id} <- ${existingRef.id}`);
         } else {
           // 新文献，直接添加
           addedRefs.push(ref);
@@ -342,7 +340,6 @@ export class LiteratureService extends Disposable implements ILiteratureService 
       
       return addedRefs;
     } catch (error) {
-      console.error('[LiteratureService] 解析手动添加的 BibTeX 失败:', error);
       return [];
     }
   }
@@ -413,7 +410,6 @@ export class LiteratureService extends Disposable implements ILiteratureService 
       this._onDidReferencesChange.fire(this._references);
       return true;
     } catch (error) {
-      console.error('[LiteratureService] 补全文献失败:', error);
       return false;
     }
   }
@@ -434,7 +430,6 @@ export class LiteratureService extends Disposable implements ILiteratureService 
     
     // 立即保存到本地存储，确保状态持久化
     this.saveToLocalStorage().catch(err => {
-      console.error('[LiteratureService] 清除待应用状态后保存失败:', err);
     });
   }
   
@@ -477,7 +472,6 @@ export class LiteratureService extends Disposable implements ILiteratureService 
       this._onDidReferencesChange.fire(this._references);
       return true;
     } catch (error) {
-      console.error('[LiteratureService] 更新文献失败:', error);
       return false;
     }
   }
@@ -501,8 +495,6 @@ export class LiteratureService extends Disposable implements ILiteratureService 
       
       // 1. 从本地存储加载文献库
       const localRefs = await storageService.load();
-      console.log(`[LiteratureService] 从本地库加载 ${localRefs.length} 篇文献`);
-      
       // 2. 从 bib 文件读取文献
       const docs = await overleafEditor.getBridge().call<Array<{path: string; content: string}>>('getAllDocsWithContent');
       
@@ -545,8 +537,6 @@ export class LiteratureService extends Disposable implements ILiteratureService 
         }
       }
       
-      console.log(`[LiteratureService] 从 bib 文件解析 ${bibRefs.length} 篇文献`);
-      
       // 3. 对比合并
       const mergedRefs = this.syncBibWithLocalLibrary(bibRefs, localRefs, storageService);
       
@@ -557,8 +547,6 @@ export class LiteratureService extends Disposable implements ILiteratureService 
       
       // 5. 保存到本地库
       await this.saveToLocalStorage();
-      
-      console.log(`[LiteratureService] 同步完成，共 ${mergedRefs.length} 篇文献`);
       
     } catch (error) {
       result.errors.push(`同步失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -603,11 +591,9 @@ export class LiteratureService extends Disposable implements ILiteratureService 
         // 情况 A 不标记为待应用
         merged.isManual = false;
         result.push(merged);
-        console.log(`[LiteratureService] 匹配文献: ${bibRef.id}`);
       } else {
         // 情况 B: bib 有，本地库没有 → 直接添加
         result.push(bibRef);
-        console.log(`[LiteratureService] 新增文献(来自bib): ${bibRef.id}`);
       }
     }
     
@@ -627,7 +613,6 @@ export class LiteratureService extends Disposable implements ILiteratureService 
           const ref = storageService.deserializeReference(localRef);
           ref.isManual = true;  // 标记为待应用
           result.push(ref);
-          console.log(`[LiteratureService] 本地库独有文献(待应用): ${localRef.id}`);
         }
       }
     }
@@ -707,7 +692,6 @@ export class LiteratureService extends Disposable implements ILiteratureService 
         const merged = this.mergeReferences(existing, ref);
         uniqueRefs[existingIndex] = merged;
         removedCount++;
-        console.log(`[LiteratureService] 去重合并文献: ${ref.id} -> ${existing.id}`);
       } else {
         // 新文献
         uniqueRefs.push(ref);
@@ -719,7 +703,6 @@ export class LiteratureService extends Disposable implements ILiteratureService 
       this._onDidReferencesChange.fire(this._references);
       // 保存到本地存储
       this.saveToLocalStorage().catch(err => {
-        console.error('[LiteratureService] 去重后保存失败:', err);
       });
     }
     

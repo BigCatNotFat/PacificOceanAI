@@ -26,7 +26,6 @@ import { getAgentByName } from '../agents';
 import type { IPromptService } from '../../../../platform/agent/IPromptService';
 import type { ILiteratureService } from '../../../../platform/literature/ILiteratureService';
 import { overleafEditor } from '../../../editor/OverleafEditor';
-import { logger } from '../../../../utils/logger';
 import type {
   AgentContext,
   AgentMessage,
@@ -156,9 +155,7 @@ export class ManagerAgentLoopService {
       lines.push('-'.repeat(88));
       lines.push(JSON.stringify(ManagerAgentLoopService.toLoggableAgentContext(managerContext), null, 2));
       lines.push('='.repeat(88) + '\n');
-      console.log(lines.join('\n'));
     } catch (e) {
-      console.log('[ManagerAgentLoopService][FINAL_MANAGER_CONTEXT] failed to print context:', e);
     }
   }
 
@@ -184,9 +181,7 @@ export class ManagerAgentLoopService {
       }));
       lines.push(JSON.stringify(payload, null, 2));
       lines.push('='.repeat(88) + '\n');
-      console.log(lines.join('\n'));
     } catch (e) {
-      console.log('[ManagerAgentLoopService][FINAL_AGENT_CONTEXTS] failed to print contexts:', e);
     }
   }
 
@@ -286,7 +281,6 @@ export class ManagerAgentLoopService {
     ];
 
     this.variablePool.registerSystemVariables(systemVariables);
-    logger.debug(`[ManagerAgentLoopService] 已注册 ${systemVariables.length} 个系统变量`);
   }
 
   /**
@@ -342,8 +336,6 @@ export class ManagerAgentLoopService {
     const { modelId, userMessage, maxIterations = 10 } = options;
     const conversationId = options.conversationId || `conv_${Date.now()}`;
 
-    logger.debug('[ManagerAgentLoopService] 启动 Manager Agent Loop');
-    logger.debug(`[ManagerAgentLoopService] 模型: ${modelId}, 用户问题: ${userMessage}`);
 
     this.aborted = false;
     this.finalPrinted = false;
@@ -392,7 +384,6 @@ export class ManagerAgentLoopService {
 
       // Manager Agent Loop
       while (iteration < maxIterations && !this.aborted) {
-        logger.debug(`[ManagerAgentLoopService] Manager Agent 第 ${iteration + 1} 轮迭代`);
 
         // 发送"正在规划"状态
         this.emitUpdate('planning', undefined, '正在规划任务...', globalConversation);
@@ -413,7 +404,6 @@ export class ManagerAgentLoopService {
         });
 
         // 3. 调用 LLM（非流式）
-        logger.debug('[ManagerAgentLoopService] 调用 managerChat');
         const llmResult = await (this.llmService as any).managerChat(llmMessages, llmConfig);
 
         if (this.aborted) {
@@ -442,16 +432,10 @@ export class ManagerAgentLoopService {
 
         managerContext.messages.push(assistantMessage);
 
-        logger.debug('[ManagerAgentLoopService] Manager Agent 响应:', {
-          content: llmResult.content?.substring(0, 100),
-          thinking: llmResult.thinking?.substring(0, 100),
-          toolCalls: assistantMessage.toolCalls?.map(tc => tc.name)
-        });
 
         // 5. 检查是否有工具调用
         if (!assistantMessage.toolCalls || assistantMessage.toolCalls.length === 0) {
           // 没有工具调用，任务完成
-          logger.debug('[ManagerAgentLoopService] Manager Agent 完成（无工具调用）');
 
           // 添加到全局对话
           globalConversation.entries.push({
@@ -478,10 +462,7 @@ export class ManagerAgentLoopService {
             const callAgentArgs = toolCall.arguments as CallAgentArgs;
             const { agent_name, instruction, inject_variables, output_variable_name } = callAgentArgs;
 
-            logger.debug(`[ManagerAgentLoopService] 调用 Agent: ${agent_name}`);
-            logger.debug(`[ManagerAgentLoopService] 指令: ${instruction}`);
             if (inject_variables?.length) {
-              logger.debug(`[ManagerAgentLoopService] 注入变量: ${inject_variables.join(', ')}`);
             }
 
             // 发送"Agent 工作中"状态
@@ -497,11 +478,9 @@ export class ManagerAgentLoopService {
               
               if (injectionResult.success) {
                 injectedContent = injectionResult.content;
-                logger.debug(`[ManagerAgentLoopService] 成功注入 ${injectionResult.foundVariables.length} 个变量`);
               }
               
               if (injectionResult.missingVariables.length > 0) {
-                logger.warn(`[ManagerAgentLoopService] 未找到变量: ${injectionResult.missingVariables.join(', ')}`);
               }
             }
 
@@ -521,7 +500,6 @@ export class ManagerAgentLoopService {
               `Result from ${agent_name}`
             );
 
-            logger.debug(`[ManagerAgentLoopService] 结果已保存到变量: ${savedVariable.name}`);
 
             // 创建工具响应消息（包含变量信息）
             const toolResultContent = this.variablePool.formatToolResult(savedVariable);
@@ -561,7 +539,6 @@ export class ManagerAgentLoopService {
       // 达到最大迭代次数
       if (iteration >= maxIterations) {
         const limitMessage = `已达到最大迭代次数（${maxIterations}）`;
-        logger.debug(`[ManagerAgentLoopService] ${limitMessage}`);
         this.printFinalOnce('max_iterations', limitMessage);
         return this.buildResult(false, limitMessage, globalConversation, limitMessage);
       }
@@ -570,7 +547,6 @@ export class ManagerAgentLoopService {
       return this.buildResult(true, '', globalConversation);
 
     } catch (error) {
-      console.error('[ManagerAgentLoopService] 执行错误:', error);
       this._onError.fire(error instanceof Error ? error : new Error(String(error)));
       const errMsg = error instanceof Error ? error.message : String(error);
       this.printFinalOnce('error', errMsg);
@@ -587,7 +563,6 @@ export class ManagerAgentLoopService {
    * 中断执行
    */
   abort(): void {
-    logger.debug('[ManagerAgentLoopService] 中断执行');
     this.aborted = true;
     if (this.abortController) {
       this.abortController.abort();
@@ -770,7 +745,6 @@ ${numberedContent}
             }
           }
         } catch (error) {
-          console.warn('[ManagerAgentLoopService] 获取当前文件内容失败:', error);
         }
       }
 

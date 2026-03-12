@@ -22,7 +22,6 @@ import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import { diffSuggestionService } from '../../../editor/DiffSuggestionService';
 import type { CreateSuggestionInput } from '../../../../platform/editor/IDiffSuggestionService';
-import { logger } from '../../../../utils/logger';
 
 /**
  * 单个替换操作的接口
@@ -240,7 +239,6 @@ Examples:
     );
 
     if (!isCurrentFile) {
-      logger.debug(`[ReplaceLinesTool] Switching to file "${targetBaseName}"...`);
 
       let preSwitchContent: string | null = null;
       try { preSwitchContent = await overleafEditor.document.getText(); } catch { /* ignore */ }
@@ -298,7 +296,6 @@ Examples:
     {
       const ready = await diffSuggestionService.waitForReady(targetBaseName, 8000);
       if (!ready) {
-        logger.debug('[ReplaceLinesTool] DiffAPI not ready – falling back to setDocContent');
         useDiffService = false;
       }
     }
@@ -394,17 +391,12 @@ Examples:
         }
       }
 
-      logger.debug('[ReplaceLinesTool] execute called:', {
-        operationsCount: operations.length,
-        explanation: args.explanation
-      });
 
       // 依次执行每个文件的操作
       const fileResults: Array<{ success: boolean; data?: any; error?: string }> = [];
 
       for (let i = 0; i < operations.length; i++) {
         const op = operations[i];
-        logger.debug(`[ReplaceLinesTool] Processing operation ${i + 1}/${operations.length}: ${op.target_file} (${op.replacements.length} replacements)`);
         const result = await this.executeForFile(op.target_file, op.replacements, toolCallId);
         fileResults.push(result);
       }
@@ -444,7 +436,6 @@ Examples:
         duration: Date.now() - startTime
       };
     } catch (error) {
-      console.error('[ReplaceLinesTool] Error:', error);
       return {
         ...this.handleError(error),
         duration: Date.now() - startTime
@@ -476,7 +467,6 @@ Examples:
       const fileInfo = await overleafEditor.file.getInfo();
       return fileInfo.fileName;
     } catch (error) {
-      console.error('[ReplaceLinesTool] Failed to get current file name:', error);
       return null;
     }
   }

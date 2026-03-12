@@ -38,13 +38,6 @@ export class AnthropicProvider extends BaseLLMProvider {
    * @returns 完整的最终响应
    */
   async chat(messages: LLMMessage[], config: LLMConfig): Promise<LLMFinalMessage> {
-    console.log('[AnthropicProvider] chat() called', {
-      messageCount: messages.length,
-      hasUIStreamMeta: !!config.uiStreamMeta,
-      conversationId: config.uiStreamMeta?.conversationId,
-      messageId: config.uiStreamMeta?.messageId,
-      hasUIStreamService: !!this.uiStreamService
-    });
 
     // 1. 构建请求
     const { endpoint, headers, body } = this.buildRequest(messages, config);
@@ -75,10 +68,6 @@ export class AnthropicProvider extends BaseLLMProvider {
    * - 只返回结果
    */
   async managerChat(messages: LLMMessage[], config: LLMConfig): Promise<LLMFinalMessage> {
-    console.log('[AnthropicProvider] managerChat() called', {
-      messageCount: messages.length,
-      modelId: config.modelId
-    });
 
     // 1. 构建请求（非流式）
     const { endpoint, headers, body } = this.buildRequest(messages, config, false);
@@ -348,7 +337,6 @@ export class AnthropicProvider extends BaseLLMProvider {
               }
             }
           } catch (err) {
-            console.warn('[AnthropicProvider] 解析流数据失败:', err);
           }
         }
       }

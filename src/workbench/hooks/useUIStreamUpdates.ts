@@ -53,7 +53,6 @@ export function useUIStreamUpdates() {
 
   useEffect(() => {
     if (!uiStreamService) {
-      console.warn('[useUIStreamUpdates] UIStreamService not available');
       return;
     }
 
@@ -180,6 +179,7 @@ export function useUIStreamUpdates() {
             toolCall.status = 'running';
             break;
           case 'args':
+          case 'args_done':  // 参数流式完成，但工具尚未执行
           case 'log':
           case 'result':
             toolCall.status = 'running';

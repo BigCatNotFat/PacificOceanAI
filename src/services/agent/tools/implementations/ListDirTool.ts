@@ -60,10 +60,6 @@ export class ListDirTool extends BaseTool {
     
     try {
       if (!this.validate(args)) {
-        console.error('[ListDirTool] 参数验证失败:', {
-          receivedArgs: args,
-          expectedParams: this.metadata.parameters
-        });
         return {
           success: false,
           error: `Missing required parameter: relative_workspace_path. Received args: ${JSON.stringify(args)}`,
@@ -213,7 +209,6 @@ export class ListDirTool extends BaseTool {
         item.stats = { lines, characters };
       } catch (error) {
         // 如果获取失败，不添加统计信息
-        console.warn(`[ListDirTool] 无法获取文件 ${item.path} 的统计信息:`, error);
       }
     });
 
@@ -304,7 +299,6 @@ export class ListDirTool extends BaseTool {
         });
       }
     } catch (error) {
-      console.warn('[ListDirTool] mergeBridgeEntities failed (non-critical):', error);
     }
   }
 
@@ -343,7 +337,6 @@ export class ListDirTool extends BaseTool {
         map.set(name, id);
       });
     } catch (error) {
-      console.error('[ListDirTool] 获取 DOM 文件 ID 映射失败:', error);
     }
 
     return map;

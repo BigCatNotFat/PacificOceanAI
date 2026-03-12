@@ -19,7 +19,6 @@ export class ChromeRuntimeChannel implements IRPCChannel {
 
   send(message: RPCMessage): void {
     chrome.runtime.sendMessage(message).catch((error) => {
-      console.error('RPC message send failed:', error);
     });
   }
 
@@ -72,7 +71,6 @@ export class ChromeTabChannel implements IRPCChannel {
 
       await chrome.tabs.sendMessage(this.tabId, message);
     } catch (error) {
-      console.error('RPC message send to tab failed:', error);
       throw error;
     }
   }

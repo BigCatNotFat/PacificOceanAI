@@ -197,7 +197,6 @@ export class DiffMatchPatchService {
       }
     } catch (error) {
       // 如果 bitap 算法失败，记录错误但继续尝试其他方法
-      console.warn('[DiffMatchPatchService] match_main failed:', error);
     }
     
     // 最后尝试基于行的匹配
@@ -366,14 +365,9 @@ export class DiffMatchPatchService {
    */
   applyEdit(originalContent: string, editContent: string): ApplyEditResult {
     try {
-      console.log('[DiffMatchPatchService] applyEdit called');
-      console.log('[DiffMatchPatchService] Original content length:', originalContent.length);
-      console.log('[DiffMatchPatchService] Edit content:', editContent.substring(0, 500));
       
       const blocks = this.parseEditBlocks(editContent);
-      console.log('[DiffMatchPatchService] Parsed blocks:', blocks.length);
       blocks.forEach((b, i) => {
-        console.log(`[DiffMatchPatchService] Block ${i}: isPlaceholder=${b.isPlaceholder}, content="${b.content.substring(0, 100)}..."`);
       });
       
       // 如果没有编辑块，返回原内容
@@ -389,15 +383,12 @@ export class DiffMatchPatchService {
       // 如果只有一个非占位符块且没有占位符，可能是全量替换
       const hasPlaceholder = blocks.some(b => b.isPlaceholder);
       if (!hasPlaceholder && blocks.length === 1) {
-        console.log('[DiffMatchPatchService] Using full diff method');
         return this.applyWithDiff(originalContent, blocks[0].content);
       }
       
       // 有占位符的情况，使用锚点匹配方法
-      console.log('[DiffMatchPatchService] Using anchor-based method');
       return this.applyWithAnchors(originalContent, blocks);
     } catch (error) {
-      console.error('[DiffMatchPatchService] Error:', error);
       return {
         success: false,
         newContent: originalContent,
@@ -459,9 +450,6 @@ export class DiffMatchPatchService {
     const lastBlockLines = lastBlock.content.split('\n');
     const anchorAfter = lastBlockLines[lastBlockLines.length - 1];
     
-    console.log('[DiffMatchPatchService] Anchor before:', anchorBefore);
-    console.log('[DiffMatchPatchService] Anchor after:', anchorAfter);
-    
     // 在原文中找到起始锚点
     const startMatch = this.findMatch(originalContent, anchorBefore, 0);
     if (!startMatch.found) {
@@ -479,7 +467,6 @@ export class DiffMatchPatchService {
     
     // 如果结束锚点找不到，尝试智能推断结束位置
     if (!endMatch.found) {
-      console.log('[DiffMatchPatchService] End anchor not found, trying smart detection...');
       endMatch = this.findSmartEndPosition(originalContent, startMatch, firstBlock, contentBlocks);
     }
     
@@ -493,17 +480,11 @@ export class DiffMatchPatchService {
       };
     }
     
-    console.log('[DiffMatchPatchService] Start match:', startMatch.start, '-', startMatch.end);
-    console.log('[DiffMatchPatchService] End match:', endMatch.start, '-', endMatch.end);
-    
     // 构建新的编辑区域内容（合并所有内容块，跳过占位符）
     const newSectionContent = contentBlocks.map(b => b.content).join('\n');
     
     // 获取原文中对应区域
     const oldSection = originalContent.substring(startMatch.start, endMatch.end);
-    
-    console.log('[DiffMatchPatchService] Old section length:', oldSection.length);
-    console.log('[DiffMatchPatchService] New section length:', newSectionContent.length);
     
     // 执行替换
     const beforeSection = originalContent.substring(0, startMatch.start);
@@ -543,7 +524,6 @@ export class DiffMatchPatchService {
       if (line.length > 10) { // 跳过太短的行
         const match = this.findMatch(originalContent, line, startMatch.start + 1);
         if (match.found) {
-          console.log('[DiffMatchPatchService] Found matching line in original:', line.substring(0, 50));
           return match;
         }
       }
@@ -585,7 +565,6 @@ export class DiffMatchPatchService {
           endPos--;
         }
         
-        console.log('[DiffMatchPatchService] Found next structure marker at:', nextMarkerIndex);
         return {
           found: true,
           start: endPos,
@@ -602,7 +581,6 @@ export class DiffMatchPatchService {
       if (secondBlockFirstLine.length > 5) {
         const match = this.findMatch(originalContent, secondBlockFirstLine, startMatch.start + 1);
         if (match.found) {
-          console.log('[DiffMatchPatchService] Found second block anchor:', secondBlockFirstLine.substring(0, 50));
           // 返回第二个块起始位置之前的位置作为第一个块的结束
           return {
             found: true,
@@ -629,7 +607,6 @@ export class DiffMatchPatchService {
       // 找到最近的空行或段落结束
       const nearestBreak = originalContent.indexOf('\n\n', estimatedEnd - 50);
       if (nearestBreak !== -1 && nearestBreak < estimatedEnd + 100) {
-        console.log('[DiffMatchPatchService] Using estimated end position with paragraph break');
         return {
           found: true,
           start: nearestBreak,

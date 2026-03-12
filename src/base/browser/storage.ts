@@ -32,7 +32,6 @@ export class ChromeStorageAdapter implements IStorageAdapter {
   constructor(scope: StorageScope = StorageScope.LOCAL) {
     try {
       if (typeof chrome === 'undefined' || !chrome.storage) {
-        console.warn('[ChromeStorageAdapter] Chrome storage API is not available');
         this.isAvailable = false;
         return;
       }
@@ -51,7 +50,6 @@ export class ChromeStorageAdapter implements IStorageAdapter {
       
       this.isAvailable = true;
     } catch (error) {
-      console.warn('[ChromeStorageAdapter] Failed to initialize storage:', error);
       this.isAvailable = false;
     }
   }
@@ -69,7 +67,6 @@ export class ChromeStorageAdapter implements IStorageAdapter {
 
   async set<T = any>(key: string, value: T): Promise<void> {
     if (!this.isAvailable || !this.storage) {
-      console.warn('[ChromeStorageAdapter] Storage not available, skipping set');
       return Promise.resolve();
     }
     return new Promise((resolve) => {

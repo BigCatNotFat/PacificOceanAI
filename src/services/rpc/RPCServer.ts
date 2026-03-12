@@ -18,7 +18,6 @@ export class RPCServer extends Disposable implements IRPCServer {
    */
   registerMethod(name: string, handler: (...args: any[]) => any | Promise<any>): void {
     if (this.methods.has(name)) {
-      console.warn(`Method "${name}" is already registered, overwriting...`);
     }
     this.methods.set(name, handler);
   }
@@ -46,7 +45,6 @@ export class RPCServer extends Disposable implements IRPCServer {
    */
   start(): void {
     if (this.running) {
-      console.warn('RPC server is already running');
       return;
     }
 
@@ -59,7 +57,6 @@ export class RPCServer extends Disposable implements IRPCServer {
       }
     });
 
-    console.log('[RPC Server] Started and listening for requests');
   }
 
   /**
@@ -67,7 +64,6 @@ export class RPCServer extends Disposable implements IRPCServer {
    */
   stop(): void {
     this.running = false;
-    console.log('[RPC Server] Stopped');
   }
 
   /**
@@ -105,7 +101,6 @@ export class RPCServer extends Disposable implements IRPCServer {
       };
       this.channel.send(response);
 
-      console.error(`[RPC Server] Error handling request ${id}:`, error);
     }
   }
 

@@ -76,8 +76,6 @@ export class ConversationService extends Disposable implements IConversationServ
     private readonly storageService: IStorageService
   ) {
     super();
-    console.log('[ConversationService] 初始化');
-    
     // 异步初始化
     this.initialize();
   }
@@ -99,12 +97,7 @@ export class ConversationService extends Disposable implements IConversationServ
       await this.getConversationList();
       
       this._initialized = true;
-      console.log('[ConversationService] 初始化完成', {
-        currentId: this._currentConversationId,
-        conversationCount: this._conversationsCache?.length || 0
-      });
     } catch (error) {
-      console.error('[ConversationService] 初始化失败:', error);
     }
   }
 
@@ -135,7 +128,6 @@ export class ConversationService extends Disposable implements IConversationServ
       this._conversationsCache = (list || []).sort((a, b) => b.updatedAt - a.updatedAt);
       return this._conversationsCache;
     } catch (error) {
-      console.error('[ConversationService] 获取对话列表失败:', error);
       return [];
     }
   }
@@ -173,7 +165,6 @@ export class ConversationService extends Disposable implements IConversationServ
       messages: []
     });
 
-    console.log('[ConversationService] 创建新对话（草稿）:', id);
     return id;
   }
 
@@ -185,7 +176,6 @@ export class ConversationService extends Disposable implements IConversationServ
       const conversation = await this.loadConversation(conversationId);
       
       if (!conversation) {
-        console.warn('[ConversationService] 对话不存在:', conversationId);
         return [];
       }
 
@@ -205,10 +195,8 @@ export class ConversationService extends Disposable implements IConversationServ
         messages: conversation.messages
       });
 
-      console.log('[ConversationService] 切换到对话:', conversationId, isPending ? '(临时)' : '');
       return conversation.messages;
     } catch (error) {
-      console.error('[ConversationService] 切换对话失败:', error);
       return [];
     }
   }
@@ -230,7 +218,6 @@ export class ConversationService extends Disposable implements IConversationServ
       );
       return conversation || null;
     } catch (error) {
-      console.error('[ConversationService] 加载对话失败:', error);
       return null;
     }
   }
@@ -255,7 +242,6 @@ export class ConversationService extends Disposable implements IConversationServ
       // 加载当前对话
       const conversation = await this.loadConversation(conversationId);
       if (!conversation) {
-        console.warn('[ConversationService] 当前对话不存在');
         return;
       }
 
@@ -285,7 +271,6 @@ export class ConversationService extends Disposable implements IConversationServ
           conversation.name = this.truncateText(firstUserMessage.content, 20) || '新对话';
         }
         
-        console.log('[ConversationService] 持久化草稿对话:', conversationId, '名称:', conversation.name);
       }
 
       // 保存对话数据
@@ -336,7 +321,6 @@ export class ConversationService extends Disposable implements IConversationServ
         currentId: this._currentConversationId
       });
     } catch (error) {
-      console.error('[ConversationService] 保存消息失败:', error);
     }
   }
 
@@ -348,7 +332,6 @@ export class ConversationService extends Disposable implements IConversationServ
       // 更新对话数据
       const conversation = await this.loadConversation(conversationId);
       if (!conversation) {
-        console.warn('[ConversationService] 对话不存在:', conversationId);
         return;
       }
 
@@ -389,7 +372,6 @@ export class ConversationService extends Disposable implements IConversationServ
         });
       }
     } catch (error) {
-      console.error('[ConversationService] 重命名对话失败:', error);
     }
   }
 
@@ -404,8 +386,6 @@ export class ConversationService extends Disposable implements IConversationServ
       if (isPending) {
         // 草稿对话只需从内存中删除
         this._pendingConversations.delete(conversationId);
-        console.log('[ConversationService] 删除草稿对话:', conversationId);
-        
         // 草稿对话不在列表中，只需处理当前对话切换
         if (this._currentConversationId === conversationId) {
           const list = await this.getConversationList();
@@ -454,9 +434,7 @@ export class ConversationService extends Disposable implements IConversationServ
         currentId: this._currentConversationId
       });
 
-      console.log('[ConversationService] 删除对话:', conversationId);
     } catch (error) {
-      console.error('[ConversationService] 删除对话失败:', error);
     }
   }
 
@@ -498,9 +476,7 @@ export class ConversationService extends Disposable implements IConversationServ
         messages: []
       });
 
-      console.log('[ConversationService] 清空所有对话');
     } catch (error) {
-      console.error('[ConversationService] 清空对话失败:', error);
     }
   }
 
@@ -584,15 +560,8 @@ export class ConversationService extends Disposable implements IConversationServ
         messages: copiedMessages
       });
 
-      console.log('[ConversationService] 创建对话分支（草稿）:', {
-        sourceId: conversationId,
-        newId,
-        messageCount: copiedMessages.length
-      });
-
       return newId;
     } catch (error) {
-      console.error('[ConversationService] 创建对话分支失败:', error);
       throw error;
     }
   }
@@ -629,7 +598,6 @@ export class ConversationService extends Disposable implements IConversationServ
       await this.storageService.remove(
         `${STORAGE_KEYS.CONVERSATION_PREFIX}${conv.id}`
       );
-      console.log('[ConversationService] 清理旧对话:', conv.id);
     }
 
     // 截断列表

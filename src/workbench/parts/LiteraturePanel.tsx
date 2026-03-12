@@ -544,7 +544,6 @@ const ReferenceItem: React.FC<{
       // 重置当前定位索引
       setCurrentIndex(-1);
     } catch (err) {
-      console.error('Failed to search cite positions:', err);
       setCitePositions([]);
     } finally {
       setIsLocating(false);
@@ -591,7 +590,6 @@ const ReferenceItem: React.FC<{
         onShowNotification('文献已标记删除，应用文献库后生效');
       }
     } catch (err) {
-      console.error('Failed to check citations:', err);
       onShowNotification('检查引用失败');
     } finally {
       setIsCheckingCitations(false);
@@ -605,7 +603,6 @@ const ReferenceItem: React.FC<{
       await navigator.clipboard.writeText(citeCode);
       onShowNotification(`已复制: ${citeCode}`);
     } catch (err) {
-      console.error('Failed to copy:', err);
       onShowNotification('复制失败');
     }
   };
@@ -628,7 +625,6 @@ const ReferenceItem: React.FC<{
       await overleafEditor.getBridge().call('navigateToPosition', citePositions[nextIndex].pos);
       onShowNotification(`定位到引用 ${nextIndex + 1}/${citePositions.length}`);
     } catch (err) {
-      console.error('Failed to navigate:', err);
       onShowNotification('定位失败');
     }
   };
@@ -666,7 +662,6 @@ const ReferenceItem: React.FC<{
         onShowNotification(result.error || '补全失败：未找到匹配的文献');
       }
     } catch (err) {
-      console.error('Failed to enrich:', err);
       onShowNotification('补全失败: ' + (err instanceof Error ? err.message : '未知错误'));
     } finally {
       setIsEnriching(false);
@@ -1466,7 +1461,6 @@ const LiteraturePanel: React.FC<LiteraturePanelProps> = ({ onClose }) => {
         await new Promise(r => setTimeout(r, 500));
         
       } catch (err) {
-        console.error(`Failed to enrich ${ref.id}:`, err);
         failedCount++;
         setEnrichAllState(prev => prev ? {
           ...prev,
@@ -1585,7 +1579,6 @@ const LiteraturePanel: React.FC<LiteraturePanelProps> = ({ onClose }) => {
       }
       
     } catch (err) {
-      console.error('[LiteraturePanel] 应用文献库失败:', err);
       showNotification('应用失败: ' + (err instanceof Error ? err.message : '未知错误'));
     } finally {
       setIsApplying(false);

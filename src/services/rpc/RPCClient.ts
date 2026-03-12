@@ -87,7 +87,6 @@ export class RPCClient extends Disposable implements IRPCClient {
   private handleResponse(response: RPCResponse): void {
     const pending = this.pendingRequests.get(response.id);
     if (!pending) {
-      console.warn('Received response for unknown request:', response.id);
       return;
     }
 

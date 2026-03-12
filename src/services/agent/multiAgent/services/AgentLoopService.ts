@@ -32,7 +32,6 @@ import {
   generateMessageId
 } from '../types';
 import { MultiAgentToolRegistry } from '../tools/MultiAgentToolRegistry';
-import { logger } from '../../../../utils/logger';
 
 // ==================== 事件类型定义 ====================
 
@@ -107,8 +106,6 @@ export class AgentLoopService {
     // 解析工具：支持工具名称列表或工具实例列表
     const tools = this.resolveTools(options.tools);
     
-    logger.debug(`[AgentLoopService] 启动 Agent: ${initialContext.agentName}`);
-    logger.debug(`[AgentLoopService] 模型: ${modelId}, 工具数量: ${tools.length}`);
 
     // 初始化上下文
     const context: AgentContext = {
@@ -125,7 +122,6 @@ export class AgentLoopService {
     try {
       // Agent Loop 主循环
       while (context.iteration < maxIterations && !this.aborted) {
-        logger.debug(`[AgentLoopService] ${context.agentName} 第 ${context.iteration + 1} 轮迭代`);
 
         // 为本轮 LLM 调用生成一个“子 messageId”，避免复用同一个 messageId 导致 thinking 被覆盖（plan 模式常见）
         // 约定：rootId::agent_<name>::ts_<ms>::iter_<n>
@@ -158,7 +154,6 @@ export class AgentLoopService {
 
         // 检查是否已被中断
         if (this.aborted) {
-          logger.debug(`[AgentLoopService] ${context.agentName} 已中断`);
           context.status = 'aborted';
           return this.buildResult(false, context, '', 'Agent 执行已中断');
         }
@@ -190,7 +185,6 @@ export class AgentLoopService {
         // 6. 检查是否有工具调用
         if (!assistantMessage.toolCalls || assistantMessage.toolCalls.length === 0) {
           // 没有工具调用，Agent 完成
-          logger.debug(`[AgentLoopService] ${context.agentName} 完成（无工具调用）`);
           context.status = 'completed';
           context.summary = assistantMessage.content;
           break;
@@ -204,14 +198,12 @@ export class AgentLoopService {
 
       // 如果是外部手动终止（abort），循环会退出到这里
       if (this.aborted) {
-        logger.debug(`[AgentLoopService] ${context.agentName} 已中断（loop 退出）`);
         context.status = 'aborted';
         return this.buildResult(false, context, '', 'Agent 执行已中断');
       }
 
       // 检查是否达到最大迭代次数
       if (context.iteration >= maxIterations && context.status === 'running') {
-        logger.debug(`[AgentLoopService] ${context.agentName} 达到最大迭代次数`);
         const limitMessage = this.createMessage(
           'assistant',
           `已达到最大迭代次数（${maxIterations}）。`
@@ -230,7 +222,6 @@ export class AgentLoopService {
       return result;
 
     } catch (error) {
-      console.error(`[AgentLoopService] ${context.agentName} 执行错误:`, error);
       context.status = 'error';
       this._onError.fire(error instanceof Error ? error : new Error(String(error)));
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -248,7 +239,6 @@ export class AgentLoopService {
    * 中断当前执行
    */
   abort(): void {
-    logger.debug('[AgentLoopService] 中断执行');
     this.aborted = true;
     if (this.abortController) {
       this.abortController.abort();
@@ -285,7 +275,6 @@ export class AgentLoopService {
     // 检查是否为字符串数组（工具名称列表）
     if (typeof tools[0] === 'string') {
       const toolNames = tools as string[];
-      logger.debug(`[AgentLoopService] 解析工具名称列表: ${toolNames.join(', ')}`);
       return this.toolRegistry.getToolsByNames(toolNames);
     }
 
@@ -403,7 +392,6 @@ export class AgentLoopService {
     options: AgentLoopOptions,
     streamMessageId?: string
   ): Promise<void> {
-    logger.debug(`[AgentLoopService] 处理 ${toolCalls.length} 个工具调用`);
 
     // 🔧 工具调用调试开关
     const debugToolCalls =
@@ -415,29 +403,20 @@ export class AgentLoopService {
 
       // 🔧 打印工具调用请求详情
       if (debugToolCalls) {
-        console.group(`%c[ToolCall Debug] 🚀 AgentLoopService 准备执行工具: ${toolName}`, 'color:#9C27B0;font-weight:bold');
-        console.log('toolCallId:', toolCallId);
-        console.log('所属 Agent:', context.agentName);
-        console.log('参数类型:', typeof toolArgs);
-        console.log('参数值:', toolArgs);
         if (toolArgs && typeof toolArgs === 'object') {
           const keys = Object.keys(toolArgs);
-          console.log('参数 keys:', keys);
           for (const key of keys) {
             const val = toolArgs[key];
             const display = typeof val === 'string'
               ? (val.length > 200 ? val.slice(0, 200) + `...(${val.length}字符)` : val)
               : val;
-            console.log(`  📌 ${key} (${typeof val}):`, display);
           }
         }
-        console.groupEnd();
       }
 
       // 查找工具
       const tool = tools.find(t => t.name === toolName);
       if (!tool) {
-        console.warn(`[AgentLoopService] 未找到工具: ${toolName}`);
         const errorMessage = this.createToolMessage(
           toolCallId,
           toolName,
@@ -458,22 +437,11 @@ export class AgentLoopService {
         const extraKeys = argKeys.filter((k: string) => !Object.keys(properties).includes(k));
 
         if (missingRequired.length > 0 || extraKeys.length > 0) {
-          console.group(`%c[ToolCall Debug] ⚠️ 参数与 Schema 不匹配: ${toolName}`, 'color:#F44336;font-weight:bold');
           if (missingRequired.length > 0) {
-            console.warn('❌ 缺少必需参数:', missingRequired);
           }
           if (extraKeys.length > 0) {
-            console.warn('⚠️ 多余参数 (schema 中未定义):', extraKeys);
           }
-          console.log('Schema 定义的参数:', Object.keys(properties));
-          console.log('Schema required:', required);
-          console.log('实际传入的参数:', argKeys);
-          console.groupEnd();
         } else {
-          console.log(
-            `%c[ToolCall Debug] ✅ ${toolName} 参数与 Schema 匹配`,
-            'color:#4CAF50'
-          );
         }
       }
 
@@ -499,8 +467,6 @@ export class AgentLoopService {
         const result = await tool.execute(toolArgs, context);
 
         // 打印工具执行结果
-        logger.debug(`[AgentLoopService] ✅ 工具 ${toolName} 执行成功`);
-        logger.debug('📥 结果:', JSON.stringify(result.data || result, null, 2));
 
         // 通知 UI：工具执行完成
         if (options.uiStreamConfig?.enabled && options.uiStreamConfig.messageId) {
@@ -527,8 +493,6 @@ export class AgentLoopService {
         toolCall.result = result.data;
 
       } catch (error) {
-        console.error(`[AgentLoopService] ❌ 工具 ${toolName} 执行失败:`, error);
-
         // 通知 UI：工具执行出错
         if (options.uiStreamConfig?.enabled && options.uiStreamConfig.messageId) {
           this.uiStreamService.pushToolCall({

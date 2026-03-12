@@ -35,7 +35,6 @@ import { AnthropicProvider } from './adapters/AnthropicProvider';
 import { CodexOAuthProvider } from './adapters/CodexOAuthProvider';
 import type { APIConfig } from './adapters/BaseLLMProvider';
 import { codexOAuthService } from '../auth/CodexOAuthService';
-import { logger } from '../../utils/logger';
 
 /**
  * LLMService 实现
@@ -50,11 +49,6 @@ export class LLMService implements ILLMService {
     private readonly configService: IConfigurationService,
     private readonly uiStreamService: IUIStreamService
   ) {
-    // console.log('[LLMService] 依赖注入成功', {
-    //   hasModelRegistry: !!modelRegistry,
-    //   hasConfigService: !!configService,
-    //   hasUIStreamService: !!uiStreamService
-    // });
   }
 
   // ==================== 公共方法 ====================
@@ -97,20 +91,11 @@ export class LLMService implements ILLMService {
     messages: LLMMessage[],
     config: LLMConfig
   ): Promise<LLMFinalMessage> {
-    logger.debug('[LLMService] managerChat 开始调用', {
-      modelId: config.modelId,
-      messageCount: messages.length
-    });
 
     const { providerType, apiConfig } = await this.resolveModelAndConfig(config.modelId);
     const provider = await this.getProvider(providerType, apiConfig);
     const result = await provider.managerChat(messages, config);
 
-    logger.debug('[LLMService] managerChat 调用完成', {
-      contentLength: result.content?.length || 0,
-      hasThinking: !!result.thinking,
-      toolCallsCount: result.toolCalls?.length || 0
-    });
 
     return result;
   }
@@ -135,7 +120,7 @@ export class LLMService implements ILLMService {
 
     // 用户配置的模型（每个模型自带凭证）
     if (userModel?.apiKey) {
-      const providerType = userModel.provider === 'gemini' ? 'gemini' : 'openai';
+      const providerType = userModel.provider; // 直接使用用户配置的 provider（openai/gemini/deepseek/moonshot）
       return {
         providerType,
         apiConfig: { apiKey: userModel.apiKey, baseUrl: userModel.baseUrl }
@@ -201,6 +186,9 @@ export class LLMService implements ILLMService {
         break;
       
       case 'openai-compatible':
+      case 'deepseek':
+      case 'moonshot':
+      case 'qwen':
         provider = new OpenAICompatibleProvider(
           this.modelRegistry,
           this.uiStreamService,

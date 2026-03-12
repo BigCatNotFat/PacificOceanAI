@@ -34,10 +34,6 @@ export class PromptService implements IPromptService {
     private readonly toolService: IToolService,
     private readonly modelRegistry: IModelRegistryService
   ) {
-    console.log('[PromptService] 依赖注入成功', {
-      hasToolService: !!toolService,
-      hasModelRegistry: !!modelRegistry
-    });
   }
 
   // ==================== 工具管理 ====================
@@ -68,7 +64,6 @@ This is a snapshot taken at conversation start. Line numbers may shift if files 
 ${outline}
 </project_outline>`;
     } catch (error) {
-      console.warn('[PromptService] 构建项目大纲失败:', error);
       return '';
     }
   }
@@ -129,7 +124,6 @@ ${outline}
     if (options.systemPromptOverride) {
       // 使用自定义覆盖
       systemPrompt = options.systemPromptOverride;
-      console.log('[PromptService] 使用自定义系统提示词覆盖');
     } else {
       // 检查历史中是否已有系统提示词
       const existingSystemMessage = history.find(m => m.role === 'system');
@@ -137,14 +131,9 @@ ${outline}
       if (existingSystemMessage && !options.forceRebuildSystemPrompt) {
         // 复用历史中保存的系统提示词
         systemPrompt = existingSystemMessage.content;
-        console.log('[PromptService] 复用历史中的系统提示词');
       } else {
         // 构建新的系统提示词
         systemPrompt = await this.buildSystemPrompt(mode, options.modelId);
-        console.log('[PromptService] 构建新的系统提示词', {
-          hasExisting: !!existingSystemMessage,
-          forceRebuild: options.forceRebuildSystemPrompt
-        });
       }
     }
     
@@ -538,7 +527,6 @@ ${text}
         projectName = name;
       }
     } catch (error) {
-      console.warn('[PromptService] 无法获取项目名称:', error);
     }
 
     return { website, date, projectName };
@@ -559,7 +547,6 @@ ${text}
           stats.forEach(s => statsMap.set(s.path, s));
         }
       } catch (e) {
-        console.warn('[PromptService] 获取文件统计信息失败:', e);
       }
 
       // REST API 不返回空文件夹，通过 Bridge listFiles 补全
@@ -640,7 +627,6 @@ ${text}
       
       return output.trim();
     } catch (error) {
-      console.warn('[PromptService] 无法获取项目文件结构:', error);
       return 'Unable to retrieve project structure.';
     }
   }
@@ -680,7 +666,6 @@ ${text}
       }
       return result;
     } catch (error) {
-      console.warn('[PromptService] getEmptyFolderPaths failed:', error);
       return [];
     }
   }
@@ -1047,7 +1032,6 @@ Keep responses clear and to the point.`;
       // 这些通常是 UI 占位消息（如 AgentService 创建的流式占位），不应发送给 LLM
       // 避免某些厂商（如 Gemini）拒绝空消息导致 400 错误
       if (!msg.content?.trim() && (!msg.toolCalls || msg.toolCalls.length === 0)) {
-        console.log('[PromptService] 跳过空消息', { role: msg.role, id: msg.id });
         continue;
       }
 
@@ -1095,7 +1079,6 @@ Keep responses clear and to the point.`;
           });
         }
         llmContent = parts;
-        console.log(`[PromptService] 用户消息附带 ${msg.images.length} 张图片，使用多模态格式`);
       }
 
       const llmMsg: LLMMessage = {
@@ -1153,7 +1136,6 @@ Keep responses clear and to the point.`;
         role: 'user',
         content: parts
       });
-      console.log(`[PromptService] 注入 ${pendingImages.length} 张图片作为多模态用户消息`);
     }
 
     return llmMessages;

@@ -83,7 +83,6 @@ export class ToolRegistry {
     for (const tool of ToolRegistry.BUILTIN_TOOLS) {
       this.register(tool);
     }
-    console.log(`[ToolRegistry] 已注册 ${this.tools.size} 个工具`);
   }
 
   /**
@@ -94,14 +93,9 @@ export class ToolRegistry {
     const metadata = tool.getMetadata();
     
     if (this.tools.has(metadata.name)) {
-      console.warn(`[ToolRegistry] 工具 "${metadata.name}" 已存在，将被覆盖`);
     }
     
     this.tools.set(metadata.name, tool);
-    console.log(
-      `[ToolRegistry] 已注册工具: ${metadata.name} ` +
-      `(模式: ${metadata.modes.join(', ')}, 需要审批: ${metadata.needApproval})`
-    );
   }
 
   /**
@@ -332,7 +326,6 @@ export class ToolRegistry {
   unregister(name: string): boolean {
     const deleted = this.tools.delete(name);
     if (deleted) {
-      console.log(`[ToolRegistry] 已取消注册工具: ${name}`);
     }
     return deleted;
   }
@@ -342,7 +335,6 @@ export class ToolRegistry {
    */
   clear(): void {
     this.tools.clear();
-    console.log('[ToolRegistry] 已清空所有工具');
   }
 
   /**

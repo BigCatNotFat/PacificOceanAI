@@ -19,7 +19,6 @@
 
 import type { ITool, ToolMetadata } from '../../tools/base/ITool';
 import type { MultiAgentTool, MultiAgentToolResult, AgentContext } from '../types';
-import { logger } from '../../../../utils/logger';
 
 // ==================== 导入工具实现 ====================
 // 从现有的 implementations 文件夹导入工具
@@ -122,7 +121,6 @@ export class MultiAgentToolRegistry {
     // 注册 MultiAgent 专用工具（MultiAgentTool 类型）
     this.registerTool(callAgentTool);
     
-    logger.debug(`[MultiAgentToolRegistry] 已注册 ${this.tools.size} 个 MultiAgent 工具`);
   }
 
   /**
@@ -181,7 +179,6 @@ export class MultiAgentToolRegistry {
       if (tool) {
         tools.push(tool);
       } else {
-        console.warn(`[MultiAgentToolRegistry] 未找到工具: ${name}`);
       }
     }
 
@@ -237,10 +234,8 @@ export class MultiAgentToolRegistry {
    */
   registerTool(tool: MultiAgentTool): void {
     if (this.tools.has(tool.name)) {
-      console.warn(`[MultiAgentToolRegistry] 工具 "${tool.name}" 已存在，将被覆盖`);
     }
     this.tools.set(tool.name, tool);
-    logger.debug(`[MultiAgentToolRegistry] 已注册工具: ${tool.name}`);
   }
 
   /**
@@ -263,7 +258,6 @@ export class MultiAgentToolRegistry {
   unregisterTool(name: string): boolean {
     const deleted = this.tools.delete(name);
     if (deleted) {
-      logger.debug(`[MultiAgentToolRegistry] 已取消注册工具: ${name}`);
     }
     return deleted;
   }

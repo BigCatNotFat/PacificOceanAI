@@ -173,7 +173,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
       data: { enabled: newState }
     }, '*');
     
-    console.log('[Sidebar] Selection tooltip toggled:', newState);
   }, [selectionTooltipEnabled]);
   
   // 切换 cite tooltip 开关
@@ -190,7 +189,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
       data: { enabled: newState }
     }, '*');
     
-    console.log('[Sidebar] Cite tooltip toggled:', newState);
   }, [citeTooltipEnabled]);
   
   useSidebarResize({ sidebarRef, handleRef, onWidthChange });
@@ -203,7 +201,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
         chrome.runtime.openOptionsPage(() => {
           // 如果出错（例如在不支持的环境），尝试回退
           if (chrome.runtime.lastError) {
-            console.warn('openOptionsPage failed, falling back to window.open:', chrome.runtime.lastError);
             window.open(chrome.runtime.getURL('src/extension/options/index.html'), '_blank');
           }
         });
@@ -211,7 +208,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, width, onToggle, onClose, onW
         window.open(chrome.runtime.getURL('src/extension/options/index.html'), '_blank');
       }
     } catch (e) {
-      console.error('Error opening settings:', e);
       // 最后的尝试
       if (typeof chrome !== 'undefined' && chrome.runtime) {
         window.open(chrome.runtime.getURL('src/extension/options/index.html'), '_blank');

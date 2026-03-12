@@ -22,7 +22,6 @@ import type { ToolMetadata, ToolExecutionResult } from '../base/ITool';
 import { overleafEditor } from '../../../editor/OverleafEditor';
 import { diffSuggestionService } from '../../../editor/DiffSuggestionService';
 import type { CreateSegmentSuggestionInput } from '../../../../platform/editor/IDiffSuggestionService';
-import { logger } from '../../../../utils/logger';
 
 /**
  * 匹配位置信息（片段级）
@@ -387,16 +386,11 @@ Examples:
         }
       }
 
-      logger.debug('[SearchReplaceTool] execute called:', {
-        operationsCount: operations.length,
-        explanation: args.explanation
-      });
 
       // 依次执行每个操作
       const fileResults: Array<{ success: boolean; data?: any; error?: string }> = [];
 
       for (let i = 0; i < operations.length; i++) {
-        logger.debug(`[SearchReplaceTool] Processing operation ${i + 1}/${operations.length}: ${operations[i].target_file}`);
         const result = await this.executeForFile(operations[i], toolCallId);
         fileResults.push(result);
       }
@@ -434,7 +428,6 @@ Examples:
         duration: Date.now() - startTime
       };
     } catch (error) {
-      console.error('[SearchReplaceTool] Error:', error);
       return {
         ...this.handleError(error),
         duration: Date.now() - startTime
@@ -465,7 +458,6 @@ Examples:
       const fileInfo = await overleafEditor.file.getInfo();
       return fileInfo.fileName;
     } catch (error) {
-      console.error('[SearchReplaceTool] Failed to get current file name:', error);
       return null;
     }
   }
