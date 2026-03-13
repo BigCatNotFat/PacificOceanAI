@@ -1001,6 +1001,40 @@
   color: var(--error);
 }
 
+.tool-result-batch-errors {
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-result-batch-error-item {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--error);
+  word-break: break-word;
+}
+
+.tool-result-debug {
+  margin: 8px 0 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-family: var(--font-monospace);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
 /* 网络搜索结果样式 */
 .tool-result-web-items {
   display: flex;

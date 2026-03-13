@@ -101,7 +101,9 @@ function mapServiceMessageToUI(
       role,
       content: mainContent,
       isHtml: false,
-      type: 'normal'
+      type: 'normal',
+      stoppedByUser: message.stoppedByUser,
+      interrupted: message.interrupted
     };
 
     // 如果用户消息附带了图片，传递给 UI 层展示缩略图

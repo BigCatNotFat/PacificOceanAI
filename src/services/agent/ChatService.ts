@@ -164,10 +164,20 @@ export class ChatService implements IChatService {
    * Ensure no pending/streaming messages linger after failure/abort.
    * This prevents UI from being stuck in "generating" state.
    */
+  private clearUIStreamingState(conversationId: string, messageId: string): void {
+    // Force UI stream buffers to emit done so React hook can release stale entries.
+    this.uiStreamService.pushThinking({ conversationId, messageId, delta: '', done: true });
+    this.uiStreamService.pushContent({ conversationId, messageId, delta: '', done: true });
+  }
+
   private finalizeInFlightMessages(
     session: SessionState,
     status: 'error' | 'aborted',
-    errorMessage?: string
+    errorMessage?: string,
+    options?: {
+      clearStreamingState?: boolean;
+      stoppedByUser?: boolean;
+    }
   ): void {
     for (const msg of session.messages) {
       // Retry metadata is runtime-only and should not survive failures.
@@ -191,18 +201,44 @@ export class ChatService implements IChatService {
         (msg.content?.trim().length ?? 0) > 0 ||
         (msg.thinking?.trim().length ?? 0) > 0;
 
-      if (hasPartialOutput) {
+      if (hasPartialOutput || options?.stoppedByUser) {
         // Keep partial output visible and reusable for follow-up "continue".
         msg.status = 'completed';
         msg.interrupted = true;
+        msg.stoppedByUser = options?.stoppedByUser ? true : undefined;
         msg.error = undefined;
       } else {
         msg.status = status;
+        msg.stoppedByUser = options?.stoppedByUser ? true : undefined;
         if (status === 'error' && errorMessage && !msg.error) {
           msg.error = errorMessage;
         }
       }
+
+      if (options?.clearStreamingState) {
+        this.clearUIStreamingState(session.conversationId, msg.id);
+      }
     }
+  }
+
+  private markCurrentTurnAsStoppedByUser(session: SessionState): void {
+    const startIndex = session.currentTurnStartIndex ?? 0;
+    let target = [...session.messages]
+      .slice(startIndex)
+      .reverse()
+      .find((msg) => msg.role === 'assistant' && msg.status !== 'error');
+
+    if (!target) {
+      target = this.createMessage(session, 'assistant', '');
+      target.status = 'completed';
+      session.messages.push(target);
+    }
+
+    target.status = 'completed';
+    target.interrupted = true;
+    target.stoppedByUser = true;
+    target.error = undefined;
+    this.clearUIStreamingState(session.conversationId, target.id);
   }
 
   private isContinueRequest(input: string): boolean {
@@ -247,6 +283,9 @@ export class ChatService implements IChatService {
         }
         // 移除失败的消息（可选）
         if (msg.status === 'error' || msg.status === 'aborted') {
+          if (msg.role === 'tool' && msg.toolCalls && msg.toolCalls.length > 0) {
+            return true;
+          }
           return false;
         }
         return true;
@@ -254,7 +293,7 @@ export class ChatService implements IChatService {
       .map(msg => {
         // 剔除 assistant 消息的 thinking
         if (msg.role === 'assistant') {
-          const { thinking, retryInfo, interrupted, ...rest } = msg;
+          const { thinking, retryInfo, interrupted, stoppedByUser, ...rest } = msg;
           return rest;
         }
         return { ...msg };
@@ -378,7 +417,7 @@ export class ChatService implements IChatService {
         assistantMsg.error = errorText;
       }
 
-      this.finalizeInFlightMessages(session, 'error', errorText);
+      this.finalizeInFlightMessages(session, 'error', errorText, { clearStreamingState: true });
       session.isProcessing = false;
       this._onDidMessageUpdate.fire({
         conversationId,
@@ -574,7 +613,7 @@ export class ChatService implements IChatService {
         }
         // 尝试找到并更新正在流式的消息状态，避免 UI 一直 loading
         const errorText = error instanceof Error ? error.message : String(error);
-        this.finalizeInFlightMessages(session, 'error', errorText);
+        this.finalizeInFlightMessages(session, 'error', errorText, { clearStreamingState: true });
 
         const errorMessage = this.createMessage(session, 'assistant', `抱歉，发生了错误: ${error.message}`);
         errorMessage.status = 'error';
@@ -613,7 +652,7 @@ export class ChatService implements IChatService {
       const errorText = error instanceof Error ? error.message : String(error);
       errorMessage.error = errorText;
       session.messages.push(errorMessage);
-      this.finalizeInFlightMessages(session, 'error', errorText);
+      this.finalizeInFlightMessages(session, 'error', errorText, { clearStreamingState: true });
       session.isProcessing = false;
       this._onDidMessageUpdate.fire({
         conversationId,
@@ -660,7 +699,11 @@ export class ChatService implements IChatService {
       session.currentLoopId = undefined;
     }
 
-    this.finalizeInFlightMessages(session, 'aborted');
+    this.finalizeInFlightMessages(session, 'aborted', undefined, {
+      clearStreamingState: true,
+      stoppedByUser: true
+    });
+    this.markCurrentTurnAsStoppedByUser(session);
     session.isProcessing = false;
     session.currentTurnStartIndex = undefined;
 

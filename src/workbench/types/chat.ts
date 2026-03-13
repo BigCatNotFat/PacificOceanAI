@@ -28,5 +28,9 @@ export type ChatMessage = {
   toolCalls?: StoredToolCall[];
   /** 附带的图片列表（base64 data URL），用于多模态输入 */
   images?: string[];
+  /** 是否是用户手动点击“停止生成”导致的中断 */
+  stoppedByUser?: boolean;
+  /** 是否是中途被中断的输出（用于“继续生成”等语义） */
+  interrupted?: boolean;
 };
 

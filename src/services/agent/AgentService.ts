@@ -133,7 +133,7 @@ export class AgentService implements IAgentService {
 
   private async approveToolCall(loopId: string, toolCallId: string): Promise<void> {
     const context = this.activeLoops.get(loopId);
-    if (!context) {
+    if (!context || context.aborted) {
       return;
     }
 
@@ -145,10 +145,16 @@ export class AgentService implements IAgentService {
 
     try {
       // 执行工具
-      const result = await this.toolService.executeTool(
-        pendingCall.toolName,
-        pendingCall.arguments
+      const result = await this.waitForAbort(
+        this.toolService.executeTool(
+          pendingCall.toolName,
+          pendingCall.arguments
+        ),
+        context.abortController?.signal
       );
+      if (context.aborted) {
+        return;
+      }
 
       // 移除 pending 记录
       context.pendingToolCalls.delete(toolCallId);
@@ -162,7 +168,7 @@ export class AgentService implements IAgentService {
 
   private async rejectToolCall(loopId: string, toolCallId: string): Promise<void> {
     const context = this.activeLoops.get(loopId);
-    if (!context) {
+    if (!context || context.aborted) {
       return;
     }
 
@@ -245,7 +251,6 @@ export class AgentService implements IAgentService {
           llmMessages,
           llmConfig
         );
-        context.abortController = undefined;
         
         // 输出大模型返回的内容到控制台
         if (finalResult.thinking) {
@@ -300,6 +305,9 @@ export class AgentService implements IAgentService {
         );
 
         if (!shouldContinue) {
+          if (context.aborted) {
+            return;
+          }
           // 有需要审批的工具，暂停循环等待用户操作
           context.status = 'waiting_approval';
           return; // 等待 controller.approveToolCall 或 controller.rejectToolCall
@@ -362,6 +370,9 @@ export class AgentService implements IAgentService {
       localStorage.getItem('overleaf_ai_debug_tool_calls') === '1';
 
     for (const toolCall of toolCalls) {
+      if (context.aborted) {
+        return false;
+      }
       const { id: toolCallId, name: toolName, arguments: toolArgs } = toolCall;
 
       // 🔧 打印工具调用请求详情
@@ -406,58 +417,78 @@ export class AgentService implements IAgentService {
           messageId: context.messages[context.messages.length - 1]?.id || ''
         });
 
-        // 创建 Promise 等待用户操作
-        await new Promise<any>((resolve, reject) => {
-          context.pendingToolCalls.set(toolCallId, {
-            id: toolCallId,
-            toolName,
-            arguments: toolArgs,
-            messageId: context.messages[context.messages.length - 1]?.id || '',
-            resolve,
-            reject
-          });
-        }).then(
-          (result) => {
-            const resultObj = (typeof result === 'object' && result !== null) ? result as any : undefined;
-            const payload = resultObj?.data ?? result;
-            const declaredSuccess = typeof resultObj?.success === 'boolean' ? resultObj.success : true;
-            const declaredError = typeof resultObj?.error === 'string' ? resultObj.error : undefined;
+        try {
+          // 创建 Promise 等待用户操作；中断时通过 abort signal 立即返回
+          const approvedResult = await this.waitForAbort(
+            new Promise<any>((resolve, reject) => {
+              context.pendingToolCalls.set(toolCallId, {
+                id: toolCallId,
+                toolName,
+                arguments: toolArgs,
+                messageId: context.messages[context.messages.length - 1]?.id || '',
+                resolve,
+                reject
+              });
+            }),
+            context.abortController?.signal
+          );
 
-            // 输出审批通过的工具执行结果到控制台
-            const resultStr = JSON.stringify(payload, null, 2);
-            resultStr.split('\n').forEach(line => {
-              const truncated = line.length > 76 ? line.substring(0, 73) + '...' : line;
-            });
-            // 工具执行完成（可能是 success=false 的业务失败）
-            const toolMessage = this.createMessage('tool', JSON.stringify(payload));
-            toolMessage.status = declaredSuccess ? 'completed' : 'error';
-            if (!declaredSuccess && declaredError) {
-              toolMessage.error = declaredError;
-            }
-            toolMessage.toolCalls = [{
-              id: toolCallId,
-              name: toolName,
-              arguments: toolArgs,
-              result: resultObj?.data,
-              status: declaredSuccess ? 'completed' : 'error'
-            }];
-            context.messages.push(toolMessage);
-            context.workingMemory.push(toolMessage); // 加入工作记忆
-            context.onUpdateEmitter.fire([...context.messages]);
-          },
-          (error) => {
-            // 输出工具被拒绝的信息到控制台
-            const errorStr = String(error);
-            errorStr.split('\n').forEach(line => {
-              const truncated = line.length > 76 ? line.substring(0, 73) + '...' : line;
-            });
-            // 用户拒绝或执行失败
-            const errorMessage = this.createMessage('assistant', `用户拒绝了工具调用: ${toolName}`);
-            errorMessage.status = 'completed';
-            context.messages.push(errorMessage);
-            context.onUpdateEmitter.fire([...context.messages]);
+          if (context.aborted) {
+            return false;
           }
-        );
+
+          const resultObj = (typeof approvedResult === 'object' && approvedResult !== null)
+            ? approvedResult as any
+            : undefined;
+          const payload = resultObj?.data ?? approvedResult;
+          const declaredSuccess = typeof resultObj?.success === 'boolean' ? resultObj.success : true;
+          const declaredError = typeof resultObj?.error === 'string' ? resultObj.error : undefined;
+
+          const toolMessage = this.createMessage('tool', JSON.stringify(payload));
+          toolMessage.status = declaredSuccess ? 'completed' : 'error';
+          if (!declaredSuccess && declaredError) {
+            toolMessage.error = declaredError;
+          }
+          toolMessage.toolCalls = [{
+            id: toolCallId,
+            name: toolName,
+            arguments: toolArgs,
+            result: resultObj?.data,
+            status: declaredSuccess ? 'completed' : 'error'
+          }];
+          context.messages.push(toolMessage);
+          context.workingMemory.push(toolMessage); // 加入工作记忆
+          context.onUpdateEmitter.fire([...context.messages]);
+        } catch (error) {
+          if (context.aborted || this.isAbortError(error)) {
+            return false;
+          }
+
+          const rejectedPayload = {
+            success: false,
+            rejected: true,
+            error: String(error)
+          };
+          const rejectedToolMessage = this.createMessage('tool', JSON.stringify(rejectedPayload));
+          rejectedToolMessage.status = 'completed';
+          rejectedToolMessage.toolCalls = [{
+            id: toolCallId,
+            name: toolName,
+            arguments: toolArgs,
+            result: rejectedPayload,
+            status: 'rejected'
+          }];
+          context.messages.push(rejectedToolMessage);
+
+          const errorMessage = this.createMessage('assistant', `用户拒绝了工具调用: ${toolName}`);
+          errorMessage.status = 'completed';
+          context.messages.push(errorMessage);
+          context.onUpdateEmitter.fire([...context.messages]);
+        }
+
+        if (context.aborted) {
+          return false;
+        }
 
         // 有审批流程，暂停循环
         return false;
@@ -484,7 +515,18 @@ export class AgentService implements IAgentService {
         }
 
         try {
-          const result = await this.toolService.executeTool(toolName, toolArgs);
+          if (context.aborted) {
+            return false;
+          }
+
+          const result = await this.waitForAbort(
+            this.toolService.executeTool(toolName, toolArgs),
+            context.abortController?.signal
+          );
+          if (context.aborted) {
+            return false;
+          }
+
           const resultObj = (typeof result === 'object' && result !== null) ? result as any : undefined;
           const payload = resultObj?.data ?? result;
           const declaredSuccess = typeof resultObj?.success === 'boolean' ? resultObj.success : true;
@@ -507,14 +549,16 @@ export class AgentService implements IAgentService {
           }
 
           if (!declaredSuccess) {
-            this.uiStreamService.pushToolCall({
-              messageId,
-              toolCallId,
-              phase: 'error',
-              name: toolName,
-              resultDelta: JSON.stringify(payload),
-              error: declaredError || `Tool ${toolName} returned success=false`
-            });
+            if (!context.aborted) {
+              this.uiStreamService.pushToolCall({
+                messageId,
+                toolCallId,
+                phase: 'error',
+                name: toolName,
+                resultDelta: JSON.stringify(payload),
+                error: declaredError || `Tool ${toolName} returned success=false`
+              });
+            }
 
             const toolMessage = this.createMessage('tool', JSON.stringify(payload));
             toolMessage.status = 'error';
@@ -534,15 +578,18 @@ export class AgentService implements IAgentService {
           }
 
           // 通知 UI：工具执行完成
-          this.uiStreamService.pushToolCall({
-            messageId,
-            toolCallId,
-            phase: 'end',
-            name: toolName,
-            resultDelta: JSON.stringify(payload)
-          });
+          if (!context.aborted) {
+            this.uiStreamService.pushToolCall({
+              messageId,
+              toolCallId,
+              phase: 'end',
+              name: toolName,
+              resultDelta: JSON.stringify(payload)
+            });
+          }
 
           const toolMessage = this.createMessage('tool', JSON.stringify(payload));
+          toolMessage.status = 'completed';
           toolMessage.toolCalls = [{
             id: toolCallId,
             name: toolName,
@@ -554,6 +601,10 @@ export class AgentService implements IAgentService {
           context.workingMemory.push(toolMessage); // 加入工作记忆
           context.onUpdateEmitter.fire([...context.messages]);
         } catch (error) {
+          if (context.aborted || this.isAbortError(error)) {
+            return false;
+          }
+
           // 输出工具执行错误到控制台
           const errorStr = String(error);
           errorStr.split('\n').forEach(line => {
@@ -686,6 +737,39 @@ export class AgentService implements IAgentService {
     });
   }
 
+  private waitForAbort<T>(promise: Promise<T>, abortSignal?: AbortSignal): Promise<T> {
+    if (!abortSignal) {
+      return promise;
+    }
+
+    if (abortSignal.aborted) {
+      return Promise.reject(new Error('Aborted'));
+    }
+
+    return new Promise<T>((resolve, reject) => {
+      const onAbort = () => {
+        cleanup();
+        reject(new Error('Aborted'));
+      };
+
+      const cleanup = () => {
+        abortSignal.removeEventListener('abort', onAbort);
+      };
+
+      abortSignal.addEventListener('abort', onAbort);
+      promise.then(
+        (value) => {
+          cleanup();
+          resolve(value);
+        },
+        (error) => {
+          cleanup();
+          reject(error);
+        }
+      );
+    });
+  }
+
   /**
    * 根据模型能力和模式选择工具
    */
@@ -751,6 +835,8 @@ export class AgentService implements IAgentService {
       return;
     }
 
+    context.aborted = true;
+    context.status = 'aborted';
 
     if (context.abortController) {
       try {
@@ -760,8 +846,12 @@ export class AgentService implements IAgentService {
       context.abortController = undefined;
     }
 
-    context.aborted = true;
-    context.status = 'aborted';
+    // 让审批等待 Promise 立即结束，避免 UI 继续停在 waiting/processing
+    for (const pendingCall of context.pendingToolCalls.values()) {
+      pendingCall.reject(new Error('Aborted'));
+    }
+    context.pendingToolCalls.clear();
+
     this.activeLoops.delete(loopId);
   }
 
@@ -833,3 +923,4 @@ interface LoopContext {
 
 // 导出服务标识符
 export { IAgentServiceId };
+

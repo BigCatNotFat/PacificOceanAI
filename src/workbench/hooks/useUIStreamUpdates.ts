@@ -126,7 +126,7 @@ export function useUIStreamUpdates() {
           setTimeout(() => {
             setStreamingBuffers((current) => {
               const updated = new Map(current);
-              // Don't delete immediately - keep final state for rendering
+              updated.delete(event.messageId);
               return updated;
             });
           }, 100);

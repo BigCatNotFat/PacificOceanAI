@@ -88,6 +88,8 @@ export interface ChatMessage {
   };
   /** Whether this assistant output was interrupted mid-stream */
   interrupted?: boolean;
+  /** Whether this assistant output was manually stopped by user */
+  stoppedByUser?: boolean;
   /** 工具调用信息 */
   toolCalls?: ToolCall[];
   /** 消息状态 */

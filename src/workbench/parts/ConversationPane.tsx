@@ -237,7 +237,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
   const [availableModels, setAvailableModels] = useState<AIModelConfig[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [thinkingStates, setThinkingStates] = useState<Record<string, boolean>>({});
-  const [chatMode, setChatMode] = useState<'agent' | 'chat' | 'normal' | 'plan'>('agent');
+  const [chatMode, setChatMode] = useState<'agent' | 'chat' | 'normal'>('agent');
   const [hasApiKey, setHasApiKey] = useState<boolean>(false);
   const [isCheckingApiKey, setIsCheckingApiKey] = useState<boolean>(true);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
@@ -473,7 +473,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
           mode: chatMode,
           modelId: selectedModel,
           contextItems,
-          maxIterations: chatMode === 'agent' ? 100 : chatMode === 'plan' ? 200 : 10,
+          maxIterations: chatMode === 'agent' ? 100 : 10,
           conversationId: convId
         },
         attachedImages.length > 0 ? attachedImages : undefined
@@ -796,6 +796,11 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                         <MarkdownRenderer content={msg.content} />
                       )}
                     </div>
+                    {extMsg.stoppedByUser && !isTemporaryMessage && (
+                      <div className="ai-warning-box">
+                        <p className="ai-warning-text">已由用户手动停止生成</p>
+                      </div>
+                    )}
                     {shouldShowCopyButton && (
                       <div className="ai-bot-actions">
                         <button
@@ -1060,7 +1065,7 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                 className="ai-mode-select-inline"
                 onClick={() => setIsModeMenuOpen(!isModeMenuOpen)}
               >
-                {chatMode === 'agent' ? 'Agent' : chatMode === 'chat' ? 'Chat' : chatMode === 'plan' ? 'Plan' : 'Normal'}
+                {chatMode === 'agent' ? 'Agent' : chatMode === 'chat' ? 'Chat' : 'Normal'}
               </button>
               {isModeMenuOpen && (
                 <div className="ai-inline-dropdown">
@@ -1084,13 +1089,6 @@ const ConversationPane: React.FC<ConversationPaneProps> = ({
                     onClick={() => { setChatMode('normal'); setIsModeMenuOpen(false); }}
                   >
                     Normal
-                  </button>
-                  <button
-                    type="button"
-                    className={`ai-inline-dropdown-item ${chatMode === 'plan' ? 'active' : ''}`}
-                    onClick={() => { setChatMode('plan'); setIsModeMenuOpen(false); }}
-                  >
-                    Plan
                   </button>
                 </div>
               )}
